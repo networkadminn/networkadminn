@@ -23,7 +23,9 @@ if _system == "Windows":
     from . import windows as _backend
 elif _system == "Linux":
     from . import linux as _backend
-else:  # macOS or anything else -> best-effort stub
+elif _system == "Darwin":
+    from . import macos as _backend
+else:  # anything else -> best-effort stub
     from . import fallback as _backend
 
 

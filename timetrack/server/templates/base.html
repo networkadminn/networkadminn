@@ -1,0 +1,47 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>{% block title %}TimeTrack{% endblock %}</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='server.css') }}" />
+  {% block head %}{% endblock %}
+</head>
+<body>
+  {% if current_user.is_authenticated %}
+  <header class="topbar">
+    <a class="brand" href="{{ url_for('views.home') }}">
+      <span class="logo">&#9200;</span> TimeTrack
+    </a>
+    <nav class="mainnav">
+      {% if current_user.is_admin %}
+      <a href="{{ url_for('views.admin') }}">Team</a>
+      {% endif %}
+      <a href="{{ url_for('views.me') }}">My activity</a>
+    </nav>
+    <div class="userbox">
+      <span class="whoami">
+        {{ current_user.name }}
+        <span class="role {{ current_user.role }}">{{ current_user.role }}</span>
+      </span>
+      <a class="btn ghost" href="{{ url_for('auth.logout') }}">Sign out</a>
+    </div>
+  </header>
+  {% endif %}
+
+  {% with messages = get_flashed_messages(with_categories=true) %}
+    {% if messages %}
+    <div class="flashes">
+      {% for category, msg in messages %}
+      <div class="flash {{ category }}">{{ msg }}</div>
+      {% endfor %}
+    </div>
+    {% endif %}
+  {% endwith %}
+
+  <main class="wrap">
+    {% block content %}{% endblock %}
+  </main>
+  {% block scripts %}{% endblock %}
+</body>
+</html>

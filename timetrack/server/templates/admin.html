@@ -1,0 +1,68 @@
+{% extends "base.html" %}
+{% block title %}Team &middot; TimeTrack{% endblock %}
+{% block content %}
+<div class="page-head">
+  <h1>Team overview</h1>
+  <nav class="daynav">
+    <a class="btn" href="?day={{ prev_day }}">&larr;</a>
+    <form method="get" class="dayform">
+      <input type="date" name="day" value="{{ day }}" onchange="this.form.submit()" />
+    </form>
+    <a class="btn" href="?day={{ next_day }}">&rarr;</a>
+  </nav>
+</div>
+
+<section class="cards">
+  <div class="card"><div class="stat">{{ rows|length }}</div><div class="card-label">Employees</div></div>
+  <div class="card"><div class="stat">{{ team.online }}</div><div class="card-label">Online now</div></div>
+  <div class="card"><div class="stat">{{ humanize(team.active) }}</div><div class="card-label">Team active time</div></div>
+  <div class="card"><div class="stat">{{ humanize(team.productive) }}</div><div class="card-label">Productive</div></div>
+  <div class="card"><div class="stat">{{ humanize(team.idle) }}</div><div class="card-label">Idle</div></div>
+</section>
+
+<section class="panel">
+  <h2>Employees</h2>
+  <table class="grid">
+    <thead>
+      <tr>
+        <th>Employee</th><th>Status</th><th>Productivity</th>
+        <th class="num">Active</th><th class="num">Productive</th>
+        <th class="num">Idle</th><th class="num">Shots</th><th>Last seen</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for r in rows %}
+      <tr onclick="window.location='{{ url_for('views.admin_user', user_id=r.user.id) }}?day={{ day }}'">
+        <td>
+          <div class="emp">
+            <span class="avatar">{{ r.user.name[0]|upper }}</span>
+            <span>
+              <strong>{{ r.user.name }}</strong>
+              <span class="muted">@{{ r.user.username }}</span>
+            </span>
+          </div>
+        </td>
+        <td>
+          {% if r.online %}<span class="pill online">online</span>
+          {% else %}<span class="pill offline">offline</span>{% endif %}
+        </td>
+        <td>
+          <div class="minibar">
+            <div class="minibar-fill" style="width: {{ r.summary.productivity_pct }}%"></div>
+          </div>
+          <span class="muted">{{ r.summary.productivity_pct }}%</span>
+        </td>
+        <td class="num">{{ humanize(r.summary.active_seconds) }}</td>
+        <td class="num">{{ humanize(r.summary.productive_seconds) }}</td>
+        <td class="num">{{ humanize(r.summary.idle_seconds) }}</td>
+        <td class="num">{{ r.shots }}</td>
+        <td>{{ r.last_seen|ago }}</td>
+      </tr>
+      {% endfor %}
+      {% if not rows %}
+      <tr><td colspan="8" class="empty">No employees yet. Create one with <code>python -m timetrack.server create-user</code>.</td></tr>
+      {% endif %}
+    </tbody>
+  </table>
+</section>
+{% endblock %}
