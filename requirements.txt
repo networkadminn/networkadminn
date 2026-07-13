@@ -1,0 +1,6 @@
+# Core
+Flask>=3.0.0
+psutil>=5.9.0
+
+# Platform-specific (installed automatically only where applicable)
+pywin32>=306 ; platform_system == "Windows"

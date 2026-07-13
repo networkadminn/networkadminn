@@ -1,0 +1,107 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>TimeTrack &middot; {{ day }}</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}" />
+</head>
+<body>
+  <header class="topbar">
+    <div class="brand">
+      <span class="logo">&#9200;</span>
+      <span>TimeTrack</span>
+    </div>
+    <nav class="daynav">
+      <a class="btn" href="?day={{ prev_day }}">&larr;</a>
+      <form method="get" class="dayform">
+        <input type="date" name="day" value="{{ day }}" onchange="this.form.submit()" />
+      </form>
+      <a class="btn" href="?day={{ next_day }}">&rarr;</a>
+    </nav>
+  </header>
+
+  <main class="wrap">
+    <section class="cards">
+      <div class="card score">
+        <div class="ring" style="--pct: {{ summary.productivity_pct }}">
+          <span class="ring-val">{{ summary.productivity_pct }}%</span>
+        </div>
+        <div class="card-label">Productivity</div>
+      </div>
+
+      <div class="card">
+        <div class="stat">{{ humanize(summary.active_seconds) }}</div>
+        <div class="card-label">Time at work (active)</div>
+      </div>
+      <div class="card">
+        <div class="stat">{{ humanize(summary.productive_seconds) }}</div>
+        <div class="card-label">Productive time</div>
+      </div>
+      <div class="card">
+        <div class="stat">{{ humanize(summary.idle_seconds) }}</div>
+        <div class="card-label">Idle time</div>
+      </div>
+      <div class="card">
+        <div class="stat">{{ summary.effectiveness_pct }}%</div>
+        <div class="card-label">Effectiveness</div>
+      </div>
+      <div class="card">
+        <div class="stat">{{ humanize(summary.span_seconds) }}</div>
+        <div class="card-label">Arrived &rarr; last seen</div>
+      </div>
+    </section>
+
+    <section class="panel">
+      <h2>Breakdown</h2>
+      {% set total = summary.productive_seconds + summary.unproductive_seconds + summary.neutral_seconds %}
+      {% if total > 0 %}
+      <div class="bar">
+        <div class="seg productive"
+             style="width: {{ (100 * summary.productive_seconds / total) }}%"
+             title="Productive"></div>
+        <div class="seg neutral"
+             style="width: {{ (100 * summary.neutral_seconds / total) }}%"
+             title="Neutral"></div>
+        <div class="seg unproductive"
+             style="width: {{ (100 * summary.unproductive_seconds / total) }}%"
+             title="Unproductive"></div>
+      </div>
+      <div class="legend">
+        <span><i class="dot productive"></i>Productive {{ humanize(summary.productive_seconds) }}</span>
+        <span><i class="dot neutral"></i>Neutral {{ humanize(summary.neutral_seconds) }}</span>
+        <span><i class="dot unproductive"></i>Unproductive {{ humanize(summary.unproductive_seconds) }}</span>
+      </div>
+      {% else %}
+      <p class="empty">No activity recorded for this day yet. Start the tracker and come back.</p>
+      {% endif %}
+    </section>
+
+    <section class="panel">
+      <h2>Top applications</h2>
+      {% if summary.apps %}
+      <table class="apps">
+        <thead>
+          <tr><th>Application</th><th>Category</th><th class="num">Time</th></tr>
+        </thead>
+        <tbody>
+          {% for a in summary.apps[:20] %}
+          <tr>
+            <td>{{ a.app }}</td>
+            <td><span class="tag {{ a.category }}">{{ a.category }}</span></td>
+            <td class="num">{{ humanize(a.seconds) }}</td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+      {% else %}
+      <p class="empty">Nothing tracked yet.</p>
+      {% endif %}
+    </section>
+
+    <footer class="foot">
+      Local database: <code>{{ backend }}</code> &middot; data never leaves your machine.
+    </footer>
+  </main>
+</body>
+</html>
