@@ -1,0 +1,29 @@
+# TimeTrack configuration (copy to config.toml and edit).
+# All keys are optional; omitted keys fall back to built-in defaults.
+
+# Where the local SQLite database lives.
+# db_path = "~/.local/share/timetrack/timetrack.db"
+
+# Seconds between activity samples.
+poll_interval = 5
+
+# Seconds of no keyboard/mouse input before time is counted as "idle".
+idle_threshold = 180
+
+# Web dashboard bind address.
+host = "127.0.0.1"
+port = 8000
+
+# Categorization rules. Each entry is a case-insensitive substring matched
+# against "<app> <window title>". Unproductive matches win ties.
+# These are MERGED with the built-in defaults.
+[rules]
+productive = [
+    "code", "pycharm", "terminal", "jupyter", "github", "jira",
+]
+unproductive = [
+    "youtube", "reddit", "twitter", "steam", "netflix",
+]
+neutral = [
+    "settings",
+]

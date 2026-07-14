@@ -1,0 +1,30 @@
+# TimeTrack agent configuration (copy to agent.toml on each employee machine).
+# Environment variables TIMETRACK_SERVER_URL / TIMETRACK_API_TOKEN override these.
+
+[agent]
+# URL of the central TimeTrack server.
+server_url = "http://your-server:8080"
+
+# Per-employee API token (from: python -m timetrack.server list-users).
+api_token = "PASTE-EMPLOYEE-API-TOKEN-HERE"
+
+# Activity sampling cadence (seconds).
+poll_interval = 5
+
+# No input for this many seconds counts as idle.
+idle_threshold = 180
+
+# Screenshot capture.
+screenshots_enabled = true
+screenshot_interval = 300        # seconds between screenshots
+screenshot_max_width = 1280      # downscale before upload
+
+# How often to push buffered data to the server (seconds).
+flush_interval = 30
+batch_size = 200
+
+# Categorization rules (merged with built-in defaults). Case-insensitive
+# substrings matched against "<app> <window title>".
+[rules]
+productive = ["code", "pycharm", "terminal", "jira", "github"]
+unproductive = ["youtube", "reddit", "netflix", "steam"]
