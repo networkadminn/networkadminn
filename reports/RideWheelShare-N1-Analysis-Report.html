@@ -1,0 +1,220 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<style>
+  @page { size: A4; margin: 2cm 1.8cm; @bottom-right { content: "Page " counter(page) " of " counter(pages); font-size: 8pt; color: #888; } }
+  body { font-family: Helvetica, Arial, sans-serif; font-size: 9.5pt; color: #1a1a2e; line-height: 1.45; }
+  h1 { font-size: 17pt; color: #16213e; border-bottom: 3px solid #e94560; padding-bottom: 6px; margin-bottom: 2px; }
+  .subtitle { color: #666; font-size: 9pt; margin-bottom: 18px; }
+  h2 { font-size: 12.5pt; color: #16213e; border-bottom: 1px solid #ccc; padding-bottom: 3px; margin-top: 22px; }
+  h3 { font-size: 10.5pt; color: #0f3460; margin-top: 14px; margin-bottom: 5px; }
+  table { border-collapse: collapse; width: 100%; margin: 8px 0; font-size: 8.5pt; }
+  th { background: #16213e; color: #fff; padding: 5px 7px; text-align: left; font-weight: bold; }
+  td { border: 1px solid #d0d0d8; padding: 4px 7px; vertical-align: top; }
+  tr:nth-child(even) td { background: #f4f5f9; }
+  code { font-family: "DejaVu Sans Mono", monospace; font-size: 8pt; background: #eef0f5; padding: 1px 3px; border-radius: 2px; }
+  pre { font-family: "DejaVu Sans Mono", monospace; font-size: 7.8pt; background: #f6f7fb; border: 1px solid #d8dae5; border-left: 4px solid #0f3460; padding: 8px 10px; white-space: pre-wrap; border-radius: 3px; line-height: 1.35; }
+  .critical { background: #fdecea; border-left: 4px solid #e94560; padding: 8px 12px; margin: 10px 0; }
+  .info { background: #eaf4fd; border-left: 4px solid #2980b9; padding: 8px 12px; margin: 10px 0; }
+  .ok { color: #1e8449; font-weight: bold; }
+  .bad { color: #c0392b; font-weight: bold; }
+  .meta-table td:first-child { font-weight: bold; width: 30%; background: #f0f1f6; }
+  ul, ol { margin: 5px 0; padding-left: 20px; }
+  li { margin-bottom: 3px; }
+</style>
+</head>
+<body>
+
+<h1>RideWheelShare — Production N+1 &amp; Performance Analysis</h1>
+<p class="subtitle">Read-only code investigation &middot; App root: /var/www/app.ridewheelshare.com &middot; Laravel 9.52 / PHP 8.2 &middot; Prepared: 2026-07-28 &middot; For: Development Team</p>
+
+<div class="critical">
+<b>Why this report exists:</b> The production app server (t3.xlarge) hits 100% CPU every business day. On Jul 27: 399,559 requests, <b>1,016 &times; HTTP 503</b> and <b>273 &times; HTTP 500</b> served to users. ALB-measured cost ranking shows <code>GET api/driverbooking/{id}</code> at <b>9&ndash;11 seconds per call</b> (~28 CPU-hours that day alone). Database is idle (RDS at ~5%); all time is burned in PHP executing per-row query loops (N+1). ProxySQL digest stats over 26 days: <b>143M</b> single-key <code>user_meta</code> lookups, <b>97M</b> role display-name joins, <b>43M</b> <code>ride_status</code> lookups.
+</div>
+
+<h2>1. Route &rarr; Controller Map</h2>
+<p><b>Correction:</b> route name <code>driverbooking.edit</code> maps to <code>AuthController@driverbooking</code>, not <code>@edit</code> (no <code>edit</code> method exists on AuthController).</p>
+<table>
+<tr><th>Endpoint</th><th>Route file</th><th>Handler</th></tr>
+<tr><td><code>GET api/driverbooking/{id}</code></td><td>routes/api.php:46</td><td>AuthController::driverbooking (L119&ndash;260)</td></tr>
+<tr><td><code>POST api/dashboardappnew</code></td><td>routes/api.php:223</td><td>ApiController::dashboardappnew (L14010&ndash;14178)</td></tr>
+<tr><td><code>POST api/pendingapplistingapidata</code></td><td>routes/api.php:259</td><td>AuthController::pendingapplistingapidata (L3267&ndash;3424)</td></tr>
+<tr><td><code>POST api/appdashboardcalenderlistingday</code></td><td>routes/api.php:251</td><td>AuthController::appdashboardcalenderlistingday (L1252&ndash;2061)</td></tr>
+<tr><td><code>POST api/drivercolorapi</code></td><td>routes/api.php:292</td><td>ApiController::drivercolorapi (L15901&ndash;15983)</td></tr>
+<tr><td><code>GET /check-new-bookings</code></td><td>routes/web.php:436</td><td>BookingController::checkNewBookings (L1746)</td></tr>
+<tr><td><code>GET /nemt-bookings</code></td><td>routes/web.php:437</td><td>BookingController::checkNewBookingsNemt (L1751)</td></tr>
+<tr><td><code>GET /fareupdatenotify</code></td><td>routes/web.php:515&ndash;523</td><td>Inline closure (FacilityPricingTemp::exists)</td></tr>
+<tr><td><code>POST api/bookingslistapp</code> (related)</td><td>&mdash;</td><td>AuthController::bookingsapplist (L441+) &mdash; Safetybookingcheck::where()-&gt;first() inside booking loops at L545/713/876; matches the 6.6M safetybookingcheck query stats</td></tr>
+</table>
+
+<h2>2. Exact N+1 Locations</h2>
+
+<h3>2.1 GET api/driverbooking/{id} — PRIMARY CPU OFFENDER (9–11 s/call)</h3>
+<p><b>Upfront global loads</b> (AuthController.php L190&ndash;193): <code>getAllUsersByRoleReporting()</code> is called <b>three times</b> (Facility, Customer, Driver). Helper at <code>app/helpers.php:53&ndash;63</code>:</p>
+<pre>function getAllUsersByRoleReporting($roleName) {
+    $users = App\Models\User::whereHas(
+        'roles', function($q) use ($roleName) {
+            $q-&gt;where('name', $roleName);
+        }
+    )-&gt;with('usersMetas')
+    -&gt;get();
+    return $users;
+}</pre>
+<p>That loads <b>all users of that role system-wide + all their user_meta rows on every request</b> — and the response also returns the full <code>$customers</code> collection (L254).</p>
+
+<p><b>Per-booking loop</b> (AuthController.php L195&ndash;249):</p>
+<table>
+<tr><th>Query / work</th><th>Lines</th><th>Per booking</th></tr>
+<tr><td><code>UserMeta::where(user_id, hospital_patient_room_number)-&gt;value()</code></td><td>207&ndash;209</td><td>1</td></tr>
+<tr><td><code>UserMeta::where(..., wheelshare_facility_patient_room_number)</code></td><td>211&ndash;213</td><td>1</td></tr>
+<tr><td><code>UserMeta::where(..., passenger_last_name)</code></td><td>215&ndash;217</td><td>1</td></tr>
+<tr><td><code>UserMeta::where(user_id)-&gt;get()</code> (full meta dump)</td><td>225</td><td>1</td></tr>
+<tr><td>Nested scan of all customers / facilities / drivers</td><td>203&ndash;242</td><td>CPU O(C+F+D)</td></tr>
+<tr><td><code>RideStatus::where('booking_id', $booking-&gt;id)-&gt;first()</code></td><td>244</td><td>1</td></tr>
+</table>
+<p>If <code>limit</code>/<code>offset</code> are omitted, the else branch (L161&ndash;187) loads <b>every non-cancelled booking for the driver</b>, multiplying the above by N. Estimated: ~1 booking SELECT + 3 role/whereHas loads + eager meta + ~5N queries. For N&asymp;500&ndash;2000 &rarr; thousands of queries &rarr; matches the observed 9&ndash;11 s.</p>
+
+<h3>2.2 POST api/appdashboardcalenderlistingday</h3>
+<p>Main booking fetch already uses JOINs on user_meta (good). The N+1 is the <b>role display-name lookup inside every booking iteration</b> (AuthController.php L1495&ndash;1509):</p>
+<pre>$rolebookingcreatename = DB::table('role_user')
+    -&gt;join('roles', ...)-&gt;join('users', ...)
+    -&gt;where('role_user.user_id', $booking-&gt;created_by)
+    -&gt;selectRaw("CONCAT(...) as display_name")
+    -&gt;value('display_name');</pre>
+<p>Repeated at L1509, L1749, L2012 (TM / Driver / Facility branches) and in the week/month sibling methods (L2317, 2573, 2888, 3152, &hellip;). <b>This is the smoking gun for ~97M role display-name joins.</b> Also: <code>whereHas('roles')</code> for driver/facility lists (L1285+, L1553+) and nested <code>foreach ($facilities)</code> per booking (PHP-side CPU).</p>
+
+<h3>2.3 POST api/drivercolorapi</h3>
+<p>Classic N+1 inside <code>-&gt;map()</code> (ApiController.php L15928&ndash;15931, duplicated ~L15955, ~L15975 for the three role branches):</p>
+<pre>'passenger_last_name' =&gt; DB::table('user_meta')
+    -&gt;where('user_id', $driver-&gt;id)
+    -&gt;where('meta_key', 'passenger_last_name')
+    -&gt;value('meta_value'),</pre>
+<p>~(1 + D) meta lookups per call &times; ~39,000 calls/day.</p>
+
+<h3>2.4 POST api/dashboardappnew</h3>
+<p>Facility/TM paths: fixed set of COUNT/SUM/JOIN queries (~5&ndash;7). Latency (~500 ms &times; 23k/day) driven by heavy aggregates on bookings + role_user joins, not per-row loops. Superadmin/else path (L14126+) loads <code>getAllTransactions()/getAllExpenses()</code> and sums in PHP — heavy but rarely hit by mobile polling.</p>
+
+<h3>2.5 POST api/pendingapplistingapidata</h3>
+<p>Already batched via JOINs — no per-row loops. <span class="bad">Cache bug:</span> L3415&ndash;3419 performs <code>Redis::set</code> + <code>expire(60)</code> but <b>there is no <code>Redis::get</code> anywhere</b> under app/ or routes/. Every request still hits the DB; the Redis write adds load without ever serving a read.</p>
+
+<h3>2.6 Polling web endpoints</h3>
+<ul>
+<li><code>checkNewBookings</code>: <code>Booking::getBookingsWithoutDrivers()</code> loads the <b>full row collection</b> then <code>-&gt;count()</code> in PHP (Booking.php L82&ndash;103; controller L1746). Also lazy-loads <code>Auth::user()-&gt;roles</code>.</li>
+<li><code>checkNewBookingsNemt</code>: one COUNT join — OK; still lazy-loads roles.</li>
+<li><code>fareupdatenotify</code>: single <code>exists()</code> — fine.</li>
+</ul>
+
+<h2>3. Model Relationship Gaps (block clean eager loading)</h2>
+<table>
+<tr><th>Model</th><th>Issue</th></tr>
+<tr><td>UserMeta</td><td>No <code>belongsTo(User)</code></td></tr>
+<tr><td>RideStatus</td><td>No <code>belongsTo(Booking)</code></td></tr>
+<tr><td>Safetybookingcheck</td><td>No <code>belongsTo(Booking)</code></td></tr>
+<tr><td>Booking</td><td>Has <code>customer()</code>, <code>rideStatusbookinglistapp()</code>, <code>driverbookinglistapp()</code> — missing <code>facility()</code>, canonical <code>driver()</code>, <code>rideStatus()</code>, <code>safetyCheck()</code>, <code>creator()</code></td></tr>
+<tr><td>User</td><td><code>usersMetas()/meta()</code> OK; <code>getMetaValueByKey()</code> (L198&ndash;200) still runs a fresh query each call</td></tr>
+</table>
+<p>Note: <code>driverbooking</code> never uses the existing <code>rideStatusbookinglistapp()</code> relation — it queries RideStatus imperatively.</p>
+
+<h2>4. Existing Caching Status</h2>
+<ul>
+<li>Hot paths: <b>no</b> <code>Cache::remember</code> / <code>-&gt;remember()</code> anywhere.</li>
+<li>Only Redis usage is the write-only set in pendingapplistingapidata (never read back).</li>
+<li class="ok">Infrastructure ready: CACHE_DRIVER=redis, SESSION_DRIVER=redis, QUEUE_CONNECTION=redis, REDIS_HOST=127.0.0.1 (phpredis), DB via ProxySQL :6033.</li>
+</ul>
+
+<h2>5. Scheduled Tasks</h2>
+<p>All <code>-&gt;daily()</code>: transfer:wallet, subscription:Renewable, driver:rating, booking:expired. Not the cause of business-hour saturation; API polling is the main story.</p>
+
+<h2>6. Recommended Fixes (sketches — not applied)</h2>
+
+<h3>6.1 driverbooking — highest ROI</h3>
+<pre>$bookings = Booking::query()
+    -&gt;join('users as drivers', 'drivers.id', '=', 'bookings.driver_id')
+    -&gt;where('bookings.driver_id', $id)
+    -&gt;whereNotIn('bookings.booking_status', [2, 10])
+    -&gt;orderByDesc('bookings.pickup_datetime')
+    -&gt;when($limit !== null, fn ($q) =&gt; $q-&gt;limit($limit)-&gt;offset($offset ?? 0))
+    -&gt;select('bookings.*', 'drivers.name as driverNamez' /*, transport CASE */)
+    -&gt;with(['customer.usersMetas', 'rideStatusbookinglistapp'])
+    -&gt;get();
+
+// Or batch meta without relations:
+$customerIds = $bookings-&gt;pluck('customer_id')-&gt;filter()-&gt;unique();
+$meta = UserMeta::whereIn('user_id', $customerIds)
+    -&gt;whereIn('meta_key', ['hospital_patient_room_number',
+        'wheelshare_facility_patient_room_number', 'passenger_last_name'])
+    -&gt;get()-&gt;groupBy('user_id');
+$rideStatuses = RideStatus::whereIn('booking_id', $bookings-&gt;pluck('id'))
+    -&gt;get()-&gt;keyBy('booking_id');</pre>
+<p>Also: stop returning the entire <code>$customers</code> collection in the JSON unless the client truly needs it.</p>
+
+<h3>6.2 appdashboardcalenderlistingday (and week/month siblings)</h3>
+<pre>$creatorIds = $bookings-&gt;pluck('created_by')-&gt;unique();
+$displayNames = DB::table('role_user')
+    -&gt;join('roles', ...)-&gt;join('users', ...)
+    -&gt;whereIn('role_user.user_id', $creatorIds)
+    -&gt;selectRaw("role_user.user_id, CONCAT(...) as display_name")
+    -&gt;pluck('display_name', 'user_id');
+// then $displayNames[$booking-&gt;created_by] inside the loop</pre>
+
+<h3>6.3 drivercolorapi</h3>
+<pre>$drivers = User::select('id','name','drivercolor')
+    -&gt;whereHas('roles', ...)
+    -&gt;where('facility_id', $facilityId)
+    -&gt;with(['usersMetas' =&gt; fn ($q) =&gt; $q-&gt;where('meta_key', 'passenger_last_name')])
+    -&gt;get();   // or leftJoin user_meta once</pre>
+
+<h3>6.4 dashboardappnew</h3>
+<p>Cache the JSON payload 15&ndash;30 s keyed by role + facility_id + Y-m. Optional indexes on <code>(facility_id, booking_status, payment_status, ride_type, pickup_datetime)</code>.</p>
+
+<h3>6.5 pendingapplistingapidata</h3>
+<p>Replace the write-only Redis set with <code>Cache::remember("PendingbookingList_{$facilityId}", 15, fn () =&gt; ...)</code> that is actually read.</p>
+
+<h3>6.6 check-new-bookings</h3>
+<pre>return response()-&gt;json([
+  'count' =&gt; Booking::query()-&gt;where(/* pending conditions */)-&gt;count()
+]);
+// plus eager-load Auth::user()-&gt;load('roles')</pre>
+
+<h2>7. Response-Cache Suitability (15–30 s TTL)</h2>
+<table>
+<tr><th>Endpoint</th><th>Cache?</th><th>Notes</th></tr>
+<tr><td>dashboardappnew</td><td class="ok">Yes — strong candidate</td><td>Counts/sums; key: facility_id + role + month</td></tr>
+<tr><td>drivercolorapi</td><td class="ok">Yes</td><td>Driver id/name/color/last name; invalidate on driver profile/color edits</td></tr>
+<tr><td>pendingapplistingapidata</td><td class="ok">Yes, short (10&ndash;15 s)</td><td>Changes when drivers assigned; intended Redis cache is currently write-only</td></tr>
+<tr><td>appdashboardcalenderlistingday</td><td class="ok">Yes, short (10&ndash;20 s)</td><td>Calendar snapshot; key: facility + role + window</td></tr>
+<tr><td>driverbooking/{id}</td><td>Cautious 5&ndash;15 s</td><td>Live ride list; key: driver_id + limit + offset; do not cache full customer_metadata dumps with payment/PII longer than necessary</td></tr>
+<tr><td>check-new-bookings / nemt-bookings</td><td class="ok">Yes, 5&ndash;10 s</td><td>Badge counts only</td></tr>
+<tr><td>fareupdatenotify</td><td>Optional 10&ndash;30 s</td><td>Boolean hasRequest</td></tr>
+</table>
+<div class="critical"><b>Must NOT cache</b> (or must exclude from cached payloads): auth tokens, OTPs / 2FA codes, Stripe/payment method bank details, wallet amounts used for charges, full customer_metadata blobs containing card / connected_account keys, anything from payment success flows. Prefer projecting only the fields the app UI needs.</div>
+
+<h2>8. Estimated Query-Count Reduction</h2>
+<p>Assumptions: N = bookings returned, D = drivers in facility, C = customers matched.</p>
+<table>
+<tr><th>Fix</th><th>Before (order of magnitude)</th><th>After</th><th>Reduction</th></tr>
+<tr><td>driverbooking eager/batch</td><td>~1 + 3 role loads + 5N (+ giant meta eager of all customers)</td><td>~3&ndash;6</td><td><b>~95&ndash;99%</b> of per-request queries; largest CPU win</td></tr>
+<tr><td>Calendar display_name batch/join</td><td>1 + N role joins (&times;3 branches, &times; week/month siblings)</td><td>1</td><td>N&rarr;1 per request; explains most of the 97M role joins</td></tr>
+<tr><td>drivercolorapi join/eager</td><td>1 + D</td><td>1&ndash;2</td><td>~D &times; 39k/day meta lookups eliminated</td></tr>
+<tr><td>dashboardappnew 15&ndash;30 s cache</td><td>5&ndash;7 &times; 23k/day</td><td>5&ndash;7 &times; misses only</td><td>~50&ndash;90% of DB hits skipped</td></tr>
+<tr><td>pending&hellip; Cache::remember (fix write-only)</td><td>1 heavy join &times; 23k/day</td><td>join &times; misses only</td><td>~50&ndash;90% DB hits</td></tr>
+<tr><td>check-new-bookings COUNT</td><td>full row load + PHP count</td><td>1 COUNT</td><td>Large row-transfer + PHP CPU cut</td></tr>
+</table>
+
+<h2>9. Priority Order for Implementation</h2>
+<ol>
+<li><b>Rewrite AuthController::driverbooking</b> (global user dumps + 4&times; UserMeta + RideStatus per row) — sole explanation for the 9&ndash;11 s response time.</li>
+<li><b>Batch/join creator display_name</b> in calendar day/week/month methods.</li>
+<li><b>Fix drivercolorapi meta N+1.</b></li>
+<li><b>Replace write-only Redis with Cache::remember</b> on dashboard / pending / color endpoints.</li>
+<li><b>Fix getBookingsWithoutDrivers to a COUNT query.</b></li>
+<li><b>Add missing Eloquent relations</b> (UserMeta&rarr;User, RideStatus&rarr;Booking, Safetybookingcheck&rarr;Booking, Booking&rarr;facility/driver/rideStatus/creator) so future code can eager-load instead of querying imperatively.</li>
+</ol>
+
+<div class="info">
+<b>Supporting production evidence (measured, Jul 27):</b> total 399,559 requests; driverbooking consumed ~99,900 backend-seconds (&asymp;28 CPU-hours) across ~14,200 calls; dashboard trio ~33,500 seconds combined; 1,016&times;503 + 273&times;500 errors served. EC2 peaked at 100% repeatedly 15:00&ndash;22:00 UTC while RDS stayed under 8%. Traffic is growing ~14%/week as facilities onboard. Investigation was strictly read-only; no files or services were modified.
+</div>
+
+</body>
+</html>
