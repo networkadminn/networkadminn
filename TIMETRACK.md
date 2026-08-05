@@ -247,3 +247,50 @@ python -m pytest -q
     `python -m timetrack.server reset-token <username>`.
 - Be sure your monitoring complies with local laws and that employees are
   informed.
+
+## Security hardening (Team mode server)
+
+Both Flask apps (the Team-mode `server` and the local-mode `dashboard`) set
+hardening HTTP headers themselves, at the application level — this works
+regardless of hosting (bare WSGI, systemd, reverse proxy, or shared/reseller
+hosting where you don't have server-/root-level or WHM access):
+
+- `Strict-Transport-Security` (HSTS) — sent only on responses actually served
+  over HTTPS (directly, or via a proxy sending `X-Forwarded-Proto: https`).
+- `Content-Security-Policy` (CSP), `X-Frame-Options`, `X-Content-Type-Options`,
+  `Referrer-Policy`.
+
+These are all configurable/toggleable on `ServerConfig`
+(`enable_security_headers`, `content_security_policy`, `hsts_max_age`), see
+`timetrack/security_headers.py`.
+
+Additional account-level controls for the Team-mode server
+(`timetrack/server/security.py`):
+
+- **Password policy** — enforced whenever a password is set (CLI
+  `create-user` / `set-password`): at least 12 characters and at least 3 of
+  {uppercase, lowercase, digit, special character}, and not a common password.
+- **Two-factor authentication (TOTP)** — optional per-user MFA for dashboard
+  logins:
+  ```bash
+  python -m timetrack.server enable-mfa boss   # prints secret + QR provisioning URI
+  python -m timetrack.server disable-mfa boss
+  ```
+  Once enabled, signing in prompts for a 6-digit code from an authenticator
+  app (Google Authenticator, Authy, 1Password, ...) before the session starts.
+- **Admin IP allow-list** — restrict the `/admin*` dashboard to specific
+  IPs/CIDRs by setting `admin_ip_allowlist` on `ServerConfig` (e.g.
+  `["10.0.0.0/8"]`); empty (the default) means unrestricted.
+
+Other protections already in place at the code level:
+
+- **SQL injection** — all queries go through SQLAlchemy's ORM/parameterized
+  query API; there is no raw/string-interpolated SQL anywhere in the app.
+- **XSS** — all templates are rendered with Jinja2's default autoescaping;
+  no user-controlled value is marked `|safe`.
+
+If you deploy on infrastructure where you don't control the server/WHM level
+(e.g. a reseller cPanel account), you can still layer host-level protections
+per site: enable `ModSecurity` for the account in WHM, and/or add equivalent
+headers via `.htaccess` if you front the app with Apache. The headers above
+make that redundant for a direct deployment, but doubling up is harmless.
