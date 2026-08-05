@@ -247,3 +247,70 @@ python -m pytest -q
     `python -m timetrack.server reset-token <username>`.
 - Be sure your monitoring complies with local laws and that employees are
   informed.
+
+## Web security hardening
+
+The server (and the local dashboard) apply defence-in-depth controls **in the
+application itself**, so they work regardless of the front-end web server
+(Apache/cPanel, Nginx, gunicorn, ...). The equivalent per-site Apache rules are
+also provided in [`deploy/apache-security.htaccess`](deploy/apache-security.htaccess)
+for reseller/cPanel deployments that prefer to set headers at the web-server layer.
+
+### Response security headers (enabled by default)
+
+Every response carries:
+
+| Header | Default |
+| ------ | ------- |
+| `Content-Security-Policy` | `default-src 'self'` + a per-request script **nonce** (no `'unsafe-inline'` scripts); Chart.js CDN allow-listed |
+| `Strict-Transport-Security` (HSTS) | `max-age=31536000; includeSubDomains` — sent only over HTTPS |
+| `X-Frame-Options` | `SAMEORIGIN` (clickjacking) |
+| `X-Content-Type-Options` | `nosniff` |
+| `Referrer-Policy` | `strict-origin-when-cross-origin` |
+| `Permissions-Policy` | `geolocation=(), microphone=(), camera=()` |
+| `Cross-Origin-Opener-Policy` / `Cross-Origin-Resource-Policy` | `same-origin` |
+
+Session cookies are `HttpOnly` + `SameSite=Lax` (and `Secure` when HSTS is forced).
+
+Toggle / tune via environment variables:
+
+| Env var | Default | Meaning |
+| ------- | ------- | ------- |
+| `TIMETRACK_SECURITY_HEADERS` | `true` | Master on/off switch for all headers |
+| `TIMETRACK_HSTS` | `true` | Send HSTS on HTTPS responses |
+| `TIMETRACK_HSTS_FORCE` | `false` | Send HSTS + mark cookies `Secure` even if HTTPS isn't detected (TLS-terminating proxy) |
+| `TIMETRACK_TRUST_PROXY` | `false` | Trust `X-Forwarded-For`/`-Proto` from a proxy you control |
+| `TIMETRACK_ADMIN_IP_ALLOWLIST` | *(empty)* | Comma-separated IPs/CIDRs allowed to reach the admin dashboard |
+
+### Authentication & access control
+
+- **Strong password policy** (min 12 chars, mixed case, digit, symbol, not a
+  common/guessable value, not the username) is enforced when provisioning:
+  ```bash
+  python -m timetrack.server create-user alice --name "Alice"
+  python -m timetrack.server set-password alice
+  # add --allow-weak-password to bypass (e.g. automated seeding)
+  ```
+- **Two-factor authentication (TOTP MFA)** for dashboard logins:
+  ```bash
+  python -m timetrack.server enable-mfa alice    # prints secret + otpauth:// URI
+  python -m timetrack.server disable-mfa alice
+  ```
+  Once enabled the user must enter a 6-digit code from an authenticator app
+  (Google Authenticator, Authy, 1Password, ...) after their password.
+- **Admin IP allow-list** restricts the `/admin` dashboard by source IP/CIDR:
+  ```bash
+  export TIMETRACK_ADMIN_IP_ALLOWLIST="203.0.113.4,10.0.0.0/24"
+  python -m timetrack.server run
+  ```
+
+### Application-code protections (already in place)
+
+- **SQL injection:** all database access uses the SQLAlchemy ORM (server) and
+  fully **parameterized** SQLite queries (local storage) — no string-built SQL.
+- **XSS:** templates are rendered with Jinja2 **auto-escaping**; dynamic data
+  injected into inline scripts is emitted via `|tojson` and the scripts run
+  under a CSP nonce.
+- **WAF:** a Web Application Firewall (e.g. cPanel/WHM **ModSecurity**) is a
+  server-level control and should be enabled by your host/reseller in addition
+  to the above.
