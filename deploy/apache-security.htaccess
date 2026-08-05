@@ -1,0 +1,44 @@
+# TimeTrack — sample per-site security headers for Apache / cPanel deployments.
+#
+# The TimeTrack app already sets these headers itself (see timetrack/security.py),
+# so this file is only needed if you terminate the app behind Apache and prefer
+# to enforce the headers at the web-server layer — for example on a cPanel /
+# reseller account where you cannot change the server-wide (WHM) config and must
+# work per site via .htaccess.
+#
+# Drop this in the account's document root (rename to `.htaccess`) or merge the
+# rules into an existing one. Requires mod_headers (bundled with cPanel Apache).
+#
+# NOTE: The Content-Security-Policy below uses a static policy suited to a
+# reverse-proxy in front of TimeTrack. When Apache proxies the app directly, the
+# app's own per-request nonce'd CSP is stronger — in that case let the app set
+# CSP and remove the CSP line here to avoid a conflicting/duplicate header.
+
+<IfModule mod_headers.c>
+    # 1. HSTS — force HTTPS for a year (only meaningful once the site is HTTPS).
+    #    Add "preload" only if you intend to submit to the HSTS preload list.
+    Header always set Strict-Transport-Security "max-age=31536000; includeSubDomains"
+
+    # 2. Clickjacking + MIME sniffing + a conservative Content-Security-Policy.
+    Header always set X-Frame-Options "SAMEORIGIN"
+    Header always set X-Content-Type-Options "nosniff"
+    Header always set Content-Security-Policy "default-src 'self'; base-uri 'self'; frame-ancestors 'self'; object-src 'none'; img-src 'self' data:; style-src 'self' 'unsafe-inline'; script-src 'self' https://cdn.jsdelivr.net"
+
+    # 3. Referrer policy.
+    Header always set Referrer-Policy "strict-origin-when-cross-origin"
+
+    # Extra hardening.
+    Header always set Permissions-Policy "geolocation=(), microphone=(), camera=()"
+    Header always set Cross-Origin-Opener-Policy "same-origin"
+    Header always set Cross-Origin-Resource-Policy "same-origin"
+
+    # Reduce version disclosure where allowed.
+    Header always unset X-Powered-By
+</IfModule>
+
+# Redirect all HTTP traffic to HTTPS (pairs with the HSTS header above).
+<IfModule mod_rewrite.c>
+    RewriteEngine On
+    RewriteCond %{HTTPS} !=on
+    RewriteRule ^ https://%{HTTP_HOST}%{REQUEST_URI} [L,R=301]
+</IfModule>

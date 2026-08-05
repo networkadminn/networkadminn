@@ -15,7 +15,7 @@
     <nav class="daynav">
       <a class="btn" href="?day={{ prev_day }}">&larr;</a>
       <form method="get" class="dayform">
-        <input type="date" name="day" value="{{ day }}" onchange="this.form.submit()" />
+        <input type="date" name="day" value="{{ day }}" />
       </form>
       <a class="btn" href="?day={{ next_day }}">&rarr;</a>
     </nav>
@@ -103,5 +103,10 @@
       Local database: <code>{{ backend }}</code> &middot; data never leaves your machine.
     </footer>
   </main>
+  <script nonce="{{ csp_nonce() }}">
+    document.querySelectorAll("form.dayform input[type=date]").forEach(function (el) {
+      el.addEventListener("change", function () { el.form.submit(); });
+    });
+  </script>
 </body>
 </html>

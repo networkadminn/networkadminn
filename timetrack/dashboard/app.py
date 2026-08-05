@@ -14,6 +14,7 @@ from ..analytics import (
     timeline_buckets,
 )
 from ..config import Config, load_config
+from ..security import SecurityHeaders, install_security
 from ..storage import Storage
 
 
@@ -30,6 +31,11 @@ def create_app(config: Config | None = None) -> Flask:
     cfg = config or load_config()
     app = Flask(__name__)
     app.config["TIMETRACK_CONFIG"] = cfg
+
+    # The local dashboard binds to localhost and loads no third-party scripts,
+    # so it can run a strict CSP. HSTS is off by default (typically plain HTTP
+    # on 127.0.0.1) but can be forced for HTTPS deployments.
+    install_security(app, SecurityHeaders(hsts=False))
 
     def get_storage() -> Storage:
         return Storage(cfg.db_path)

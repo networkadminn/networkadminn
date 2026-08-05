@@ -1,7 +1,7 @@
 {% extends "base.html" %}
 {% block title %}{{ subject.name }} &middot; TimeTrack{% endblock %}
 {% block head %}
-<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+<script nonce="{{ csp_nonce() }}" src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
 {% endblock %}
 {% block content %}
 <div class="page-head">
@@ -13,7 +13,7 @@
   <nav class="daynav">
     <a class="btn" href="?day={{ prev_day }}">&larr;</a>
     <form method="get" class="dayform">
-      <input type="date" name="day" value="{{ day }}" onchange="this.form.submit()" />
+      <input type="date" name="day" value="{{ day }}" />
     </form>
     <a class="btn" href="?day={{ next_day }}">&rarr;</a>
   </nav>
@@ -73,7 +73,7 @@
 {% endblock %}
 
 {% block scripts %}
-<script>
+<script nonce="{{ csp_nonce() }}">
   const DATA = {{ charts|tojson }};
   const gridColor = "rgba(255,255,255,0.06)";
   Chart.defaults.color = "#93a0b5";

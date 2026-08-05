@@ -42,6 +42,17 @@
   <main class="wrap">
     {% block content %}{% endblock %}
   </main>
+  <script nonce="{{ csp_nonce() }}">
+    // Progressive-enhancement behaviours (CSP-safe: no inline handlers).
+    document.querySelectorAll("form.dayform input[type=date]").forEach(function (el) {
+      el.addEventListener("change", function () { el.form.submit(); });
+    });
+    document.querySelectorAll("[data-href]").forEach(function (el) {
+      el.addEventListener("click", function () {
+        window.location = el.getAttribute("data-href");
+      });
+    });
+  </script>
   {% block scripts %}{% endblock %}
 </body>
 </html>
