@@ -67,7 +67,7 @@ def live_server(tmp_path):
     )
     with app.app_context():
         u = User(username="alice", role="employee")
-        u.set_password("x")
+        u.set_password("Agent-Passphrase-123")
         db.session.add(u)
         db.session.commit()
         token = u.api_token
