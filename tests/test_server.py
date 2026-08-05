@@ -18,9 +18,9 @@ def app(tmp_path):
     app.config.update(TESTING=True, WTF_CSRF_ENABLED=False)
     with app.app_context():
         admin = User(username="boss", role=ROLE_ADMIN, display_name="The Boss")
-        admin.set_password("adminpass")
+        admin.set_password("Adm1n-Sup3r-Secret!")
         emp = User(username="alice", role=ROLE_EMPLOYEE, display_name="Alice")
-        emp.set_password("alicepass")
+        emp.set_password("Al1ce-Sup3r-Secret!")
         db.session.add_all([admin, emp])
         db.session.commit()
         app.config["_ADMIN_TOKEN"] = admin.api_token
@@ -48,13 +48,13 @@ def test_login_required_redirect(client):
 
 
 def test_admin_login_sees_team(client):
-    resp = _login(client, "boss", "adminpass")
+    resp = _login(client, "boss", "Adm1n-Sup3r-Secret!")
     assert resp.status_code == 200
     assert b"Team overview" in resp.data
 
 
 def test_employee_cannot_access_admin(client):
-    _login(client, "alice", "alicepass")
+    _login(client, "alice", "Al1ce-Sup3r-Secret!")
     resp = client.get("/admin")
     assert resp.status_code == 403
 
@@ -106,7 +106,7 @@ def test_api_ingest_screenshot_and_serve(client, app):
     shot_id = resp.get_json()["id"]
 
     # Admin can view it.
-    _login(client, "boss", "adminpass")
+    _login(client, "boss", "Adm1n-Sup3r-Secret!")
     img = client.get(f"/screenshot/{shot_id}")
     assert img.status_code == 200
     assert img.data[:2] == b"\xff\xd8"  # JPEG magic
@@ -123,7 +123,7 @@ def test_employee_dashboard_shows_own_data(client, app):
         ]},
         headers={"Authorization": f"Bearer {token}"},
     )
-    _login(client, "alice", "alicepass")
+    _login(client, "alice", "Al1ce-Sup3r-Secret!")
     resp = client.get("/me")
     assert resp.status_code == 200
     assert b"Productivity" in resp.data
@@ -145,5 +145,5 @@ def test_employee_cannot_view_others_screenshot(client, app):
     )
     shot_id = resp.get_json()["id"]
 
-    _login(client, "alice", "alicepass")
+    _login(client, "alice", "Al1ce-Sup3r-Secret!")
     assert client.get(f"/screenshot/{shot_id}").status_code == 403
