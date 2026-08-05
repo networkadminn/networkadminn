@@ -1,0 +1,39 @@
+# TimeTrack server — Apache / cPanel security headers
+#
+# Copy to your site's document root (e.g. public_html/.htaccess) and adjust
+# the Passenger / proxy block for your hosting setup.
+#
+# Requires: mod_headers (and mod_rewrite for HTTPS redirect).
+# Per-site only — reseller/WHM cannot enforce these globally without root access.
+
+# --- Force HTTPS (recommended in production) ---
+<IfModule mod_rewrite.c>
+  RewriteEngine On
+  RewriteCond %{HTTPS} !=on
+  RewriteRule ^ https://%{HTTP_HOST}%{REQUEST_URI} [L,R=301]
+</IfModule>
+
+# --- Security headers ---
+<IfModule mod_headers.c>
+  # 1. HSTS — tell browsers to always use HTTPS for this host
+  Header always set Strict-Transport-Security "max-age=31536000; includeSubDomains"
+
+  # 2. Clickjacking, MIME sniffing, and content restrictions
+  Header always set X-Frame-Options "SAMEORIGIN"
+  Header always set X-Content-Type-Options "nosniff"
+  Header always set Content-Security-Policy "default-src 'self'; script-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; connect-src 'self'"
+
+  # 3. Referrer policy
+  Header always set Referrer-Policy "strict-origin-when-cross-origin"
+
+  # Additional hardening (optional but recommended)
+  Header always set X-XSS-Protection "0"
+  Header always set Permissions-Policy "camera=(), microphone=(), geolocation=()"
+</IfModule>
+
+# --- Example: proxy to a Flask app via Passenger (adjust paths) ---
+# <IfModule mod_passenger.c>
+#   PassengerEnabled on
+#   PassengerAppRoot /home/USER/timetrack
+#   PassengerPython /home/USER/virtualenv/timetrack/bin/python
+# </IfModule>

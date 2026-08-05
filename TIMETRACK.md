@@ -247,3 +247,41 @@ python -m pytest -q
     `python -m timetrack.server reset-token <username>`.
 - Be sure your monitoring complies with local laws and that employees are
   informed.
+
+### Production hardening (cPanel / Apache)
+
+When hosting on cPanel or Apache, copy `deploy/.htaccess.example` to your
+site's document root and adjust the Passenger/proxy section for your account.
+That file sets per-site headers that a reseller **cannot** enforce globally
+from WHM without root access:
+
+| Control | `.htaccess` (per site) | Flask app (always on) |
+| ------- | ---------------------- | --------------------- |
+| HSTS | `Strict-Transport-Security` | `hsts_max_age` in `server.toml` |
+| X-Frame-Options | `SAMEORIGIN` | set on every response |
+| X-Content-Type-Options | `nosniff` | set on every response |
+| Content-Security-Policy | per-site policy | `content_security_policy` |
+| Referrer-Policy | `strict-origin-when-cross-origin` | `referrer_policy` |
+
+Copy `config.server.example.toml` to `server.toml` (or
+`~/.config/timetrack/server.toml`) to enable app-level options:
+
+```toml
+force_https = true
+trust_proxy_headers = true
+session_cookie_secure = true
+hsts_max_age = 31536000
+min_password_length = 12
+admin_ip_allowlist = ["203.0.113.10", "198.51.100.0/24"]
+```
+
+**SQL injection / XSS:** the server uses SQLAlchemy ORM (parameterized queries)
+and Jinja2 auto-escaping. CSP headers add a browser-level XSS mitigation layer.
+For WAF coverage, enable **ModSecurity** per cPanel account (rule management at
+the server tier requires your host).
+
+**Authentication:** enforce strong passwords via `min_password_length`, restrict
+admin/login access with `admin_ip_allowlist`, and enable cPanel/WHM two-factor
+authentication for the hosting control panel itself. MFA for TimeTrack dashboard
+logins can be added at the reverse-proxy or VPN layer when server-wide IP
+whitelisting is coordinated with your host.

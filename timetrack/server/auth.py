@@ -9,6 +9,7 @@ from flask_login import current_user, login_required, login_user, logout_user
 
 from .extensions import db
 from .models import User
+from .security import login_success_redirect
 
 auth_bp = Blueprint("auth", __name__)
 
@@ -44,8 +45,7 @@ def login():
             flash("This account is disabled.", "error")
         else:
             login_user(user)
-            nxt = request.args.get("next")
-            return redirect(nxt or url_for("views.home"))
+            return redirect(login_success_redirect())
 
     return render_template("login.html")
 

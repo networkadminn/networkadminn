@@ -17,6 +17,7 @@ import sys
 from .app import create_app
 from .extensions import db
 from .models import ROLE_ADMIN, ROLE_EMPLOYEE, User
+from .security import validate_password
 
 
 def _app():
@@ -46,6 +47,10 @@ def _cmd_create_user(args: argparse.Namespace) -> int:
         password = args.password or getpass.getpass("Password: ")
         if not password:
             print("password required", file=sys.stderr)
+            return 2
+        cfg = app.config["TIMETRACK_SERVER_CONFIG"]
+        if err := validate_password(password, min_length=cfg.min_password_length):
+            print(err, file=sys.stderr)
             return 2
 
         user = User(
@@ -102,6 +107,10 @@ def _cmd_set_password(args: argparse.Namespace) -> int:
         password = args.password or getpass.getpass("New password: ")
         if not password:
             print("password required", file=sys.stderr)
+            return 2
+        cfg = app.config["TIMETRACK_SERVER_CONFIG"]
+        if err := validate_password(password, min_length=cfg.min_password_length):
+            print(err, file=sys.stderr)
             return 2
         user.set_password(password)
         db.session.commit()

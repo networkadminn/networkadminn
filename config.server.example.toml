@@ -1,0 +1,35 @@
+# TimeTrack server configuration (copy to server.toml and edit).
+# All keys are optional; omitted keys fall back to built-in defaults.
+
+# Bind address for `python -m timetrack.server run`
+# host = "0.0.0.0"
+# port = 8080
+
+# Data directory (SQLite DB, screenshots, secret key).
+# data_dir = "~/.local/share/timetrack-server"
+
+# --- Security (application-level; mirror deploy/.htaccess.example on Apache) ---
+
+# HSTS max-age in seconds (0 = disabled). Enable when serving over HTTPS.
+# hsts_max_age = 31536000
+
+# Redirect HTTP to HTTPS at the Flask layer (also set in .htaccess on cPanel).
+# force_https = true
+
+# Trust X-Forwarded-Proto / X-Forwarded-For from a reverse proxy or load balancer.
+# trust_proxy_headers = true
+
+# Secure session cookies (set true when behind HTTPS).
+# session_cookie_secure = true
+
+# Minimum password length for create-user / set-password.
+# min_password_length = 12
+
+# Restrict admin dashboard + login to these IPs/CIDRs (empty = allow all).
+# Example: only office/VPN egress.
+# admin_ip_allowlist = ["203.0.113.10", "198.51.100.0/24"]
+
+# Override default Content-Security-Policy header.
+# content_security_policy = "default-src 'self'"
+
+# referrer_policy = "strict-origin-when-cross-origin"
