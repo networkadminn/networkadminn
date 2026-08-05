@@ -4,8 +4,21 @@ from __future__ import annotations
 
 from flask import Flask
 
+from ..security import init_security_headers
 from .config import ServerConfig
 from .extensions import db, login_manager
+
+SERVER_CSP = (
+    "default-src 'self'; "
+    "base-uri 'self'; "
+    "object-src 'none'; "
+    "frame-ancestors 'self'; "
+    "form-action 'self'; "
+    "img-src 'self' data:; "
+    "script-src 'self' https://cdn.jsdelivr.net; "
+    "style-src 'self'; "
+    "connect-src 'self'"
+)
 
 
 def create_app(config: ServerConfig | None = None, **overrides) -> Flask:
@@ -21,7 +34,10 @@ def create_app(config: ServerConfig | None = None, **overrides) -> Flask:
         SQLALCHEMY_TRACK_MODIFICATIONS=False,
         MAX_CONTENT_LENGTH=25 * 1024 * 1024,  # 25 MB screenshot cap
         TIMETRACK_SERVER_CONFIG=cfg,
+        SESSION_COOKIE_HTTPONLY=True,
+        SESSION_COOKIE_SAMESITE="Lax",
     )
+    init_security_headers(app, content_security_policy=SERVER_CSP)
 
     db.init_app(app)
     login_manager.init_app(app)

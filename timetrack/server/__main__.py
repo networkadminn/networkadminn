@@ -54,7 +54,11 @@ def _cmd_create_user(args: argparse.Namespace) -> int:
             display_name=args.name or "",
             role=ROLE_ADMIN if args.admin else ROLE_EMPLOYEE,
         )
-        user.set_password(password)
+        try:
+            user.set_password(password)
+        except ValueError as exc:
+            print(str(exc), file=sys.stderr)
+            return 2
         db.session.add(user)
         db.session.commit()
         print(f"created {user.role} {user.username!r}")
@@ -103,7 +107,11 @@ def _cmd_set_password(args: argparse.Namespace) -> int:
         if not password:
             print("password required", file=sys.stderr)
             return 2
-        user.set_password(password)
+        try:
+            user.set_password(password)
+        except ValueError as exc:
+            print(str(exc), file=sys.stderr)
+            return 2
         db.session.commit()
         print(f"password updated for {user.username!r}")
     return 0

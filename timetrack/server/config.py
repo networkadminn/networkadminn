@@ -13,6 +13,14 @@ def _default_data_dir() -> str:
     )
 
 
+def _env_list(name: str) -> tuple[str, ...]:
+    return tuple(
+        item.strip()
+        for item in os.environ.get(name, "").split(",")
+        if item.strip()
+    )
+
+
 @dataclass
 class ServerConfig:
     data_dir: str = field(default_factory=_default_data_dir)
@@ -24,6 +32,10 @@ class ServerConfig:
     port: int = 8080
     # Consider a user "online" if seen within this many seconds.
     online_window: float = 300.0
+    # Optional comma-separated IP/CIDR allowlist for admin routes.
+    admin_allowed_ips: tuple[str, ...] = field(
+        default_factory=lambda: _env_list("TIMETRACK_ADMIN_ALLOWED_IPS")
+    )
 
     def finalize(self) -> "ServerConfig":
         os.makedirs(self.data_dir, exist_ok=True)

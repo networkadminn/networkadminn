@@ -21,6 +21,18 @@ def test_healthz(tmp_path):
     assert resp.get_json()["status"] == "ok"
 
 
+def test_dashboard_sets_security_headers(tmp_path):
+    client = _app(tmp_path).test_client()
+    resp = client.get("/")
+    assert resp.headers["Strict-Transport-Security"] == (
+        "max-age=31536000; includeSubDomains"
+    )
+    assert resp.headers["X-Frame-Options"] == "SAMEORIGIN"
+    assert resp.headers["X-Content-Type-Options"] == "nosniff"
+    assert resp.headers["Referrer-Policy"] == "strict-origin-when-cross-origin"
+    assert "default-src 'self'" in resp.headers["Content-Security-Policy"]
+
+
 def test_index_renders(tmp_path):
     client = _app(tmp_path).test_client()
     resp = client.get("/")

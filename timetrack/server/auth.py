@@ -2,15 +2,61 @@
 
 from __future__ import annotations
 
+import ipaddress
 from functools import wraps
+from urllib.parse import urlsplit
 
-from flask import Blueprint, abort, flash, redirect, render_template, request, url_for
+from flask import (
+    Blueprint,
+    abort,
+    current_app,
+    flash,
+    redirect,
+    render_template,
+    request,
+    url_for,
+)
 from flask_login import current_user, login_required, login_user, logout_user
 
 from .extensions import db
 from .models import User
 
 auth_bp = Blueprint("auth", __name__)
+
+
+def _is_safe_redirect(target: str | None) -> bool:
+    if not target:
+        return False
+    ref = urlsplit(request.host_url)
+    test = urlsplit(target)
+    return (
+        (not test.scheme or test.scheme in {"http", "https"})
+        and (not test.netloc or test.netloc == ref.netloc)
+    )
+
+
+def _admin_ip_allowed(remote_addr: str | None) -> bool:
+    cfg = current_app.config["TIMETRACK_SERVER_CONFIG"]
+    allowlist = cfg.admin_allowed_ips
+    if not allowlist:
+        return True
+    if not remote_addr:
+        return False
+    try:
+        client_ip = ipaddress.ip_address(remote_addr)
+    except ValueError:
+        return False
+
+    for entry in allowlist:
+        try:
+            if "/" in entry:
+                if client_ip in ipaddress.ip_network(entry, strict=False):
+                    return True
+            elif client_ip == ipaddress.ip_address(entry):
+                return True
+        except ValueError:
+            continue
+    return False
 
 
 def admin_required(view):
@@ -20,6 +66,8 @@ def admin_required(view):
     @login_required
     def wrapped(*args, **kwargs):
         if not current_user.is_admin:
+            abort(403)
+        if not _admin_ip_allowed(request.remote_addr):
             abort(403)
         return view(*args, **kwargs)
 
@@ -45,7 +93,7 @@ def login():
         else:
             login_user(user)
             nxt = request.args.get("next")
-            return redirect(nxt or url_for("views.home"))
+            return redirect(nxt if _is_safe_redirect(nxt) else url_for("views.home"))
 
     return render_template("login.html")
 

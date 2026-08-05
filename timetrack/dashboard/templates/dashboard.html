@@ -15,7 +15,7 @@
     <nav class="daynav">
       <a class="btn" href="?day={{ prev_day }}">&larr;</a>
       <form method="get" class="dayform">
-        <input type="date" name="day" value="{{ day }}" onchange="this.form.submit()" />
+        <input type="date" name="day" value="{{ day }}" data-auto-submit />
       </form>
       <a class="btn" href="?day={{ next_day }}">&rarr;</a>
     </nav>
@@ -24,7 +24,7 @@
   <main class="wrap">
     <section class="cards">
       <div class="card score">
-        <div class="ring" style="--pct: {{ summary.productivity_pct }}">
+        <div class="ring" data-pct="{{ summary.productivity_pct }}">
           <span class="ring-val">{{ summary.productivity_pct }}%</span>
         </div>
         <div class="card-label">Productivity</div>
@@ -58,13 +58,13 @@
       {% if total > 0 %}
       <div class="bar">
         <div class="seg productive"
-             style="width: {{ (100 * summary.productive_seconds / total) }}%"
+             data-width="{{ (100 * summary.productive_seconds / total) }}"
              title="Productive"></div>
         <div class="seg neutral"
-             style="width: {{ (100 * summary.neutral_seconds / total) }}%"
+             data-width="{{ (100 * summary.neutral_seconds / total) }}"
              title="Neutral"></div>
         <div class="seg unproductive"
-             style="width: {{ (100 * summary.unproductive_seconds / total) }}%"
+             data-width="{{ (100 * summary.unproductive_seconds / total) }}"
              title="Unproductive"></div>
       </div>
       <div class="legend">
@@ -103,5 +103,6 @@
       Local database: <code>{{ backend }}</code> &middot; data never leaves your machine.
     </footer>
   </main>
+  <script src="{{ url_for('static', filename='dashboard.js') }}"></script>
 </body>
 </html>

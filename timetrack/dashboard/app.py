@@ -14,7 +14,20 @@ from ..analytics import (
     timeline_buckets,
 )
 from ..config import Config, load_config
+from ..security import init_security_headers
 from ..storage import Storage
+
+DASHBOARD_CSP = (
+    "default-src 'self'; "
+    "base-uri 'self'; "
+    "object-src 'none'; "
+    "frame-ancestors 'self'; "
+    "form-action 'self'; "
+    "img-src 'self' data:; "
+    "script-src 'self'; "
+    "style-src 'self'; "
+    "connect-src 'self'"
+)
 
 
 def _parse_day(value: str | None) -> datetime:
@@ -30,6 +43,7 @@ def create_app(config: Config | None = None) -> Flask:
     cfg = config or load_config()
     app = Flask(__name__)
     app.config["TIMETRACK_CONFIG"] = cfg
+    init_security_headers(app, content_security_policy=DASHBOARD_CSP)
 
     def get_storage() -> Storage:
         return Storage(cfg.db_path)

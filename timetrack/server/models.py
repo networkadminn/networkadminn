@@ -12,6 +12,7 @@ from .extensions import db
 
 ROLE_ADMIN = "admin"
 ROLE_EMPLOYEE = "employee"
+_PASSWORD_SYMBOLS = set("!@#$%^&*()-_=+[]{};:,.?/")
 
 
 def _utcnow() -> datetime:
@@ -20,6 +21,25 @@ def _utcnow() -> datetime:
 
 def generate_token() -> str:
     return secrets.token_urlsafe(32)
+
+
+def validate_password_strength(password: str, *, username: str = "") -> list[str]:
+    """Return validation errors for passwords used by interactive users."""
+
+    errors = []
+    if len(password) < 12:
+        errors.append("use at least 12 characters")
+    if username and username.lower() in password.lower():
+        errors.append("do not include the username")
+    if not any(ch.islower() for ch in password):
+        errors.append("include a lowercase letter")
+    if not any(ch.isupper() for ch in password):
+        errors.append("include an uppercase letter")
+    if not any(ch.isdigit() for ch in password):
+        errors.append("include a number")
+    if not any(ch in _PASSWORD_SYMBOLS for ch in password):
+        errors.append("include a symbol")
+    return errors
 
 
 class User(UserMixin, db.Model):
@@ -46,6 +66,11 @@ class User(UserMixin, db.Model):
 
     # --- helpers ---
     def set_password(self, password: str) -> None:
+        errors = validate_password_strength(password, username=self.username)
+        if errors:
+            raise ValueError(
+                "password does not meet strength requirements: " + "; ".join(errors)
+            )
         self.password_hash = generate_password_hash(password)
 
     def check_password(self, password: str) -> bool:
@@ -106,4 +131,5 @@ __all__ = [
     "ROLE_ADMIN",
     "ROLE_EMPLOYEE",
     "generate_token",
+    "validate_password_strength",
 ]
