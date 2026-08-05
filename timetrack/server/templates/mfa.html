@@ -1,0 +1,18 @@
+{% extends "base.html" %}
+{% block title %}Two-factor &middot; TimeTrack{% endblock %}
+{% block content %}
+<div class="login-wrap">
+  <div class="login-card">
+    <div class="login-brand"><span class="logo">&#9200;</span> TimeTrack</div>
+    <p class="login-sub">Enter the 6-digit code from your authenticator app</p>
+    <form method="post" class="login-form">
+      {% if next %}<input type="hidden" name="next" value="{{ next }}" />{% endif %}
+      <label>Authentication code
+        <input type="text" name="code" inputmode="numeric" autocomplete="one-time-code"
+               pattern="[0-9]*" maxlength="8" autofocus required />
+      </label>
+      <button class="btn primary" type="submit">Verify</button>
+    </form>
+  </div>
+</div>
+{% endblock %}

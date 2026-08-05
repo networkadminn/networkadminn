@@ -37,6 +37,11 @@ class User(UserMixin, db.Model):
     enabled = db.Column(db.Boolean, nullable=False, default=True)
     created_at = db.Column(db.DateTime, default=_utcnow)
 
+    # Two-factor authentication (TOTP). ``totp_secret`` is a base32 seed shared
+    # with the user's authenticator app; MFA is only enforced when enabled.
+    mfa_enabled = db.Column(db.Boolean, nullable=False, default=False)
+    totp_secret = db.Column(db.String(64), default="")
+
     activities = db.relationship(
         "Activity", backref="user", lazy="dynamic", cascade="all, delete-orphan"
     )
@@ -62,6 +67,38 @@ class User(UserMixin, db.Model):
     def rotate_token(self) -> str:
         self.api_token = generate_token()
         return self.api_token
+
+    # --- MFA (TOTP) ---
+    def enable_mfa(self, secret: str | None = None) -> str:
+        """Turn on TOTP MFA, generating a secret if one isn't supplied."""
+        import pyotp
+
+        self.totp_secret = secret or pyotp.random_base32()
+        self.mfa_enabled = True
+        return self.totp_secret
+
+    def disable_mfa(self) -> None:
+        self.mfa_enabled = False
+        self.totp_secret = ""
+
+    def verify_totp(self, code: str) -> bool:
+        """Validate a 6-digit TOTP code (with a +/-1 step window for drift)."""
+        if not self.mfa_enabled or not self.totp_secret:
+            return False
+        code = (code or "").strip().replace(" ", "")
+        if not code:
+            return False
+        import pyotp
+
+        return pyotp.TOTP(self.totp_secret).verify(code, valid_window=1)
+
+    def totp_uri(self, issuer: str = "TimeTrack") -> str:
+        """Return an ``otpauth://`` provisioning URI for authenticator apps."""
+        import pyotp
+
+        return pyotp.TOTP(self.totp_secret).provisioning_uri(
+            name=self.username, issuer_name=issuer
+        )
 
     def __repr__(self) -> str:  # pragma: no cover
         return f"<User {self.username} ({self.role})>"
