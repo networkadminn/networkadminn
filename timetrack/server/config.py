@@ -5,6 +5,9 @@ from __future__ import annotations
 import os
 from dataclasses import dataclass, field
 
+from ..security_headers import DEFAULT_CONTENT_SECURITY_POLICY
+from .security import PASSWORD_MIN_LENGTH
+
 
 def _default_data_dir() -> str:
     return os.environ.get(
@@ -24,6 +27,21 @@ class ServerConfig:
     port: int = 8080
     # Consider a user "online" if seen within this many seconds.
     online_window: float = 300.0
+
+    # --- Security hardening ---
+    # HSTS / CSP / X-Frame-Options / X-Content-Type-Options / Referrer-Policy.
+    # Applied at the app level so they work regardless of hosting (no
+    # server-level / .htaccess access required). See timetrack.security_headers.
+    enable_security_headers: bool = True
+    content_security_policy: str = DEFAULT_CONTENT_SECURITY_POLICY
+    hsts_max_age: int = 63072000  # 2 years
+
+    # Minimum password strength enforced whenever a password is (re)set.
+    password_min_length: int = PASSWORD_MIN_LENGTH
+
+    # Optional IP allow-list (single IPs or CIDR ranges) for the admin
+    # dashboard, e.g. ["10.0.0.0/8", "203.0.113.5"]. Empty = unrestricted.
+    admin_ip_allowlist: list[str] = field(default_factory=list)
 
     def finalize(self) -> "ServerConfig":
         os.makedirs(self.data_dir, exist_ok=True)

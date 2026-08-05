@@ -2,10 +2,12 @@
 
 Usage:
     python -m timetrack.server run                 # start the web server
-    python -m timetrack.server create-user ...      # add an admin/employee
+    python -m timetrack.server     create-user ...      # add an admin/employee
     python -m timetrack.server list-users
     python -m timetrack.server reset-token USERNAME
     python -m timetrack.server set-password USERNAME
+    python -m timetrack.server enable-mfa USERNAME
+    python -m timetrack.server disable-mfa USERNAME
 """
 
 from __future__ import annotations
@@ -17,6 +19,11 @@ import sys
 from .app import create_app
 from .extensions import db
 from .models import ROLE_ADMIN, ROLE_EMPLOYEE, User
+from .security import (
+    WeakPasswordError,
+    generate_mfa_secret,
+    mfa_provisioning_uri,
+)
 
 
 def _app():
@@ -54,7 +61,12 @@ def _cmd_create_user(args: argparse.Namespace) -> int:
             display_name=args.name or "",
             role=ROLE_ADMIN if args.admin else ROLE_EMPLOYEE,
         )
-        user.set_password(password)
+        cfg = app.config["TIMETRACK_SERVER_CONFIG"]
+        try:
+            user.set_password(password, min_length=cfg.password_min_length)
+        except WeakPasswordError as exc:
+            print(str(exc), file=sys.stderr)
+            return 2
         db.session.add(user)
         db.session.commit()
         print(f"created {user.role} {user.username!r}")
@@ -103,9 +115,47 @@ def _cmd_set_password(args: argparse.Namespace) -> int:
         if not password:
             print("password required", file=sys.stderr)
             return 2
-        user.set_password(password)
+        cfg = app.config["TIMETRACK_SERVER_CONFIG"]
+        try:
+            user.set_password(password, min_length=cfg.password_min_length)
+        except WeakPasswordError as exc:
+            print(str(exc), file=sys.stderr)
+            return 2
         db.session.commit()
         print(f"password updated for {user.username!r}")
+    return 0
+
+
+def _cmd_enable_mfa(args: argparse.Namespace) -> int:
+    app = _app()
+    with app.app_context():
+        user = db.session.execute(
+            db.select(User).filter_by(username=args.username)
+        ).scalar_one_or_none()
+        if user is None:
+            print(f"no such user: {args.username!r}", file=sys.stderr)
+            return 1
+        secret = generate_mfa_secret()
+        user.mfa_secret = secret
+        db.session.commit()
+        print(f"MFA enabled for {user.username!r}")
+        print(f"Secret (manual entry): {secret}")
+        print(f"Provisioning URI (for a QR code): {mfa_provisioning_uri(secret, username=user.username)}")
+    return 0
+
+
+def _cmd_disable_mfa(args: argparse.Namespace) -> int:
+    app = _app()
+    with app.app_context():
+        user = db.session.execute(
+            db.select(User).filter_by(username=args.username)
+        ).scalar_one_or_none()
+        if user is None:
+            print(f"no such user: {args.username!r}", file=sys.stderr)
+            return 1
+        user.mfa_secret = None
+        db.session.commit()
+        print(f"MFA disabled for {user.username!r}")
     return 0
 
 
@@ -145,6 +195,18 @@ def build_parser() -> argparse.ArgumentParser:
     spw.add_argument("username")
     spw.add_argument("--password")
     spw.set_defaults(func=_cmd_set_password)
+
+    emfa = sub.add_parser(
+        "enable-mfa", help="enable TOTP two-factor auth for a user's login"
+    )
+    emfa.add_argument("username")
+    emfa.set_defaults(func=_cmd_enable_mfa)
+
+    dmfa = sub.add_parser(
+        "disable-mfa", help="disable TOTP two-factor auth for a user's login"
+    )
+    dmfa.add_argument("username")
+    dmfa.set_defaults(func=_cmd_disable_mfa)
 
     sub.add_parser("init-db", help="create database tables").set_defaults(
         func=_cmd_init_db

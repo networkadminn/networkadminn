@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from flask import Flask
 
+from ..security_headers import install_security_headers
 from .config import ServerConfig
 from .extensions import db, login_manager
 
@@ -25,6 +26,12 @@ def create_app(config: ServerConfig | None = None, **overrides) -> Flask:
 
     db.init_app(app)
     login_manager.init_app(app)
+    install_security_headers(
+        app,
+        enabled=cfg.enable_security_headers,
+        content_security_policy=cfg.content_security_policy,
+        hsts_max_age=cfg.hsts_max_age,
+    )
 
     from .models import User
 

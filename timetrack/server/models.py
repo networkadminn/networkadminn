@@ -9,6 +9,7 @@ from flask_login import UserMixin
 from werkzeug.security import check_password_hash, generate_password_hash
 
 from .extensions import db
+from .security import validate_password_strength, verify_mfa_code
 
 ROLE_ADMIN = "admin"
 ROLE_EMPLOYEE = "employee"
@@ -37,6 +38,9 @@ class User(UserMixin, db.Model):
     enabled = db.Column(db.Boolean, nullable=False, default=True)
     created_at = db.Column(db.DateTime, default=_utcnow)
 
+    # Base32 TOTP secret; NULL/empty means two-factor auth is disabled.
+    mfa_secret = db.Column(db.String(64), nullable=True, default=None)
+
     activities = db.relationship(
         "Activity", backref="user", lazy="dynamic", cascade="all, delete-orphan"
     )
@@ -45,7 +49,22 @@ class User(UserMixin, db.Model):
     )
 
     # --- helpers ---
-    def set_password(self, password: str) -> None:
+    def set_password(
+        self,
+        password: str,
+        *,
+        enforce_policy: bool = True,
+        min_length: int | None = None,
+    ) -> None:
+        """Hash and store ``password``.
+
+        Enforces the minimum password-strength policy by default; pass
+        ``enforce_policy=False`` only for trusted, already-validated input
+        (e.g. migrating existing hashes).
+        """
+        if enforce_policy:
+            kwargs = {} if min_length is None else {"min_length": min_length}
+            validate_password_strength(password, **kwargs)
         self.password_hash = generate_password_hash(password)
 
     def check_password(self, password: str) -> bool:
@@ -54,6 +73,13 @@ class User(UserMixin, db.Model):
     @property
     def is_admin(self) -> bool:
         return self.role == ROLE_ADMIN
+
+    @property
+    def mfa_enabled(self) -> bool:
+        return bool(self.mfa_secret)
+
+    def check_mfa_code(self, code: str) -> bool:
+        return self.mfa_enabled and verify_mfa_code(self.mfa_secret, code)
 
     @property
     def name(self) -> str:
