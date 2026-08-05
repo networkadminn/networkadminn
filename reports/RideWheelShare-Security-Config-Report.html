@@ -1,0 +1,284 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<style>
+  @page { size: A4; margin: 2cm 1.8cm; @bottom-right { content: "Page " counter(page) " of " counter(pages); font-size: 8pt; color: #888; } }
+  body { font-family: Helvetica, Arial, sans-serif; font-size: 9.5pt; color: #1a1a2e; line-height: 1.45; }
+  h1 { font-size: 17pt; color: #16213e; border-bottom: 3px solid #e94560; padding-bottom: 6px; margin-bottom: 2px; }
+  .subtitle { color: #666; font-size: 9pt; margin-bottom: 18px; }
+  h2 { font-size: 12.5pt; color: #16213e; border-bottom: 1px solid #ccc; padding-bottom: 3px; margin-top: 22px; }
+  h3 { font-size: 10.5pt; color: #0f3460; margin-top: 14px; margin-bottom: 5px; }
+  table { border-collapse: collapse; width: 100%; margin: 8px 0; font-size: 8.5pt; }
+  th { background: #16213e; color: #fff; padding: 5px 7px; text-align: left; font-weight: bold; }
+  td { border: 1px solid #d0d0d8; padding: 4px 7px; vertical-align: top; }
+  tr:nth-child(even) td { background: #f4f5f9; }
+  code { font-family: "DejaVu Sans Mono", monospace; font-size: 8pt; background: #eef0f5; padding: 1px 3px; border-radius: 2px; }
+  pre { font-family: "DejaVu Sans Mono", monospace; font-size: 7.8pt; background: #f6f7fb; border: 1px solid #d8dae5; border-left: 4px solid #0f3460; padding: 8px 10px; white-space: pre-wrap; border-radius: 3px; line-height: 1.35; }
+  .warning { background: #fff8e1; border-left: 4px solid #f39c12; padding: 8px 12px; margin: 10px 0; }
+  .info { background: #eaf4fd; border-left: 4px solid #2980b9; padding: 8px 12px; margin: 10px 0; }
+  .ok { color: #1e8449; font-weight: bold; }
+  .partial { color: #d35400; font-weight: bold; }
+  .bad { color: #c0392b; font-weight: bold; }
+  .meta-table td:first-child { font-weight: bold; width: 30%; background: #f0f1f6; }
+  ul, ol { margin: 5px 0; padding-left: 20px; }
+  li { margin-bottom: 3px; }
+  .scope-badge { display: inline-block; font-size: 7.5pt; font-weight: bold; padding: 2px 6px; border-radius: 3px; margin-left: 6px; vertical-align: middle; }
+  .scope-site { background: #d5f5e3; color: #1e8449; }
+  .scope-partial { background: #fdebd0; color: #d35400; }
+  .scope-no { background: #fdecea; color: #c0392b; }
+</style>
+</head>
+<body>
+
+<h1>RideWheelShare &mdash; Hosting Security Configuration Assessment</h1>
+<p class="subtitle">cPanel / WHM Reseller scope analysis &middot; Hosting tier: Reseller 60 &middot; Prepared: 2026-08-05 &middot; For: RideWheelShare Operations Team</p>
+
+<div class="info">
+<b>Purpose of this report:</b> This document records what security hardening controls are achievable within the Reseller 60 cPanel/WHM tier at hosting.com, what requires per-site <code>.htaccess</code> configuration, and what requires escalation to hosting.com&rsquo;s infrastructure team. Items are numbered to match the original security questionnaire.
+</div>
+
+<table class="meta-table">
+  <tr><td>Hosting provider</td><td>hosting.com</td></tr>
+  <tr><td>Reseller tier</td><td>Reseller 60</td></tr>
+  <tr><td>Control panel</td><td>cPanel / WHM</td></tr>
+  <tr><td>Web server</td><td>Apache (mod_headers available per account)</td></tr>
+  <tr><td>Assessment date</td><td>2026-08-05</td></tr>
+</table>
+
+<h2>Summary table</h2>
+
+<table>
+  <tr>
+    <th>#</th>
+    <th>Security control</th>
+    <th>Reseller scope</th>
+    <th>Mechanism</th>
+  </tr>
+  <tr>
+    <td>1</td>
+    <td>HSTS (HTTP Strict Transport Security)</td>
+    <td><span class="partial">Per-site only</span></td>
+    <td><code>.htaccess</code> / cPanel Apache config per account</td>
+  </tr>
+  <tr>
+    <td>2</td>
+    <td>CSP, X-Frame-Options, X-Content-Type-Options</td>
+    <td><span class="ok">Possible per site</span></td>
+    <td><code>.htaccess</code> <code>Header always set</code> directives</td>
+  </tr>
+  <tr>
+    <td>3</td>
+    <td>Referrer-Policy</td>
+    <td><span class="ok">Possible per site</span></td>
+    <td><code>.htaccess</code> <code>Header always set</code> directive</td>
+  </tr>
+  <tr>
+    <td>4</td>
+    <td>SQLi / XSS prevention &amp; WAF (ModSecurity)</td>
+    <td><span class="partial">Partially within scope</span></td>
+    <td>Code-level (developer); ModSecurity toggle via WHM</td>
+  </tr>
+  <tr>
+    <td>5</td>
+    <td>Authentication &amp; access control (MFA, IP restriction)</td>
+    <td><span class="partial">Partially within scope</span></td>
+    <td>WHM 2FA + password policy; IP restriction needs hosting.com for VPN/server-wide</td>
+  </tr>
+</table>
+
+<h2>1. HSTS (HTTP Strict Transport Security)
+  <span class="scope-badge scope-partial">Per-site only</span>
+</h2>
+
+<p>HSTS headers <span class="ok">can</span> be implemented per individual cPanel account (i.e., per hosted website) via <code>.htaccess</code> or Apache configuration within cPanel.</p>
+
+<div class="warning">
+<b>Limitation:</b> The reseller <em>cannot</em> apply HSTS at the server/WHM level &mdash; that requires root/server admin access, which hosting.com retains. Each end-client would need to configure it themselves, or the reseller can do it per account via cPanel&rsquo;s &ldquo;Apache Configuration&rdquo; tools or <code>.htaccess</code>.
+</div>
+
+<p><b>Implementation (per site <code>.htaccess</code>):</b></p>
+<pre># Enable HSTS for 1 year; include subdomains
+Header always set Strict-Transport-Security "max-age=31536000; includeSubDomains; preload"</pre>
+
+<p><b>Prerequisites:</b> The site must already be served exclusively over HTTPS before enabling HSTS. Applying HSTS on an HTTP-only or mixed site will lock users out.</p>
+
+<h2>2. Security headers: CSP, X-Frame-Options, X-Content-Type-Options
+  <span class="scope-badge scope-site">Possible per site</span>
+</h2>
+
+<p>All three headers can be added via <code>.htaccess</code> rules within each individual cPanel account. This is within the reseller&rsquo;s power to configure for their own or their clients&rsquo; sites.</p>
+
+<div class="warning">
+<b>Limitation:</b> Cannot be enforced globally across all accounts from WHM; must be done per-site unless a server-level config change is requested from hosting.com support.
+</div>
+
+<p><b>Implementation (per site <code>.htaccess</code>):</b></p>
+<pre>Header always set X-Frame-Options "SAMEORIGIN"
+Header always set X-Content-Type-Options "nosniff"
+Header always set Content-Security-Policy "default-src 'self'"</pre>
+
+<h3>Header notes</h3>
+<table>
+  <tr><th>Header</th><th>Recommended value</th><th>Purpose</th></tr>
+  <tr>
+    <td><code>X-Frame-Options</code></td>
+    <td><code>SAMEORIGIN</code></td>
+    <td>Prevents clickjacking by blocking the site from being loaded in an <code>&lt;iframe&gt;</code> on a different origin.</td>
+  </tr>
+  <tr>
+    <td><code>X-Content-Type-Options</code></td>
+    <td><code>nosniff</code></td>
+    <td>Stops browsers from MIME-sniffing a response away from the declared content-type.</td>
+  </tr>
+  <tr>
+    <td><code>Content-Security-Policy</code></td>
+    <td><code>default-src 'self'</code> (tighten per app)</td>
+    <td>Controls which origins may load scripts, styles, images, etc. The <code>default-src 'self'</code> value is a starting baseline; adjust to permit CDN assets, inline scripts, etc. as required by the application.</td>
+  </tr>
+</table>
+
+<h2>3. Referrer-Policy
+  <span class="scope-badge scope-site">Possible per site</span>
+</h2>
+
+<p>The <code>Referrer-Policy</code> header can be set per site via <code>.htaccess</code>. This is possible at the individual cPanel account/site level. It is <em>not</em> enforceable globally from WHM without server-level access.</p>
+
+<p><b>Implementation (per site <code>.htaccess</code>):</b></p>
+<pre>Header always set Referrer-Policy "strict-origin-when-cross-origin"</pre>
+
+<table>
+  <tr><th>Policy value</th><th>Behaviour</th></tr>
+  <tr>
+    <td><code>strict-origin-when-cross-origin</code></td>
+    <td>Sends full URL as referrer for same-origin requests; sends only the origin for cross-origin HTTPS&rarr;HTTPS; sends nothing for HTTPS&rarr;HTTP. Recommended default.</td>
+  </tr>
+  <tr>
+    <td><code>no-referrer</code></td>
+    <td>Never sends a referrer header. Maximum privacy; may break analytics.</td>
+  </tr>
+  <tr>
+    <td><code>same-origin</code></td>
+    <td>Sends referrer only for same-origin requests.</td>
+  </tr>
+</table>
+
+<h2>4. SQLi / XSS prevention &amp; WAF
+  <span class="scope-badge scope-partial">Partially within scope</span>
+</h2>
+
+<h3>4.1 Parameterized queries / ORM (SQLi prevention)</h3>
+<p>This is a <b>code-level responsibility</b> of the website/application developer. The reseller has no mechanism to enforce parameterized queries or ORM usage from WHM or cPanel. This must be addressed in application code (Laravel Eloquent, query builder bindings, prepared statements, etc.).</p>
+
+<h3>4.2 Input sanitizing / escaping (XSS prevention)</h3>
+<p>Also <b>code-level</b>, done within the application itself (WordPress plugins, custom PHP, framework template escaping, etc.). The reseller cannot enforce this from the hosting layer.</p>
+
+<h3>4.3 WAF &mdash; ModSecurity</h3>
+<p>cPanel includes <b>ModSecurity</b> (a Web Application Firewall) which can be enabled or configured per account in WHM.</p>
+
+<div class="warning">
+<b>Limitation:</b> Rule management at the server level (e.g., OWASP CRS ruleset updates, custom server-wide rules) is controlled by hosting.com. The reseller can <em>toggle ModSecurity on/off per account</em> in WHM but <em>cannot add custom server-wide rulesets</em> without hosting.com involvement.
+</div>
+
+<table>
+  <tr><th>Action</th><th>Who can do it</th></tr>
+  <tr><td>Enable / disable ModSecurity per cPanel account</td><td><span class="ok">Reseller (WHM)</span></td></tr>
+  <tr><td>Add / update server-wide ModSecurity rulesets</td><td><span class="bad">hosting.com root only</span></td></tr>
+  <tr><td>Add per-site <code>SecRule</code> overrides via <code>.htaccess</code></td><td><span class="partial">Possible if <code>AllowOverride</code> permits; confirm with hosting.com</span></td></tr>
+  <tr><td>Implement parameterized queries / input escaping</td><td><span class="bad">Application developer only</span></td></tr>
+</table>
+
+<h2>5. Authentication &amp; Access Control
+  <span class="scope-badge scope-partial">Partially within scope</span>
+</h2>
+
+<h3>5.1 Strong password policies for admin panels</h3>
+<p>The reseller <span class="ok">can</span> enforce password strength requirements for cPanel accounts via <b>WHM &rsaquo; Password Strength Configuration</b>. This sets a minimum complexity score that end-users must meet when changing their cPanel passwords.</p>
+
+<h3>5.2 Multi-factor authentication (MFA / 2FA)</h3>
+<p>cPanel supports <b>two-factor authentication (2FA)</b> for both WHM and individual cPanel logins. The reseller can enable and enforce this via WHM. Steps:</p>
+<ol>
+  <li>Log in to WHM.</li>
+  <li>Navigate to <b>Security Center &rsaquo; Two-Factor Authentication</b>.</li>
+  <li>Enable 2FA enforcement for all cPanel accounts under the reseller.</li>
+  <li>Each user then registers a TOTP authenticator app (Google Authenticator, Authy, etc.).</li>
+</ol>
+
+<h3>5.3 Restricting admin endpoints by IP / VPN</h3>
+<p>The reseller can use <b>WHM &rsaquo; Host Access Control</b> (TCP Wrappers) to restrict WHM/cPanel access by IP address for their own admin panel.</p>
+
+<div class="warning">
+<b>Limitation:</b> Applying VPN-level restrictions or server-wide IP whitelisting requires coordination with hosting.com&rsquo;s infrastructure team; it is <em>not self-serve</em> at the Reseller 60 tier. The reseller must open a support ticket with hosting.com to request server-level firewall rules (e.g., <code>iptables</code>/<code>firewalld</code> rules that restrict port 2083/2087 to specific IP ranges).
+</div>
+
+<table>
+  <tr><th>Control</th><th>Reseller can self-serve?</th><th>Path</th></tr>
+  <tr>
+    <td>Password strength policy</td>
+    <td><span class="ok">Yes</span></td>
+    <td>WHM &rsaquo; Password Strength Configuration</td>
+  </tr>
+  <tr>
+    <td>2FA for WHM &amp; cPanel</td>
+    <td><span class="ok">Yes</span></td>
+    <td>WHM &rsaquo; Security Center &rsaquo; Two-Factor Authentication</td>
+  </tr>
+  <tr>
+    <td>IP restriction for WHM/cPanel</td>
+    <td><span class="ok">Partial</span></td>
+    <td>WHM &rsaquo; Host Access Control (per-service TCP wrappers)</td>
+  </tr>
+  <tr>
+    <td>VPN-level / server firewall IP whitelisting</td>
+    <td><span class="bad">No &mdash; requires hosting.com</span></td>
+    <td>Submit support ticket to hosting.com infrastructure team</td>
+  </tr>
+</table>
+
+<h2>Consolidated <code>.htaccess</code> template</h2>
+
+<p>The following block can be placed in the <code>public_html/.htaccess</code> of any cPanel-hosted site to apply items 1&ndash;3 in one step. Adjust the CSP policy for each application&rsquo;s asset requirements before deploying.</p>
+
+<pre># -------------------------------------------------------
+# Security headers — RideWheelShare baseline
+# Apply per-site in public_html/.htaccess
+# -------------------------------------------------------
+&lt;IfModule mod_headers.c&gt;
+    # 1. HSTS — requires site to be HTTPS-only first
+    Header always set Strict-Transport-Security "max-age=31536000; includeSubDomains; preload"
+
+    # 2a. Clickjacking protection
+    Header always set X-Frame-Options "SAMEORIGIN"
+
+    # 2b. MIME-type sniffing protection
+    Header always set X-Content-Type-Options "nosniff"
+
+    # 2c. Content Security Policy — tighten for your app
+    Header always set Content-Security-Policy "default-src 'self'"
+
+    # 3. Referrer leakage control
+    Header always set Referrer-Policy "strict-origin-when-cross-origin"
+&lt;/IfModule&gt;</pre>
+
+<div class="warning">
+<b>Before deploying:</b>
+<ul>
+  <li>Verify <code>mod_headers</code> is enabled on the account (it is on by default in most cPanel stacks; hosting.com can confirm).</li>
+  <li>Test the CSP value in report-only mode (<code>Content-Security-Policy-Report-Only</code>) before switching to enforcement to avoid breaking legitimate assets (CDN scripts, fonts, inline styles).</li>
+  <li>Do <em>not</em> set <code>Strict-Transport-Security</code> until the site has a valid TLS certificate and all HTTP traffic is redirected to HTTPS.</li>
+</ul>
+</div>
+
+<h2>Escalation checklist for hosting.com</h2>
+
+<p>Items below cannot be self-served at Reseller 60 tier and require a support ticket or account upgrade:</p>
+
+<ul>
+  <li>Server-wide ModSecurity ruleset management (OWASP CRS updates, custom global rules).</li>
+  <li>Server-level firewall rules to restrict WHM/cPanel ports to specific IP ranges or VPN egress addresses.</li>
+  <li>Global HSTS enforcement at the web server configuration layer (outside <code>.htaccess</code>).</li>
+  <li>Global HTTP&rarr;HTTPS redirect at the virtual host / server config level.</li>
+</ul>
+
+</body>
+</html>
