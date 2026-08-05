@@ -247,3 +247,41 @@ python -m pytest -q
     `python -m timetrack.server reset-token <username>`.
 - Be sure your monitoring complies with local laws and that employees are
   informed.
+
+## Security hardening
+
+Both web apps (team server and local dashboard) apply application-level
+hardening out of the box (`timetrack/security.py`):
+
+- **Security response headers** on every response:
+  - `Strict-Transport-Security: max-age=31536000; includeSubDomains` — sent
+    only on HTTPS responses (including behind a proxy that sets
+    `X-Forwarded-Proto: https`). Disable with `TIMETRACK_HSTS=0`.
+  - `X-Frame-Options: SAMEORIGIN` (clickjacking protection).
+  - `X-Content-Type-Options: nosniff`.
+  - `Content-Security-Policy` — same-origin by default; the team server
+    additionally allows the inline chart scripts and Chart.js from
+    `cdn.jsdelivr.net` that its dashboards use.
+  - `Referrer-Policy: strict-origin-when-cross-origin`.
+- **Session cookies** are `HttpOnly` and `SameSite=Lax`. Set
+  `TIMETRACK_COOKIE_SECURE=1` when serving over HTTPS to also mark them
+  `Secure`.
+- **Password policy** — `create-user` and `set-password` require at least
+  12 characters with lower/upper case letters and a digit.
+- **Admin IP allowlist** — set `TIMETRACK_ADMIN_IP_ALLOWLIST` to a
+  comma-separated list of IPs/CIDRs (e.g. `203.0.113.10,10.0.0.0/8`) to
+  restrict `/admin` pages to those addresses. Empty (default) means no IP
+  restriction. If the server runs behind a reverse proxy, make sure the app
+  sees real client IPs (e.g. via `ProxyFix`) before relying on this.
+- **Open-redirect protection** — the login `?next=` parameter only accepts
+  same-site relative paths.
+- **Injection resistance** — all database access goes through the SQLAlchemy
+  ORM or parameterized SQLite queries (no string-built SQL), and all
+  user-supplied content is escaped by Jinja2 autoescaping.
+
+For Apache/cPanel-hosted deployments, `deploy/htaccess.example` contains
+equivalent per-site `.htaccess` rules (mod_headers) so static files and error
+pages served directly by Apache carry the same headers. Note that on shared
+or reseller hosting these headers, ModSecurity toggles and control-panel 2FA
+apply **per account/site**; server-wide (WHM/root-level) enforcement must be
+requested from the hosting provider.

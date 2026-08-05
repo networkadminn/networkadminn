@@ -1,0 +1,41 @@
+# Security headers for Apache / cPanel deployments (per-site .htaccess).
+#
+# The TimeTrack apps already send these headers themselves, but when you host
+# behind Apache on a cPanel account (where you cannot change server-level
+# config), copy this file to the site's document root as ".htaccess" so the
+# same policy also covers static files, error pages and anything else Apache
+# serves directly.
+#
+# Requires mod_headers (enabled on virtually all cPanel hosts).
+
+<IfModule mod_headers.c>
+  # HSTS: only meaningful over HTTPS; "env=HTTPS" keeps it off plain HTTP.
+  Header always set Strict-Transport-Security "max-age=31536000; includeSubDomains" env=HTTPS
+
+  # Clickjacking protection.
+  Header always set X-Frame-Options "SAMEORIGIN"
+
+  # Disable MIME-type sniffing.
+  Header always set X-Content-Type-Options "nosniff"
+
+  # Content Security Policy matching the TimeTrack dashboards
+  # (inline scripts/styles + Chart.js from jsdelivr).
+  Header always set Content-Security-Policy "default-src 'self'; script-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net; style-src 'self' 'unsafe-inline'; img-src 'self' data:; font-src 'self'; object-src 'none'; frame-ancestors 'self'; base-uri 'self'; form-action 'self'"
+
+  # Limit referrer leakage to other origins.
+  Header always set Referrer-Policy "strict-origin-when-cross-origin"
+</IfModule>
+
+# Optional: redirect all plain-HTTP traffic to HTTPS.
+# <IfModule mod_rewrite.c>
+#   RewriteEngine On
+#   RewriteCond %{HTTPS} !=on
+#   RewriteRule ^ https://%{HTTP_HOST}%{REQUEST_URI} [L,R=301]
+# </IfModule>
+
+# Optional: restrict an admin path by IP (replace with your addresses).
+# <IfModule mod_authz_core.c>
+#   <If "%{REQUEST_URI} =~ m#^/admin#">
+#     Require ip 203.0.113.10 198.51.100.0/24
+#   </If>
+# </IfModule>

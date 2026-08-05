@@ -14,9 +14,23 @@ import argparse
 import getpass
 import sys
 
+from ..security import password_policy_error
 from .app import create_app
 from .extensions import db
 from .models import ROLE_ADMIN, ROLE_EMPLOYEE, User
+
+
+def _checked_password(raw: str | None, prompt: str) -> str | None:
+    """Prompt for / validate a password; return it or None if rejected."""
+    password = raw or getpass.getpass(prompt)
+    if not password:
+        print("password required", file=sys.stderr)
+        return None
+    problem = password_policy_error(password)
+    if problem:
+        print(f"weak password: {problem}", file=sys.stderr)
+        return None
+    return password
 
 
 def _app():
@@ -43,9 +57,8 @@ def _cmd_create_user(args: argparse.Namespace) -> int:
             print(f"user {args.username!r} already exists", file=sys.stderr)
             return 1
 
-        password = args.password or getpass.getpass("Password: ")
-        if not password:
-            print("password required", file=sys.stderr)
+        password = _checked_password(args.password, "Password: ")
+        if password is None:
             return 2
 
         user = User(
@@ -99,9 +112,8 @@ def _cmd_set_password(args: argparse.Namespace) -> int:
         if user is None:
             print(f"no such user: {args.username!r}", file=sys.stderr)
             return 1
-        password = args.password or getpass.getpass("New password: ")
-        if not password:
-            print("password required", file=sys.stderr)
+        password = _checked_password(args.password, "New password: ")
+        if password is None:
             return 2
         user.set_password(password)
         db.session.commit()

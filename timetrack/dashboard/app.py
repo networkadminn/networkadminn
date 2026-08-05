@@ -14,6 +14,7 @@ from ..analytics import (
     timeline_buckets,
 )
 from ..config import Config, load_config
+from ..security import DASHBOARD_CSP, apply_security_headers
 from ..storage import Storage
 
 
@@ -30,6 +31,7 @@ def create_app(config: Config | None = None) -> Flask:
     cfg = config or load_config()
     app = Flask(__name__)
     app.config["TIMETRACK_CONFIG"] = cfg
+    apply_security_headers(app, csp=DASHBOARD_CSP)
 
     def get_storage() -> Storage:
         return Storage(cfg.db_path)

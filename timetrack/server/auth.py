@@ -4,9 +4,19 @@ from __future__ import annotations
 
 from functools import wraps
 
-from flask import Blueprint, abort, flash, redirect, render_template, request, url_for
+from flask import (
+    Blueprint,
+    abort,
+    current_app,
+    flash,
+    redirect,
+    render_template,
+    request,
+    url_for,
+)
 from flask_login import current_user, login_required, login_user, logout_user
 
+from ..security import ip_allowed, is_safe_redirect_target
 from .extensions import db
 from .models import User
 
@@ -14,12 +24,15 @@ auth_bp = Blueprint("auth", __name__)
 
 
 def admin_required(view):
-    """Restrict a view to admin users."""
+    """Restrict a view to admin users (optionally from allowlisted IPs only)."""
 
     @wraps(view)
     @login_required
     def wrapped(*args, **kwargs):
         if not current_user.is_admin:
+            abort(403)
+        allowlist = current_app.config.get("TIMETRACK_ADMIN_IP_NETS")
+        if not ip_allowed(request.remote_addr, allowlist):
             abort(403)
         return view(*args, **kwargs)
 
@@ -45,6 +58,8 @@ def login():
         else:
             login_user(user)
             nxt = request.args.get("next")
+            if not is_safe_redirect_target(nxt):
+                nxt = None
             return redirect(nxt or url_for("views.home"))
 
     return render_template("login.html")

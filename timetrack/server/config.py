@@ -13,6 +13,13 @@ def _default_data_dir() -> str:
     )
 
 
+def _env_flag(name: str, default: bool = False) -> bool:
+    raw = os.environ.get(name)
+    if raw is None:
+        return default
+    return raw.strip().lower() in ("1", "true", "yes", "on")
+
+
 @dataclass
 class ServerConfig:
     data_dir: str = field(default_factory=_default_data_dir)
@@ -24,6 +31,19 @@ class ServerConfig:
     port: int = 8080
     # Consider a user "online" if seen within this many seconds.
     online_window: float = 300.0
+    # Comma/space-separated IPs or CIDR networks allowed to reach /admin.
+    # Empty means no IP restriction.
+    admin_ip_allowlist: str = field(
+        default_factory=lambda: os.environ.get("TIMETRACK_ADMIN_IP_ALLOWLIST", "")
+    )
+    # Mark session cookies Secure (enable when serving over HTTPS).
+    cookie_secure: bool = field(
+        default_factory=lambda: _env_flag("TIMETRACK_COOKIE_SECURE")
+    )
+    # Send Strict-Transport-Security on HTTPS responses.
+    hsts_enabled: bool = field(
+        default_factory=lambda: _env_flag("TIMETRACK_HSTS", default=True)
+    )
 
     def finalize(self) -> "ServerConfig":
         os.makedirs(self.data_dir, exist_ok=True)

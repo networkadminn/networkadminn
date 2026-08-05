@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from flask import Flask
 
+from ..security import SERVER_CSP, apply_security_headers, parse_ip_allowlist
 from .config import ServerConfig
 from .extensions import db, login_manager
 
@@ -21,7 +22,17 @@ def create_app(config: ServerConfig | None = None, **overrides) -> Flask:
         SQLALCHEMY_TRACK_MODIFICATIONS=False,
         MAX_CONTENT_LENGTH=25 * 1024 * 1024,  # 25 MB screenshot cap
         TIMETRACK_SERVER_CONFIG=cfg,
+        # Session-cookie hardening.
+        SESSION_COOKIE_HTTPONLY=True,
+        SESSION_COOKIE_SAMESITE="Lax",
+        SESSION_COOKIE_SECURE=cfg.cookie_secure,
+        REMEMBER_COOKIE_HTTPONLY=True,
+        REMEMBER_COOKIE_SECURE=cfg.cookie_secure,
+        # Parsed once at startup; misconfigured entries raise immediately.
+        TIMETRACK_ADMIN_IP_NETS=parse_ip_allowlist(cfg.admin_ip_allowlist),
     )
+
+    apply_security_headers(app, csp=SERVER_CSP, hsts=cfg.hsts_enabled)
 
     db.init_app(app)
     login_manager.init_app(app)
