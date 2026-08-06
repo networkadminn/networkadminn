@@ -89,13 +89,30 @@ def scan_releases() -> dict:
     windows_exe = pick(
         f"esstracker-Setup-{CLIENT_VERSION}.exe",
         "esstracker-Setup.exe",
-        "esstracker-Agent.exe",
+        f"esstracker-Agent-{CLIENT_VERSION}.exe",
         "esstracker-Agent.exe",
     )
     if not windows_exe:
         for p in sorted(base.glob("esstracker*.exe"), reverse=True):
             windows_exe = _file_info(p)
             break
+
+    # Preferred public artifact: install kit zip (exe + install.ps1 + defaults)
+    windows_zip = pick(
+        f"esstracker-{CLIENT_VERSION}-windows.zip",
+        "esstracker-windows.zip",
+    )
+    if not windows_zip:
+        for p in sorted(base.glob("esstracker*-windows.zip"), reverse=True):
+            windows_zip = _file_info(p)
+            break
+        if not windows_zip:
+            for p in sorted(base.glob("esstracker*windows*.zip"), reverse=True):
+                windows_zip = _file_info(p)
+                break
+
+    windows_file = windows_zip or windows_exe
+    windows_kind = "zip" if windows_zip else ("exe" if windows_exe else None)
 
     mac_arm = pick(
         f"esstracker-{CLIENT_VERSION}-arm64.dmg",
@@ -127,7 +144,10 @@ def scan_releases() -> dict:
         },
         "windows": {
             "exe": windows_exe,
-            "ready": windows_exe is not None,
+            "zip": windows_zip,
+            "file": windows_file,
+            "kind": windows_kind,
+            "ready": windows_file is not None,
         },
         "mac": {
             "arm": mac_arm,

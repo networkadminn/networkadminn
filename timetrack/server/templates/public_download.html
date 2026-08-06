@@ -2,7 +2,7 @@
 {% block title %}Download esstracker · Windows, Mac, Linux{% endblock %}
 {% block head %}
 <meta name="description" content="Download the esstracker employee client for Windows, macOS, and Linux. Install, sign in, track from the tray — Euclidee Software Solutions." />
-<link rel="stylesheet" href="{{ url_for('static', filename='public.css') }}?v=14" />
+<link rel="stylesheet" href="{{ url_for('static', filename='public.css') }}?v=21" />
 {% endblock %}
 {% block body %}
 <div class="pub-page dl-page">
@@ -54,7 +54,7 @@
     <div class="pub-container">
       <div class="dl-grid">
         {# —— Windows —— #}
-        <article class="dl-card" data-os="windows" id="windows">
+        <article class="dl-card{% if releases.windows.ready %} is-ready{% endif %}" data-os="windows" id="windows">
           <header>
             <span class="dl-os-icon" aria-hidden="true">
               <svg viewBox="0 0 24 24" width="28" height="28"><path fill="currentColor" d="M3 5.5 10.5 4.4v7.1H3V5.5zm0 13 7.5 1.1v-7.2H3v6.1zM11.5 4.2 21 3v8.5h-9.5V4.2zm0 16.6L21 22v-8.6h-9.5v7.4z"/></svg>
@@ -63,15 +63,19 @@
               <h2>Windows</h2>
               <p>Windows 10 / 11 · 64-bit</p>
             </div>
+            {% if releases.windows.ready %}<span class="dl-badge">Ready</span>{% endif %}
           </header>
-          {% if releases.windows.ready and releases.windows.exe %}
-          <a class="pub-btn dl-primary" href="{{ url_for('views.download_file', platform='windows', filename=releases.windows.exe.name) }}">
-            Download .exe
-            <small>{{ releases.windows.exe.size_label }}</small>
+          {% if releases.windows.ready and releases.windows.file %}
+          <a class="pub-btn dl-primary" id="windowsDownload" href="{{ url_for('views.download_file', platform='windows', filename=releases.windows.file.name) }}">
+            {% if releases.windows.kind == 'zip' %}Download Windows kit (.zip){% else %}Download .exe{% endif %}
+            <small>{{ releases.windows.file.size_label }}</small>
           </a>
+          {% if releases.windows.kind == 'zip' %}
+          <p class="dl-note">Unzip → right-click <code>install.ps1</code> → Run with PowerShell. Adds Start Menu + tray autostart.</p>
+          {% endif %}
           {% else %}
-          <button class="pub-btn dl-primary" type="button" disabled>Windows .exe — building</button>
-          <p class="dl-note">Installer is produced on a Windows build machine (PyInstaller + client tray). Ask IT or check back shortly.</p>
+          <button class="pub-btn dl-primary" type="button" disabled>Windows kit — coming soon</button>
+          <p class="dl-note">Windows client is built on a Windows PC (<code>packaging\build_windows.ps1</code>), then uploaded to releases. Linux &amp; Mac lanes stay separate.</p>
           {% endif %}
           <ul class="dl-meta">
             <li>Recommended for most PCs</li>
@@ -156,7 +160,7 @@
       <ol class="dl-steps">
         <li>
           <strong>Install</strong>
-          <span>Open the downloaded installer (.exe / .dmg / .deb).</span>
+          <span>Windows: run <code>install.ps1</code> from the zip. Mac: open .dmg → Applications. Linux: install the .deb.</span>
         </li>
         <li>
           <strong>Sign in</strong>
@@ -169,6 +173,10 @@
       </ol>
 
       <div class="dl-cmds">
+        <h3>Windows quick install</h3>
+        <pre><code>Expand the zip, then in that folder:
+powershell -ExecutionPolicy Bypass -File .\install.ps1 -Launch
+# Start → esstracker → Sign in (tray icon in notification area)</code></pre>
         <h3>Linux quick install</h3>
         <pre><code>sudo apt install ./esstracker_*.deb
 # then: Applications → esstracker → Sign in</code></pre>
