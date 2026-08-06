@@ -3,11 +3,13 @@
 from __future__ import annotations
 
 import os
+import sys
 from dataclasses import dataclass, field
 from pathlib import Path
 
 from ..config import Config as _CoreConfig
 from ..config import merge_rules as _merge_rules
+from ..userdirs import config_dir, data_dir, expand_path, install_dir
 
 try:
     import tomllib
@@ -15,18 +17,10 @@ except ModuleNotFoundError:  # pragma: no cover
     tomllib = None  # type: ignore[assignment]
 
 DEFAULT_SERVER_URL = "https://tracker.euclideesolutions.com"
-DEFAULT_BUFFER_PATH = os.path.join(
-    os.path.expanduser("~"), ".local", "share", "esstracker", "agent-buffer.db"
-)
-DEFAULT_SHOTS_DIR = os.path.join(
-    os.path.expanduser("~"), ".local", "share", "esstracker", "agent-shots"
-)
-USER_CONFIG_PATH = Path(
-    os.path.expanduser("~"), ".config", "esstracker", "agent.toml"
-)
-LOCK_PATH = Path(
-    os.path.expanduser("~"), ".local", "share", "esstracker", "agent.lock"
-)
+DEFAULT_BUFFER_PATH = str(data_dir() / "agent-buffer.db")
+DEFAULT_SHOTS_DIR = str(data_dir() / "agent-shots")
+USER_CONFIG_PATH = config_dir() / "agent.toml"
+LOCK_PATH = data_dir() / "agent.lock"
 
 
 @dataclass
@@ -66,32 +60,56 @@ def ensure_data_dirs(cfg: AgentConfig | None = None) -> None:
         Path(cfg.shots_dir).mkdir(parents=True, exist_ok=True)
 
 
+def _defaults_paths() -> list[Path]:
+    """Company defaults.toml locations (deb /etc, Windows next to EXE)."""
+    paths: list[Path] = []
+    inst = install_dir()
+    if inst is not None:
+        paths.append(inst / "defaults.toml")
+    if sys.platform == "win32":
+        progdata = os.environ.get("PROGRAMDATA")
+        if progdata:
+            paths.append(Path(progdata) / "esstracker" / "defaults.toml")
+        local = os.environ.get("LOCALAPPDATA")
+        if local:
+            paths.append(Path(local) / "Programs" / "esstracker" / "defaults.toml")
+    else:
+        paths.append(Path("/etc/esstracker/defaults.toml"))
+    return paths
+
+
 def _candidate_paths() -> list[Path]:
-    home = Path(os.path.expanduser("~"))
     return [
         Path.cwd() / "agent.toml",
         Path.cwd() / "config.toml",
-        home / ".config" / "esstracker" / "agent.toml",
-        home / ".config" / "timetrack" / "agent.toml",
+        config_dir() / "agent.toml",
+        Path(os.path.expanduser("~")) / ".config" / "esstracker" / "agent.toml",
+        Path(os.path.expanduser("~")) / ".config" / "timetrack" / "agent.toml",
         Path("/etc/esstracker/agent.toml"),
-        Path("/etc/esstracker/defaults.toml"),
         Path("/etc/timetrack/agent.toml"),
     ]
 
 
-def load_agent_config(path: str | os.PathLike[str] | None = None) -> AgentConfig:
-    cfg = AgentConfig()
-    # Bake company default from /etc if present before user file
-    defaults = Path("/etc/esstracker/defaults.toml")
-    if defaults.is_file() and tomllib is not None:
+def _apply_defaults_file(cfg: AgentConfig) -> None:
+    if tomllib is None:
+        return
+    for defaults in _defaults_paths():
+        if not defaults.is_file():
+            continue
         try:
             with open(defaults, "rb") as fh:
                 data = tomllib.load(fh)
             agent = data.get("agent", data)
             if agent.get("server_url"):
                 cfg.server_url = str(agent["server_url"])
+            return
         except Exception:
-            pass
+            continue
+
+
+def load_agent_config(path: str | os.PathLike[str] | None = None) -> AgentConfig:
+    cfg = AgentConfig()
+    _apply_defaults_file(cfg)
 
     candidate: Path | None = None
     if path is not None:
@@ -121,8 +139,8 @@ def load_agent_config(path: str | os.PathLike[str] | None = None) -> AgentConfig
         )
         cfg.flush_interval = float(agent.get("flush_interval", cfg.flush_interval))
         cfg.batch_size = int(agent.get("batch_size", cfg.batch_size))
-        cfg.buffer_path = str(agent.get("buffer_path", cfg.buffer_path))
-        cfg.shots_dir = str(agent.get("shots_dir", cfg.shots_dir))
+        cfg.buffer_path = expand_path(str(agent.get("buffer_path", cfg.buffer_path)))
+        cfg.shots_dir = expand_path(str(agent.get("shots_dir", cfg.shots_dir)))
         cfg.rules = _merge_rules(data.get("rules", {}) or {})
         cfg.config_path = str(candidate)
 
@@ -137,7 +155,7 @@ def save_agent_config(cfg: AgentConfig, path: str | os.PathLike[str] | None = No
     """Write agent.toml so next launch needs no setup (DeskTime-style)."""
     dest = Path(path or cfg.config_path or USER_CONFIG_PATH)
     dest.parent.mkdir(parents=True, exist_ok=True)
-    # Escape quotes in token/url for TOML basic strings
+
     def q(s: str) -> str:
         return '"' + s.replace("\\", "\\\\").replace('"', '\\"') + '"'
 

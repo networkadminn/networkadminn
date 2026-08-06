@@ -1803,6 +1803,8 @@ def _serve_shot(shot_id: int, thumb: bool):
         abort(403)
     cfg = current_app.config["TIMETRACK_SERVER_CONFIG"]
     rel = shot.thumb_path if (thumb and shot.thumb_path) else shot.path
+    # Normalize legacy Windows backslash paths stored in the DB.
+    rel = (rel or "").replace("\\", "/")
     directory = os.path.abspath(cfg.screenshots_dir)
     return send_from_directory(directory, rel)
 

@@ -52,6 +52,7 @@ HIDDEN = [
     "PIL",
     "PIL.ImageTk",
     "pystray",
+    "pystray._win32",
     "tkinter",
     "tkinter.ttk",
     "tkinter.messagebox",
@@ -64,7 +65,15 @@ HIDDEN = [
     "xml",
     "xml.etree",
     "xml.etree.ElementTree",
+    "win32api",
+    "win32gui",
+    "win32process",
+    "win32con",
+    "pywintypes",
+    "pythoncom",
 ]
+
+WINDOWS = PACKAGING / "windows"
 
 
 def _run(cmd: list[str], **kwargs) -> None:
@@ -83,6 +92,30 @@ def _sep() -> str:
     return ";" if platform.system() == "Windows" else ":"
 
 
+def _windows_icon() -> Path | None:
+    """Build packaging/windows/esstracker.ico from PNG if needed."""
+    ico = WINDOWS / "esstracker.ico"
+    if ico.is_file():
+        return ico
+    png = ROOT / "timetrack" / "agent" / "assets" / "ess-mark.png"
+    if not png.is_file():
+        png = LINUX / "icons" / "esstracker-256.png"
+    if not png.is_file():
+        return None
+    try:
+        from PIL import Image
+
+        WINDOWS.mkdir(parents=True, exist_ok=True)
+        img = Image.open(png).convert("RGBA")
+        sizes = [(16, 16), (32, 32), (48, 48), (64, 64), (128, 128), (256, 256)]
+        img.save(ico, format="ICO", sizes=sizes)
+        print(f"Wrote Windows icon: {ico}")
+        return ico
+    except Exception as exc:
+        print(f"WARNING: could not build .ico ({exc!r})", file=sys.stderr)
+        return None
+
+
 def build_binaries(*, onefile: bool, apps: tuple[tuple[str, str], ...] | None = None) -> Path:
     """Build PyInstaller binaries for the current platform. Returns output dir."""
     _ensure_pyinstaller()
@@ -97,6 +130,7 @@ def build_binaries(*, onefile: bool, apps: tuple[tuple[str, str], ...] | None = 
 
     sep = _sep()
     selected = apps or APPS
+    win_icon = _windows_icon() if platform.system() == "Windows" else None
     for name, entry in selected:
         cmd = [
             sys.executable,
@@ -119,16 +153,25 @@ def build_binaries(*, onefile: bool, apps: tuple[tuple[str, str], ...] | None = 
             cmd.append("--onefile")
         else:
             cmd.append("--onedir")
-        # Agent: no console window when launched from Applications menu
+        # Agent: no console when launched from Start Menu / Startup
         if name == "timetrack-agent" and platform.system() == "Windows":
             cmd.append("--windowed")
+            if win_icon is not None:
+                cmd.extend(["--icon", str(win_icon)])
+            cmd.extend(["--collect-all", "tkinter", "--collect-all", "pystray"])
         for src, dest in DATAS:
             if Path(src).exists():
                 cmd.extend(["--add-data", f"{src}{sep}{dest}"])
         for mod in HIDDEN:
+            # Skip win32-only modules on non-Windows hosts
+            if platform.system() != "Windows" and mod.startswith(
+                ("win32", "pywintypes", "pythoncom", "pystray._win32")
+            ):
+                continue
             cmd.extend(["--hidden-import", mod])
-        for collect in ("flask", "mss", "jinja2"):
+        for collect in ("flask", "mss", "jinja2", "tzdata"):
             cmd.extend(["--collect-submodules", collect])
+        cmd.extend(["--collect-all", "tzdata"])
         # Login window uses Tk on frozen Linux builds (system gi is ABI-incompatible).
         if name == "timetrack-agent" and platform.system() == "Linux":
             cmd.extend(["--collect-all", "tkinter"])
@@ -429,7 +472,7 @@ def _publish_release(path: Path) -> Path:
 
 
 def build_exe_client() -> Path:
-    """Windows employee client only (tray + login)."""
+    """Windows employee client only (tray + login + install helpers)."""
     if platform.system() != "Windows":
         print(
             "WARNING: building Windows client on non-Windows is not a usable .exe.\n"
@@ -445,9 +488,42 @@ def build_exe_client() -> Path:
         if dst.exists():
             dst.unlink()
         src.rename(dst)
+
+    # Ship company defaults + installer next to the agent (Ubuntu /etc equivalent)
+    defaults = WINDOWS / "defaults.toml"
+    if not defaults.is_file():
+        defaults = LINUX / "defaults.toml"
+    if defaults.is_file():
+        shutil.copy2(defaults, out / "defaults.toml")
+    install_ps1 = WINDOWS / "install.ps1"
+    if install_ps1.is_file():
+        shutil.copy2(install_ps1, out / "install.ps1")
+    uninstall_ps1 = WINDOWS / "uninstall.ps1"
+    if uninstall_ps1.is_file():
+        shutil.copy2(uninstall_ps1, out / "uninstall.ps1")
+    readme = out / "README-WINDOWS.txt"
+    readme.write_text(
+        "esstracker (ESS) — Windows client\n"
+        "=================================\n\n"
+        "1. Right-click install.ps1 → Run with PowerShell\n"
+        "   (or: powershell -ExecutionPolicy Bypass -File .\\install.ps1)\n"
+        "2. Open Start → esstracker → Sign in\n"
+        "3. The ESS icon appears in the system tray (notification area).\n"
+        "4. Autostart at logon is enabled (like Ubuntu xdg-autostart).\n\n"
+        f"Version: {VERSION}\n"
+        "Server: https://tracker.euclideesolutions.com/\n",
+        encoding="utf-8",
+    )
+
     print(f"Windows client: {dst}")
     if dst.exists():
         _publish_release(dst)
+        # Also zip the install kit for the download page
+        kit = DIST / "releases" / f"esstracker-{VERSION}-windows.zip"
+        if kit.exists():
+            kit.unlink()
+        shutil.make_archive(str(kit.with_suffix("")), "zip", out)
+        print(f"Windows install kit: {kit}")
     return dst
 
 

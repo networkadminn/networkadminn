@@ -7,10 +7,12 @@ from dataclasses import dataclass, field
 
 
 def _default_data_dir() -> str:
-    return os.environ.get(
-        "TIMETRACK_SERVER_DATA",
-        os.path.join(os.path.expanduser("~"), ".local", "share", "timetrack-server"),
-    )
+    env = os.environ.get("TIMETRACK_SERVER_DATA")
+    if env:
+        return env
+    from ..userdirs import data_dir
+
+    return str(data_dir("timetrack-server"))
 
 
 @dataclass
@@ -37,8 +39,10 @@ class ServerConfig:
         if not self.secret_key:
             self.secret_key = self._persistent_secret()
         if not self.database_uri:
+            from ..userdirs import sqlite_uri
+
             db_path = os.path.join(self.data_dir, "timetrack-server.db")
-            self.database_uri = f"sqlite:///{db_path}"
+            self.database_uri = sqlite_uri(db_path)
         return self
 
     @property
@@ -55,7 +59,10 @@ class ServerConfig:
         key = secrets.token_hex(32)
         with open(path, "w", encoding="utf-8") as fh:
             fh.write(key)
-        os.chmod(path, 0o600)
+        try:
+            os.chmod(path, 0o600)
+        except OSError:
+            pass
         return key
 
 

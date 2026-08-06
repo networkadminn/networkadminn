@@ -1,0 +1,5 @@
+# Company defaults shipped with the Windows client (DeskTime-style).
+# Employees only need to Sign in — no manual config file.
+
+[agent]
+server_url = "https://tracker.euclideesolutions.com"

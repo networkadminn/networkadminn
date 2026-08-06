@@ -142,6 +142,7 @@ def tray_available() -> bool:
 def _pick_backend() -> str | None:
     """Choose a tray backend that imports without crashing.
 
+    Windows uses the win32 notification-area backend.
     Ubuntu notes
     ------------
     - AppIndicator needs system ``gi`` matching the runtime Python. A frozen
@@ -149,6 +150,22 @@ def _pick_backend() -> str | None:
       back to the X11 ``xorg`` backend (works on Xorg sessions).
     - On GNOME/Wayland try AppIndicator first; always keep ``xorg`` as a last resort.
     """
+    if sys.platform == "win32":
+        preferred = os.environ.get("PYSTRAY_BACKEND", "win32")
+        os.environ["PYSTRAY_BACKEND"] = preferred
+        try:
+            for mod in list(sys.modules):
+                if mod == "pystray" or mod.startswith("pystray."):
+                    del sys.modules[mod]
+            import pystray
+
+            _ = pystray.Icon
+            return preferred
+        except Exception as exc:
+            print(f"[esstracker] tray backend {preferred!r} unavailable: {exc!r}")
+            os.environ.pop("PYSTRAY_BACKEND", None)
+            return None
+
     _ensure_system_gi()
     desktop = (os.environ.get("XDG_CURRENT_DESKTOP") or "").lower()
     session = (os.environ.get("XDG_SESSION_TYPE") or "").lower()
@@ -312,6 +329,11 @@ class AgentTray:
 
         backend = _pick_backend()
         if backend is None:
+            if sys.platform == "win32":
+                raise RuntimeError(
+                    "No system-tray backend available on Windows.\n"
+                    "Install: pip install pystray Pillow pywin32"
+                )
             raise RuntimeError(
                 "No system-tray backend available on this Ubuntu session.\n"
                 "Try an X11 session, or install:\n"

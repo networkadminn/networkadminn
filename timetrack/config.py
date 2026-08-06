@@ -32,18 +32,24 @@ SITES_UNPRODUCTIVE = "sites_unproductive"
 VALID_CATEGORIES = {PRODUCTIVE, UNPRODUCTIVE, NEUTRAL}
 VALID_RULE_KEYS = VALID_CATEGORIES | {SITES_PRODUCTIVE, SITES_UNPRODUCTIVE}
 
-DEFAULT_DB_PATH = os.path.join(
-    os.path.expanduser("~"), ".local", "share", "timetrack", "timetrack.db"
-)
+def _default_db_path() -> str:
+    from .userdirs import data_dir
+
+    return str(data_dir("timetrack") / "timetrack.db")
+
+
+DEFAULT_DB_PATH = _default_db_path()
 
 # Substrings are matched case-insensitively against "<app> <title>".
 DEFAULT_RULES: dict[str, list[str]] = {
     PRODUCTIVE: [
         "code", "vim", "nvim", "emacs", "pycharm", "intellij", "sublime",
         "terminal", "iterm", "konsole", "gnome-terminal", "alacritty", "kitty",
+        "windowsterminal", "wt.exe", "powershell", "pwsh", "cmd.exe",
         "jupyter", "docker", "kubectl", "postman", "dbeaver", "pgadmin",
-        "libreoffice", "word", "excel", "powerpoint", "notion", "obsidian",
-        "github", "gitlab", "stackoverflow", "jira", "confluence",
+        "libreoffice", "word", "excel", "powerpoint", "winword", "notion",
+        "obsidian", "github", "gitlab", "stackoverflow", "jira", "confluence",
+        "outlook", "teams", "slack",
     ],
     UNPRODUCTIVE: [
         "youtube", "netflix", "twitch", "hulu", "disney",
@@ -157,14 +163,20 @@ _merge_rules = merge_rules
 
 
 def default_config_paths() -> list[Path]:
+    from .userdirs import config_dir
+
     return [
         Path.cwd() / "config.toml",
+        config_dir("esstracker") / "config.toml",
+        config_dir("timetrack") / "config.toml",
         Path(os.path.expanduser("~")) / ".config" / "timetrack" / "config.toml",
     ]
 
 
 def load_config(path: str | os.PathLike[str] | None = None) -> Config:
     """Load configuration, falling back to defaults + a discovery search."""
+    from .userdirs import expand_path
+
     cfg = Config(rules=merge_rules({}))
 
     candidate: Path | None = None
@@ -182,7 +194,7 @@ def load_config(path: str | os.PathLike[str] | None = None) -> Config:
     with open(candidate, "rb") as fh:
         data = tomllib.load(fh)
 
-    cfg.db_path = str(data.get("db_path", cfg.db_path))
+    cfg.db_path = expand_path(str(data.get("db_path", cfg.db_path)))
     cfg.poll_interval = float(data.get("poll_interval", cfg.poll_interval))
     cfg.idle_threshold = float(data.get("idle_threshold", cfg.idle_threshold))
     cfg.host = str(data.get("host", cfg.host))

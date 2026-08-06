@@ -77,7 +77,9 @@ def _data_dir() -> Path:
         cfg = current_app.config["TIMETRACK_SERVER_CONFIG"]
         return Path(cfg.data_dir)
     except Exception:
-        return Path(os.path.expanduser("~/.local/share/timetrack-server"))
+        from ..userdirs import data_dir
+
+        return data_dir("timetrack-server")
 
 
 def tenant_root(org: Organization) -> Path:

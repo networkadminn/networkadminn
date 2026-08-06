@@ -408,14 +408,15 @@ def ingest_screenshot():
     tz = zone(company_tz_name())
     day = datetime.fromtimestamp(ts, tz=tz).strftime("%Y-%m-%d")
     org_root = org_screenshot_dir(u.organization_id or 1)
-    rel_dir = os.path.join(str(u.id), day)
-    abs_dir = os.path.join(org_root, rel_dir)
+    # Forward-slash relative paths so Flask send_from_directory works on Windows.
+    rel_dir = f"{u.id}/{day}"
+    abs_dir = os.path.join(org_root, str(u.id), day)
     os.makedirs(abs_dir, exist_ok=True)
 
     name = f"{uuid.uuid4().hex}.jpg"
     # Keep DB path relative to screenshots_dir for existing serve logic
-    rel_path = os.path.join(f"org-{u.organization_id or 1}", rel_dir, name)
-    abs_path = os.path.join(cfg.screenshots_dir, rel_path)
+    rel_path = f"org-{u.organization_id or 1}/{rel_dir}/{name}"
+    abs_path = os.path.join(cfg.screenshots_dir, *rel_path.split("/"))
     os.makedirs(os.path.dirname(abs_path), exist_ok=True)
     data = file.read()
     with open(abs_path, "wb") as fh:
@@ -430,7 +431,7 @@ def ingest_screenshot():
             thumb_name = f"thumb_{name}"
             with open(os.path.join(abs_dir, thumb_name), "wb") as fh:
                 fh.write(thumb)
-            thumb_rel = os.path.join(rel_dir, thumb_name)
+            thumb_rel = f"org-{u.organization_id or 1}/{rel_dir}/{thumb_name}"
     except Exception:
         pass
 

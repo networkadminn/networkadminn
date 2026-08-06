@@ -55,11 +55,26 @@ bash packaging/build_deb_compat.sh
 
 # Windows (on a Windows PC)
 powershell -ExecutionPolicy Bypass -File packaging\build_windows.ps1
+# → dist/windows/esstracker-Agent.exe + install.ps1
+# → dist/releases/esstracker-*-windows.zip
+# Install on an employee PC:
+#   powershell -ExecutionPolicy Bypass -File dist\windows\install.ps1 -Launch
 
 # macOS (on a Mac)
 bash packaging/build_mac.sh
 # then codesign + notarize before public download
 ```
+
+### Windows client (parity with Ubuntu .deb)
+
+| Ubuntu | Windows |
+|--------|---------|
+| Applications → esstracker | Start Menu → esstracker |
+| `/etc/xdg/autostart/…` | Startup folder shortcut |
+| `/etc/esstracker/defaults.toml` | `%LOCALAPPDATA%\Programs\esstracker\defaults.toml` |
+| `~/.config/esstracker/agent.toml` | `%APPDATA%\esstracker\agent.toml` |
+| `~/.local/share/esstracker/` | `%LOCALAPPDATA%\esstracker\` |
+| Tray (AppIndicator / xorg) | Tray (win32 notification area) |
 
 Upload artifacts to the server:
 

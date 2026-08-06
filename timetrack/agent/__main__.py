@@ -13,7 +13,6 @@ from __future__ import annotations
 
 import argparse
 import atexit
-import fcntl
 import os
 import sys
 
@@ -29,13 +28,56 @@ from .config import (
 
 
 _lock_fh = None
+_mutex_handle = None
 
 
 def _acquire_single_instance() -> bool:
     """Only one agent per user (DeskTime-style)."""
-    global _lock_fh
     ensure_data_dirs()
     LOCK_PATH.parent.mkdir(parents=True, exist_ok=True)
+    if sys.platform == "win32":
+        return _acquire_single_instance_windows()
+    return _acquire_single_instance_posix()
+
+
+def _acquire_single_instance_windows() -> bool:
+    """Named mutex — reliable single-instance on Windows."""
+    global _mutex_handle
+    import ctypes
+
+    kernel32 = ctypes.windll.kernel32  # type: ignore[attr-defined]
+    kernel32.SetLastError(0)
+    handle = kernel32.CreateMutexW(None, False, "Local\\esstracker-agent-single-instance")
+    if not handle:
+        return True
+    ERROR_ALREADY_EXISTS = 183
+    if kernel32.GetLastError() == ERROR_ALREADY_EXISTS:
+        kernel32.CloseHandle(handle)
+        return False
+    _mutex_handle = handle
+
+    def _release() -> None:
+        global _mutex_handle
+        if _mutex_handle is not None:
+            try:
+                kernel32.CloseHandle(_mutex_handle)
+            except Exception:
+                pass
+            _mutex_handle = None
+
+    atexit.register(_release)
+    try:
+        LOCK_PATH.write_text(str(os.getpid()), encoding="utf-8")
+    except OSError:
+        pass
+    return True
+
+
+def _acquire_single_instance_posix() -> bool:
+    """fcntl flock — used on Linux/macOS."""
+    global _lock_fh
+    import fcntl
+
     _lock_fh = open(LOCK_PATH, "w", encoding="utf-8")
     try:
         fcntl.flock(_lock_fh.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
