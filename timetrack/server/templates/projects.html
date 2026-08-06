@@ -1,0 +1,131 @@
+{% extends "base.html" %}
+{% block title %}Projects · esstracker{% endblock %}
+{% block content %}
+<div class="page-head">
+  <div>
+    <p class="page-kicker">Tracking</p>
+    <h1>Projects</h1>
+    <p class="page-sub">Log manual time to projects — same idea as esstracker’s project timer.</p>
+  </div>
+</div>
+
+<div class="two-col">
+  <section class="panel">
+    <div class="panel-head"><h2>Log time</h2></div>
+    <form method="post" class="stack-form">
+      <input type="hidden" name="action" value="add_time" />
+      <label>Project
+        <select name="project_id">
+          <option value="">— General / no project —</option>
+          {% for p in projects if p.active %}
+          <option value="{{ p.id }}">{{ p.name }}</option>
+          {% endfor %}
+        </select>
+      </label>
+      <label>Minutes
+        <input type="number" name="minutes" min="1" step="1" value="30" required />
+      </label>
+      <label>Note
+        <input name="note" placeholder="What did you work on?" />
+      </label>
+      <button class="btn primary inline" type="submit">Add time</button>
+    </form>
+  </section>
+
+  {% if current_user.is_admin %}
+  <section class="panel">
+    <div class="panel-head"><h2>New project</h2></div>
+    <form method="post" class="stack-form">
+      <input type="hidden" name="action" value="create_project" />
+      <label>Name
+        <input name="name" required placeholder="Client website" />
+      </label>
+      <label>Description
+        <input name="description" placeholder="Optional" />
+      </label>
+      <label>Color
+        <input type="color" name="color" value="#0d9488" />
+      </label>
+      <button class="btn primary inline" type="submit">Create project</button>
+    </form>
+    <hr class="soft" />
+    <form method="post" class="stack-form">
+      <input type="hidden" name="action" value="create_task" />
+      <label>Add task to project
+        <select name="project_id">
+          {% for p in projects if p.active %}
+          <option value="{{ p.id }}">{{ p.name }}</option>
+          {% endfor %}
+        </select>
+      </label>
+      <label>Task name
+        <input name="task_name" required placeholder="Design / QA / …" />
+      </label>
+      <button class="btn primary inline" type="submit">Add task</button>
+    </form>
+  </section>
+  {% else %}
+  <section class="panel tip-panel">
+    <div class="panel-head"><h2>Tip</h2></div>
+    <p class="muted">Manual time is added on top of automatic esstracker tracking from the agent.</p>
+  </section>
+  {% endif %}
+</div>
+
+<section class="panel">
+  <div class="panel-head">
+    <h2>Projects</h2>
+  </div>
+  {% if projects %}
+  <div class="project-cards">
+    {% for p in projects %}
+    <article class="project-card {% if not p.active %}is-archived{% endif %}">
+      <div class="project-dot" style="background:{{ p.color }}"></div>
+      <div>
+        <strong>{{ p.name }}</strong>
+        <p class="muted">{{ p.description or 'No description' }}</p>
+        <p class="metric-hint">Today: {{ humanize(totals.get(p.id, 0)) }}</p>
+      </div>
+      {% if current_user.is_admin %}
+      <form method="post">
+        <input type="hidden" name="action" value="toggle_project" />
+        <input type="hidden" name="project_id" value="{{ p.id }}" />
+        <button class="btn tiny" type="submit">{% if p.active %}Archive{% else %}Restore{% endif %}</button>
+      </form>
+      {% endif %}
+    </article>
+    {% endfor %}
+  </div>
+  {% else %}
+  <div class="empty-state">
+    <h3>No projects yet</h3>
+    <p>{% if current_user.is_admin %}Create your first project on the right.{% else %}Ask an admin to create projects.{% endif %}</p>
+  </div>
+  {% endif %}
+</section>
+
+<section class="panel">
+  <div class="panel-head">
+    <h2>Today’s manual entries</h2>
+  </div>
+  {% if today_entries %}
+  <table class="apps">
+    <thead>
+      <tr><th>When</th><th>Project</th><th>Note</th><th class="num">Time</th></tr>
+    </thead>
+    <tbody>
+      {% for e in today_entries %}
+      <tr>
+        <td>{{ e.start_ts|clock }}</td>
+        <td>{% if e.project %}{{ e.project.name }}{% else %}General{% endif %}</td>
+        <td>{{ e.note or '—' }}</td>
+        <td class="num">{{ humanize(e.duration) }}</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  {% else %}
+  <p class="empty">No manual time logged today.</p>
+  {% endif %}
+</section>
+{% endblock %}

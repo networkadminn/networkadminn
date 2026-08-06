@@ -3,30 +3,138 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>{% block title %}TimeTrack{% endblock %}</title>
-  <link rel="stylesheet" href="{{ url_for('static', filename='server.css') }}" />
+  <title>{% block title %}esstracker{% endblock %}</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link rel="icon" type="image/png" href="{{ url_for('static', filename='brand/ess-mark.png') }}" />
+  <link rel="stylesheet" href="{{ url_for('static', filename='server.css') }}?v=47" />
   {% block head %}{% endblock %}
 </head>
-<body>
+<body class="{% if current_user.is_authenticated %}app-shell{% else %}auth-shell{% endif %}">
   {% if current_user.is_authenticated %}
-  <header class="topbar">
+  <aside class="sidebar" aria-label="Main">
     <a class="brand" href="{{ url_for('views.home') }}">
-      <span class="logo">&#9200;</span> TimeTrack
-    </a>
-    <nav class="mainnav">
-      {% if current_user.is_admin %}
-      <a href="{{ url_for('views.admin') }}">Team</a>
-      {% endif %}
-      <a href="{{ url_for('views.me') }}">My activity</a>
-    </nav>
-    <div class="userbox">
-      <span class="whoami">
-        {{ current_user.name }}
-        <span class="role {{ current_user.role }}">{{ current_user.role }}</span>
+      <img class="brand-logo" src="{{ url_for('static', filename='brand/ess-mark.png') }}" alt="" />
+      <span class="brand-text">
+        <strong>esstracker</strong>
+        <small>Euclidee</small>
       </span>
-      <a class="btn ghost" href="{{ url_for('auth.logout') }}">Sign out</a>
+    </a>
+
+    <nav class="sidenav">
+      {% if current_user.is_admin %}
+      <a href="{{ url_for('views.admin') }}" class="{% if request.endpoint == 'views.admin' %}is-active{% endif %}">
+        <svg class="nav-ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><rect x="3" y="3" width="7" height="9" rx="1.5"/><rect x="14" y="3" width="7" height="5" rx="1.5"/><rect x="14" y="12" width="7" height="9" rx="1.5"/><rect x="3" y="16" width="7" height="5" rx="1.5"/></svg>
+        Dashboard
+      </a>
+      <a href="{{ url_for('desk.attendance') }}" class="{% if request.endpoint == 'desk.attendance' %}is-active{% endif %}">
+        <svg class="nav-ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><rect x="3" y="4" width="18" height="18" rx="2"/><path d="M16 2v4M8 2v4M3 10h18"/></svg>
+        Absence Calendar
+      </a>
+      <a href="{{ url_for('views.reports') }}" class="{% if request.endpoint == 'views.reports' %}is-active{% endif %}">
+        <svg class="nav-ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path d="M4 19V5"/><path d="M4 19h16"/><path d="M8 15v-4"/><path d="M12 15V8"/><path d="M16 15v-7"/></svg>
+        Reports
+      </a>
+      <a href="{{ url_for('views.screenshots_browser') }}" class="{% if request.endpoint == 'views.screenshots_browser' %}is-active{% endif %}">
+        <svg class="nav-ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><rect x="3" y="5" width="18" height="14" rx="2"/><circle cx="9" cy="11" r="2"/><path d="m21 16-4.5-4.5L7 21"/></svg>
+        Screenshots
+      </a>
+      <a href="{{ url_for('desk.timer_page') }}" class="{% if request.endpoint == 'desk.timer_page' %}is-active{% endif %}">
+        <svg class="nav-ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M10 8l6 4-6 4V8z"/></svg>
+        Project timer
+        {% if timer_running %}<span class="nav-pill live">Live</span>{% endif %}
+      </a>
+      <a href="{{ url_for('views.projects') }}" class="{% if request.endpoint == 'views.projects' %}is-active{% endif %}">
+        <svg class="nav-ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path d="M4 20V10l8-6 8 6v10"/><path d="M9 20v-6h6v6"/></svg>
+        Projects
+      </a>
+      <a href="{{ url_for('desk.offline_fill') }}" class="{% if request.endpoint == 'desk.offline_fill' %}is-active{% endif %}">
+        <svg class="nav-ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path d="M12 5v14"/><path d="M5 12h14"/></svg>
+        Offline time
+      </a>
+
+      <p class="nav-group">Company</p>
+      <a href="{{ url_for('desk.alerts') }}" class="{% if request.endpoint == 'desk.alerts' %}is-active{% endif %}">
+        <svg class="nav-ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path d="M12 9v4"/><path d="M12 17h.01"/><path d="M10.3 4.3 2.6 18a2 2 0 0 0 1.7 3h15.4a2 2 0 0 0 1.7-3L13.7 4.3a2 2 0 0 0-3.4 0z"/></svg>
+        Alerts
+        {% if alert_count %}<span class="nav-pill danger">{{ alert_count }}</span>{% endif %}
+      </a>
+      <a href="{{ url_for('views.employees') }}" class="{% if request.endpoint == 'views.employees' %}is-active{% endif %}">
+        <svg class="nav-ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>
+        Employees
+      </a>
+      <a href="{{ url_for('desk.teams') }}" class="{% if request.endpoint == 'desk.teams' %}is-active{% endif %}">
+        <svg class="nav-ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path d="M3 7h18"/><path d="M3 12h18"/><path d="M3 17h18"/></svg>
+        Teams
+      </a>
+      <a href="{{ url_for('desk.approvals') }}" class="{% if request.endpoint == 'desk.approvals' %}is-active{% endif %}">
+        <svg class="nav-ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path d="M9 11l3 3L22 4"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/></svg>
+        Approvals
+        {% if pending_approvals %}<span class="nav-pill">{{ pending_approvals }}</span>{% endif %}
+      </a>
+      <a href="{{ url_for('views.settings_rules') }}" class="{% if request.endpoint == 'views.settings_rules' %}is-active{% endif %}">
+        <svg class="nav-ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path d="M4 7h16"/><path d="M4 12h10"/><path d="M4 17h7"/></svg>
+        Categories
+      </a>
+      <a href="{{ url_for('desk.company_settings') }}" class="{% if request.endpoint == 'desk.company_settings' %}is-active{% endif %}">
+        <svg class="nav-ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9c.3.6.9 1 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z"/></svg>
+        Settings
+      </a>
+      {% else %}
+      <a href="{{ url_for('views.me') }}" class="{% if request.endpoint == 'views.me' %}is-active{% endif %}">
+        <svg class="nav-ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg>
+        My Day
+      </a>
+      <a href="{{ url_for('desk.offline_fill') }}" class="{% if request.endpoint == 'desk.offline_fill' %}is-active{% endif %}">
+        <svg class="nav-ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path d="M12 5v14"/><path d="M5 12h14"/></svg>
+        Fill time
+      </a>
+      <a href="{{ url_for('desk.my_absence') }}" class="{% if request.endpoint == 'desk.my_absence' %}is-active{% endif %}">
+        <svg class="nav-ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><rect x="3" y="4" width="18" height="18" rx="2"/><path d="M16 2v4M8 2v4M3 10h18"/></svg>
+        Absence calendar
+      </a>
+      <a href="{{ url_for('views.reports', scope='me') }}" class="{% if request.endpoint == 'views.reports' %}is-active{% endif %}">
+        <svg class="nav-ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path d="M4 19V5"/><path d="M4 19h16"/><path d="M8 15v-4"/><path d="M12 15V8"/><path d="M16 15v-7"/></svg>
+        My reports
+      </a>
+      {% endif %}
+    </nav>
+
+    <div class="sidebar-foot">
+      <form method="post" action="{{ url_for('desk.toggle_private') }}" class="private-form">
+        <input type="hidden" name="active" value="{{ '0' if private_active else '1' }}" />
+        <button class="btn ghost block private-btn {% if private_active %}is-on{% endif %}" type="submit" title="Pause tracking">
+          <span class="priv-dot" aria-hidden="true"></span>
+          {% if private_active %}Private Time · ON{% else %}Private Time{% endif %}
+        </button>
+      </form>
+      <a class="btn ghost block signout" href="{{ url_for('auth.logout') }}">Sign out</a>
     </div>
-  </header>
+  </aside>
+
+  <div class="content">
+    <header class="content-top">
+      <div class="content-top-left">
+        {% if timer_running %}
+        <a class="pill live" href="{{ url_for('desk.timer_page') }}">Timer live</a>
+        {% endif %}
+        {% if private_active %}
+        <span class="pill private">Private</span>
+        {% endif %}
+        {% if current_user.is_admin and pending_approvals %}
+        <a class="pill warn" href="{{ url_for('desk.approvals') }}">{{ pending_approvals }} approval{{ 's' if pending_approvals != 1 else '' }}</a>
+        {% endif %}
+      </div>
+      <div class="content-top-right">
+        <div class="top-who">
+          <span class="top-who-meta">
+            <strong>{{ current_user.name }}</strong>
+            <small>{% if current_user.is_admin %}Company admin{% else %}Employee{% endif %}</small>
+          </span>
+          <span class="who-avatar" aria-hidden="true">{{ current_user.name[0]|upper }}</span>
+        </div>
+      </div>
+    </header>
   {% endif %}
 
   {% with messages = get_flashed_messages(with_categories=true) %}
@@ -39,9 +147,15 @@
     {% endif %}
   {% endwith %}
 
+  {% block body %}
   <main class="wrap">
     {% block content %}{% endblock %}
   </main>
+  {% endblock %}
+
+  {% if current_user.is_authenticated %}
+  </div>
+  {% endif %}
   {% block scripts %}{% endblock %}
 </body>
 </html>

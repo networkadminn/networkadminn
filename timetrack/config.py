@@ -3,11 +3,14 @@
 Config is read from a TOML file (Python 3.11+ ships ``tomllib``). If no file
 is found, sensible defaults are used so the tracker works out of the box.
 
-Categories mirror DeskTime's model:
+Categories:
 
 - ``productive``   -> counts positively toward the productivity score
 - ``unproductive`` -> counts negatively
 - ``neutral``      -> ignored by the score (default for unknown apps)
+
+Website/domain rules (``sites_productive`` / ``sites_unproductive``) are
+checked first when a URL/domain can be inferred.
 """
 
 from __future__ import annotations
@@ -24,14 +27,17 @@ except ModuleNotFoundError:  # pragma: no cover
 PRODUCTIVE = "productive"
 UNPRODUCTIVE = "unproductive"
 NEUTRAL = "neutral"
+SITES_PRODUCTIVE = "sites_productive"
+SITES_UNPRODUCTIVE = "sites_unproductive"
 VALID_CATEGORIES = {PRODUCTIVE, UNPRODUCTIVE, NEUTRAL}
+VALID_RULE_KEYS = VALID_CATEGORIES | {SITES_PRODUCTIVE, SITES_UNPRODUCTIVE}
 
 DEFAULT_DB_PATH = os.path.join(
     os.path.expanduser("~"), ".local", "share", "timetrack", "timetrack.db"
 )
 
 # Substrings are matched case-insensitively against "<app> <title>".
-_DEFAULT_RULES: dict[str, list[str]] = {
+DEFAULT_RULES: dict[str, list[str]] = {
     PRODUCTIVE: [
         "code", "vim", "nvim", "emacs", "pycharm", "intellij", "sublime",
         "terminal", "iterm", "konsole", "gnome-terminal", "alacritty", "kitty",
@@ -43,6 +49,40 @@ _DEFAULT_RULES: dict[str, list[str]] = {
         "youtube", "netflix", "twitch", "hulu", "disney",
         "facebook", "instagram", "tiktok", "reddit", "twitter", " x.com",
         "steam", "epicgames", "discord", "9gag", "pinterest",
+    ],
+}
+
+# Domain needles matched against inferred hostname (e.g. youtube.com).
+DEFAULT_SITE_RULES: dict[str, list[str]] = {
+    SITES_PRODUCTIVE: [
+        "docs.google.com",
+        "drive.google.com",
+        "github.com",
+        "gitlab.com",
+        "bitbucket.org",
+        "stackoverflow.com",
+        "notion.so",
+        "figma.com",
+        "atlassian.net",
+        "linear.app",
+        "slack.com",
+        "office.com",
+        "microsoft.com",
+        "chatgpt.com",
+        "claude.ai",
+    ],
+    SITES_UNPRODUCTIVE: [
+        "youtube.com",
+        "netflix.com",
+        "facebook.com",
+        "instagram.com",
+        "tiktok.com",
+        "reddit.com",
+        "twitter.com",
+        "x.com",
+        "twitch.tv",
+        "pinterest.com",
+        "9gag.com",
     ],
 }
 
@@ -58,10 +98,20 @@ class Config:
     host: str = "127.0.0.1"
     port: int = 8000
 
-    def categorize(self, app: str, title: str = "") -> str:
-        """Classify an activity as productive/unproductive/neutral."""
+    def categorize(self, app: str, title: str = "", url: str = "") -> str:
+        """Classify an activity as productive/unproductive/neutral.
+
+        Domain rules win when a website can be inferred; then app/title rules.
+        Unproductive always wins ties.
+        """
+        domain = _activity_domain(app, title, url)
+        if domain:
+            if _domain_matches(domain, self.rules.get(SITES_UNPRODUCTIVE, [])):
+                return UNPRODUCTIVE
+            if _domain_matches(domain, self.rules.get(SITES_PRODUCTIVE, [])):
+                return PRODUCTIVE
+
         haystack = f"{app} {title}".lower()
-        # Unproductive wins ties (e.g. YouTube open in a "productive" browser).
         for category in (UNPRODUCTIVE, PRODUCTIVE):
             for needle in self.rules.get(category, []):
                 if needle.strip().lower() in haystack:
@@ -69,14 +119,41 @@ class Config:
         return NEUTRAL
 
 
-def _merge_rules(user_rules: dict[str, list[str]]) -> dict[str, list[str]]:
-    merged: dict[str, list[str]] = {k: list(v) for k, v in _DEFAULT_RULES.items()}
-    for category, needles in user_rules.items():
-        if category not in VALID_CATEGORIES:
+def _activity_domain(app: str, title: str, url: str = "") -> str:
+    from .monitor import extract_domain, extract_url
+
+    raw = (url or "").strip() or extract_url(app, title)
+    return extract_domain(raw)
+
+
+def _domain_matches(domain: str, needles: list[str]) -> bool:
+    d = (domain or "").lower().lstrip(".")
+    if not d:
+        return False
+    for needle in needles:
+        n = (needle or "").strip().lower().lstrip(".")
+        if not n:
+            continue
+        if d == n or d.endswith("." + n) or n in d:
+            return True
+    return False
+
+
+def merge_rules(user_rules: dict[str, list[str]]) -> dict[str, list[str]]:
+    merged: dict[str, list[str]] = {k: list(v) for k, v in DEFAULT_RULES.items()}
+    for k, v in DEFAULT_SITE_RULES.items():
+        merged[k] = list(v)
+    for category, needles in (user_rules or {}).items():
+        if category not in VALID_RULE_KEYS:
             continue
         merged.setdefault(category, [])
         merged[category].extend(str(n) for n in needles)
     return merged
+
+
+# Back-compat aliases
+_DEFAULT_RULES = DEFAULT_RULES
+_merge_rules = merge_rules
 
 
 def default_config_paths() -> list[Path]:
@@ -88,7 +165,7 @@ def default_config_paths() -> list[Path]:
 
 def load_config(path: str | os.PathLike[str] | None = None) -> Config:
     """Load configuration, falling back to defaults + a discovery search."""
-    cfg = Config(rules=_merge_rules({}))
+    cfg = Config(rules=merge_rules({}))
 
     candidate: Path | None = None
     if path is not None:
@@ -110,7 +187,7 @@ def load_config(path: str | os.PathLike[str] | None = None) -> Config:
     cfg.idle_threshold = float(data.get("idle_threshold", cfg.idle_threshold))
     cfg.host = str(data.get("host", cfg.host))
     cfg.port = int(data.get("port", cfg.port))
-    cfg.rules = _merge_rules(data.get("rules", {}) or {})
+    cfg.rules = merge_rules(data.get("rules", {}) or {})
     return cfg
 
 
@@ -121,6 +198,11 @@ __all__ = [
     "PRODUCTIVE",
     "UNPRODUCTIVE",
     "NEUTRAL",
+    "SITES_PRODUCTIVE",
+    "SITES_UNPRODUCTIVE",
     "VALID_CATEGORIES",
     "DEFAULT_DB_PATH",
+    "DEFAULT_RULES",
+    "DEFAULT_SITE_RULES",
+    "merge_rules",
 ]

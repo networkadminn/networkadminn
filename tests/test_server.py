@@ -43,25 +43,163 @@ def _login(client, username, password):
 
 def test_login_required_redirect(client):
     resp = client.get("/", follow_redirects=False)
-    assert resp.status_code == 302
-    assert "/login" in resp.headers["Location"]
+    assert resp.status_code == 200
+    assert b"Login to Dashboard" in resp.data or b"Login now" in resp.data
+    assert b"Product tour" in resp.data or b"product slides" in resp.data
 
 
 def test_admin_login_sees_team(client):
     resp = _login(client, "boss", "adminpass")
     assert resp.status_code == 200
-    assert b"Team overview" in resp.data
+    assert b"Dashboard" in resp.data
+    assert b"Employees" in resp.data or b"Live now" in resp.data
+    assert b"Total desk time" in resp.data
+    assert b"Late arrivals" in resp.data
+
+
+def test_admin_me_redirects_to_dashboard(client):
+    _login(client, "boss", "adminpass")
+    resp = client.get("/me", follow_redirects=False)
+    assert resp.status_code == 302
+    assert "/admin" in resp.headers["Location"]
+
+
+def test_settings_rules_page(client):
+    _login(client, "boss", "adminpass")
+    resp = client.get("/settings/rules")
+    assert resp.status_code == 200
+    assert b"App &amp; website categories" in resp.data or b"Applications" in resp.data
+
+
+def test_employee_me_page(client):
+    _login(client, "alice", "alicepass")
+    resp = client.get("/me")
+    assert resp.status_code == 200
+    assert b"Productivity timeline" in resp.data or b"Productivity bar" in resp.data
+    assert b"Arrival" in resp.data
+    assert b"Desktime" in resp.data
+
+
+def test_admin_delete_employee(client, app):
+    _login(client, "boss", "adminpass")
+    emp_id = app.config["_EMP_ID"]
+    resp = client.post(
+        "/employees",
+        data={"action": "delete", "user_id": emp_id},
+        follow_redirects=True,
+    )
+    assert resp.status_code == 200
+    assert b"Deleted user alice" in resp.data
+    with app.app_context():
+        assert db.session.get(User, emp_id) is None
+
+
+def test_employee_absence_calendar(client):
+    _login(client, "alice", "alicepass")
+    resp = client.get("/me/absence")
+    assert resp.status_code == 200
+    assert b"Absence calendar" in resp.data
 
 
 def test_employee_cannot_access_admin(client):
     _login(client, "alice", "alicepass")
-    resp = client.get("/admin")
-    assert resp.status_code == 403
+    resp = client.get("/admin", follow_redirects=False)
+    assert resp.status_code == 302
+    assert "/me" in resp.headers["Location"]
+
+
+def test_employee_offline_submit_pending(client, app):
+    from timetrack.server.models import OfflineRequest
+
+    _login(client, "alice", "alicepass")
+    resp = client.get("/offline")
+    assert resp.status_code == 200
+    assert b"Fill offline" in resp.data
+    day = "2026-07-15"
+    resp = client.post(
+        "/offline",
+        data={
+            "day": day,
+            "start": f"{day}T10:00",
+            "end": f"{day}T10:30",
+            "category": "productive",
+            "note": "Client call",
+            "fill_kind": "offline",
+        },
+        follow_redirects=True,
+    )
+    assert resp.status_code == 200
+    assert b"Awaiting admin approval" in resp.data or b"Pending" in resp.data
+    with app.app_context():
+        req = db.session.execute(db.select(OfflineRequest)).scalar_one()
+        assert req.status == "pending"
+        assert req.duration == 1800
+        assert req.note == "Client call"
+
+
+def test_admin_approves_offline_request(client, app):
+    from timetrack.server.models import Activity, OfflineRequest
+
+    _login(client, "alice", "alicepass")
+    day = "2026-07-15"
+    client.post(
+        "/offline",
+        data={
+            "day": day,
+            "start": f"{day}T11:00",
+            "end": f"{day}T11:20",
+            "category": "neutral",
+            "note": "Power cut",
+            "fill_kind": "idle",
+        },
+    )
+    with app.app_context():
+        rid = db.session.execute(db.select(OfflineRequest.id)).scalar_one()
+
+    client.get("/logout", follow_redirects=True)
+    _login(client, "boss", "adminpass")
+    resp = client.post(
+        "/approvals",
+        data={"id": rid, "action": "approve"},
+        follow_redirects=True,
+    )
+    assert resp.status_code == 200
+    assert b"approved" in resp.data.lower()
+    with app.app_context():
+        req = db.session.get(OfflineRequest, rid)
+        assert req.status == "approved"
+        acts = list(
+            db.session.execute(
+                db.select(Activity).filter_by(app="offline", user_id=req.user_id)
+            ).scalars()
+        )
+        assert len(acts) == 1
+        assert acts[0].duration == 1200
 
 
 def test_bad_password(client):
     resp = _login(client, "boss", "wrong")
     assert b"Invalid username or password" in resp.data
+
+
+def test_agent_login_returns_token(client, app):
+    resp = client.post(
+        "/api/v1/agent/login",
+        json={"username": "alice", "password": "alicepass"},
+    )
+    assert resp.status_code == 200
+    data = resp.get_json()
+    assert data["ok"] is True
+    assert data["api_token"] == app.config["_EMP_TOKEN"]
+    assert data["user"] == "alice"
+
+
+def test_agent_login_rejects_bad_password(client):
+    resp = client.post(
+        "/api/v1/agent/login",
+        json={"username": "alice", "password": "nope"},
+    )
+    assert resp.status_code == 401
 
 
 def test_api_requires_token(client):

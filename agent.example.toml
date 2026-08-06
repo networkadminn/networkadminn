@@ -1,11 +1,11 @@
-# TimeTrack agent configuration (copy to agent.toml on each employee machine).
+# esstracker agent configuration (copy to ~/.config/esstracker/agent.toml).
 # Environment variables TIMETRACK_SERVER_URL / TIMETRACK_API_TOKEN override these.
 
 [agent]
-# URL of the central TimeTrack server.
-server_url = "http://your-server:8080"
+# URL of the central esstracker server.
+server_url = "https://tracker.euclideesolutions.com"
 
-# Per-employee API token (from: python -m timetrack.server list-users).
+# Per-employee API token (from admin → employees / create-user).
 api_token = "PASTE-EMPLOYEE-API-TOKEN-HERE"
 
 # Activity sampling cadence (seconds).

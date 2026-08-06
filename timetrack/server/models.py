@@ -1,4 +1,4 @@
-"""SQLAlchemy models for the TimeTrack server."""
+"""SQLAlchemy models for the TimeTrack server (DeskTime-aligned)."""
 
 from __future__ import annotations
 
@@ -13,6 +13,9 @@ from .extensions import db
 ROLE_ADMIN = "admin"
 ROLE_EMPLOYEE = "employee"
 
+PLAN_BUSINESS = "business"
+ORG_ACTIVE = "active"
+
 
 def _utcnow() -> datetime:
     return datetime.now(timezone.utc)
@@ -22,10 +25,53 @@ def generate_token() -> str:
     return secrets.token_urlsafe(32)
 
 
+class Organization(db.Model):
+    """Company workspace (single-tenant by default; org_id scopes data)."""
+
+    __tablename__ = "organizations"
+
+    id = db.Column(db.Integer, primary_key=True)
+    slug = db.Column(db.String(80), unique=True, nullable=False, index=True)
+    name = db.Column(db.String(200), nullable=False)
+    plan = db.Column(db.String(32), nullable=False, default=PLAN_BUSINESS)
+    status = db.Column(db.String(20), nullable=False, default=ORG_ACTIVE)
+    created_at = db.Column(db.DateTime, default=_utcnow)
+    # Legacy SaaS columns kept for existing DBs (unused).
+    trial_ends_at = db.Column(db.DateTime, nullable=True)
+    paid_until = db.Column(db.DateTime, nullable=True)
+    email_confirmed_at = db.Column(db.DateTime, nullable=True)
+    confirm_token = db.Column(db.String(64), unique=True, nullable=True, index=True)
+    billing_email = db.Column(db.String(200), default="")
+    max_seats = db.Column(db.Integer, nullable=False, default=25)
+    tenant_path = db.Column(db.String(300), default="")
+    notes = db.Column(db.Text, default="")
+
+    users = db.relationship("User", backref="organization", lazy="dynamic")
+    teams = db.relationship("Team", backref="organization", lazy="dynamic")
+
+
+class Team(db.Model):
+    __tablename__ = "teams"
+
+    id = db.Column(db.Integer, primary_key=True)
+    organization_id = db.Column(
+        db.Integer, db.ForeignKey("organizations.id"), nullable=False, default=1, index=True
+    )
+    name = db.Column(db.String(120), nullable=False)
+    created_at = db.Column(db.DateTime, default=_utcnow)
+
+    users = db.relationship("User", backref="team", lazy="dynamic")
+
+    __table_args__ = (db.UniqueConstraint("organization_id", "name", name="uq_team_org_name"),)
+
+
 class User(UserMixin, db.Model):
     __tablename__ = "users"
 
     id = db.Column(db.Integer, primary_key=True)
+    organization_id = db.Column(
+        db.Integer, db.ForeignKey("organizations.id"), nullable=False, default=1, index=True
+    )
     username = db.Column(db.String(80), unique=True, nullable=False, index=True)
     email = db.Column(db.String(200), default="")
     display_name = db.Column(db.String(200), default="")
@@ -35,6 +81,11 @@ class User(UserMixin, db.Model):
         db.String(64), unique=True, nullable=False, index=True, default=generate_token
     )
     enabled = db.Column(db.Boolean, nullable=False, default=True)
+    team_id = db.Column(db.Integer, db.ForeignKey("teams.id"), nullable=True)
+    private_time_allowed = db.Column(db.Boolean, nullable=False, default=True)
+    # Per-user screenshot overrides (NULL = use company settings)
+    screenshots_enabled = db.Column(db.Boolean, nullable=True)
+    screenshot_interval = db.Column(db.Integer, nullable=True)
     created_at = db.Column(db.DateTime, default=_utcnow)
 
     activities = db.relationship(
@@ -44,7 +95,6 @@ class User(UserMixin, db.Model):
         "Screenshot", backref="user", lazy="dynamic", cascade="all, delete-orphan"
     )
 
-    # --- helpers ---
     def set_password(self, password: str) -> None:
         self.password_hash = generate_password_hash(password)
 
@@ -63,9 +113,6 @@ class User(UserMixin, db.Model):
         self.api_token = generate_token()
         return self.api_token
 
-    def __repr__(self) -> str:  # pragma: no cover
-        return f"<User {self.username} ({self.role})>"
-
 
 class Activity(db.Model):
     __tablename__ = "activities"
@@ -76,11 +123,14 @@ class Activity(db.Model):
     )
     app = db.Column(db.String(255), nullable=False, default="unknown")
     title = db.Column(db.Text, nullable=False, default="")
+    url = db.Column(db.String(500), nullable=False, default="")
     category = db.Column(db.String(20), nullable=False, default="neutral")
     idle = db.Column(db.Boolean, nullable=False, default=False)
     start_ts = db.Column(db.Float, nullable=False, index=True)
     end_ts = db.Column(db.Float, nullable=False)
     duration = db.Column(db.Float, nullable=False, default=0.0)
+    project_id = db.Column(db.Integer, db.ForeignKey("projects.id"), nullable=True)
+    task_id = db.Column(db.Integer, db.ForeignKey("tasks.id"), nullable=True)
 
 
 class Screenshot(db.Model):
@@ -97,13 +147,189 @@ class Screenshot(db.Model):
     height = db.Column(db.Integer, default=0)
     app = db.Column(db.String(255), default="")
     title = db.Column(db.Text, default="")
+    blurred = db.Column(db.Boolean, nullable=False, default=False)
+    is_unproductive = db.Column(db.Boolean, nullable=False, default=False)
+
+
+class Project(db.Model):
+    __tablename__ = "projects"
+
+    id = db.Column(db.Integer, primary_key=True)
+    organization_id = db.Column(
+        db.Integer, db.ForeignKey("organizations.id"), nullable=False, default=1, index=True
+    )
+    name = db.Column(db.String(200), nullable=False)
+    description = db.Column(db.Text, default="")
+    color = db.Column(db.String(20), default="#0d9488")
+    active = db.Column(db.Boolean, nullable=False, default=True)
+    created_at = db.Column(db.DateTime, default=_utcnow)
+
+    tasks = db.relationship(
+        "Task", backref="project", lazy="dynamic", cascade="all, delete-orphan"
+    )
+    entries = db.relationship(
+        "ManualEntry", backref="project", lazy="dynamic", cascade="all, delete-orphan"
+    )
+
+    __table_args__ = (
+        db.UniqueConstraint("organization_id", "name", name="uq_project_org_name"),
+    )
+
+
+class Task(db.Model):
+    __tablename__ = "tasks"
+
+    id = db.Column(db.Integer, primary_key=True)
+    project_id = db.Column(
+        db.Integer, db.ForeignKey("projects.id"), nullable=False, index=True
+    )
+    name = db.Column(db.String(200), nullable=False)
+    active = db.Column(db.Boolean, nullable=False, default=True)
+    created_at = db.Column(db.DateTime, default=_utcnow)
+
+
+class ManualEntry(db.Model):
+    __tablename__ = "manual_entries"
+
+    id = db.Column(db.Integer, primary_key=True)
+    user_id = db.Column(
+        db.Integer, db.ForeignKey("users.id"), nullable=False, index=True
+    )
+    project_id = db.Column(
+        db.Integer, db.ForeignKey("projects.id"), nullable=True, index=True
+    )
+    task_id = db.Column(db.Integer, db.ForeignKey("tasks.id"), nullable=True)
+    note = db.Column(db.String(500), default="")
+    start_ts = db.Column(db.Float, nullable=False, index=True)
+    end_ts = db.Column(db.Float, nullable=False)
+    duration = db.Column(db.Float, nullable=False, default=0.0)
+    created_at = db.Column(db.DateTime, default=_utcnow)
+
+    user = db.relationship("User", backref=db.backref("manual_entries", lazy="dynamic"))
+    task = db.relationship("Task")
+
+
+class TimerSession(db.Model):
+    """DeskTime-style live project timer (start/stop)."""
+
+    __tablename__ = "timer_sessions"
+
+    id = db.Column(db.Integer, primary_key=True)
+    user_id = db.Column(
+        db.Integer, db.ForeignKey("users.id"), nullable=False, index=True
+    )
+    project_id = db.Column(db.Integer, db.ForeignKey("projects.id"), nullable=True)
+    task_id = db.Column(db.Integer, db.ForeignKey("tasks.id"), nullable=True)
+    note = db.Column(db.String(500), default="")
+    start_ts = db.Column(db.Float, nullable=False, index=True)
+    end_ts = db.Column(db.Float, nullable=True)
+    running = db.Column(db.Boolean, nullable=False, default=True)
+
+    user = db.relationship("User", backref=db.backref("timer_sessions", lazy="dynamic"))
+    project = db.relationship("Project")
+    task = db.relationship("Task")
+
+
+class PrivatePeriod(db.Model):
+    """DeskTime Private Time — tracking paused span."""
+
+    __tablename__ = "private_periods"
+
+    id = db.Column(db.Integer, primary_key=True)
+    user_id = db.Column(
+        db.Integer, db.ForeignKey("users.id"), nullable=False, index=True
+    )
+    start_ts = db.Column(db.Float, nullable=False, index=True)
+    end_ts = db.Column(db.Float, nullable=True)
+    active = db.Column(db.Boolean, nullable=False, default=True)
+
+    user = db.relationship("User", backref=db.backref("private_periods", lazy="dynamic"))
+
+
+class OfflineRequest(db.Model):
+    """Manual fill of idle/offline gap (optionally admin-approved)."""
+
+    __tablename__ = "offline_requests"
+
+    id = db.Column(db.Integer, primary_key=True)
+    user_id = db.Column(
+        db.Integer, db.ForeignKey("users.id"), nullable=False, index=True
+    )
+    start_ts = db.Column(db.Float, nullable=False)
+    end_ts = db.Column(db.Float, nullable=False)
+    duration = db.Column(db.Float, nullable=False, default=0.0)
+    category = db.Column(db.String(20), nullable=False, default="neutral")
+    note = db.Column(db.String(500), default="")
+    status = db.Column(db.String(20), nullable=False, default="approved")
+    # pending | approved | rejected
+    created_at = db.Column(db.DateTime, default=_utcnow)
+
+    user = db.relationship("User", backref=db.backref("offline_requests", lazy="dynamic"))
+
+
+class CompanySettings(db.Model):
+    """Singleton-ish company settings (id=1)."""
+
+    __tablename__ = "company_settings"
+
+    id = db.Column(db.Integer, primary_key=True)
+    organization_id = db.Column(
+        db.Integer, db.ForeignKey("organizations.id"), nullable=False, unique=True, default=1
+    )
+    screenshots_enabled = db.Column(db.Boolean, nullable=False, default=True)
+    screenshot_blur = db.Column(db.Boolean, nullable=False, default=False)
+    screenshot_interval = db.Column(db.Integer, nullable=False, default=300)
+    # seconds base interval; agent randomizes within
+    screenshot_random = db.Column(db.Boolean, nullable=False, default=True)
+    private_time_enabled = db.Column(db.Boolean, nullable=False, default=True)
+    offline_requires_approval = db.Column(db.Boolean, nullable=False, default=False)
+    expected_hours = db.Column(db.Float, nullable=False, default=8.0)
+    expected_arrival_hour = db.Column(db.Float, nullable=False, default=9.5)
+    # Office window (IST by default). expected_arrival_hour stays in sync with start.
+    office_start_hour = db.Column(db.Float, nullable=False, default=9.5)
+    office_end_hour = db.Column(db.Float, nullable=False, default=18.5)
+    # Comma-separated Python weekdays: 0=Mon … 6=Sun. Default Mon–Fri.
+    work_days = db.Column(db.String(32), nullable=False, default="0,1,2,3,4")
+    timezone = db.Column(db.String(64), nullable=False, default="Asia/Kolkata")
+    company_name = db.Column(db.String(200), nullable=False, default="Euclidee Software Solutions Private Limited")
+    # Seconds without keyboard/mouse before agent marks idle (DeskTime default ~180).
+    idle_threshold = db.Column(db.Integer, nullable=False, default=180)
+
+
+class PasswordResetToken(db.Model):
+    """One-time password reset links emailed to the user."""
+
+    __tablename__ = "password_reset_tokens"
+
+    id = db.Column(db.Integer, primary_key=True)
+    user_id = db.Column(
+        db.Integer, db.ForeignKey("users.id"), nullable=False, index=True
+    )
+    token = db.Column(db.String(64), unique=True, nullable=False, index=True)
+    created_at = db.Column(db.DateTime, default=_utcnow)
+    expires_at = db.Column(db.DateTime, nullable=False)
+    used_at = db.Column(db.DateTime, nullable=True)
+
+    user = db.relationship("User", backref=db.backref("reset_tokens", lazy="dynamic"))
 
 
 __all__ = [
+    "Organization",
+    "Team",
     "User",
     "Activity",
     "Screenshot",
+    "Project",
+    "Task",
+    "ManualEntry",
+    "TimerSession",
+    "PrivatePeriod",
+    "OfflineRequest",
+    "CompanySettings",
+    "PasswordResetToken",
     "ROLE_ADMIN",
     "ROLE_EMPLOYEE",
+    "PLAN_BUSINESS",
+    "ORG_ACTIVE",
     "generate_token",
 ]

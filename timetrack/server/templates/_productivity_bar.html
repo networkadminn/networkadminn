@@ -1,0 +1,172 @@
+{# Productivity bar — 5-min columns (stacked categories + presence) #}
+{% set bar_columns = bar_columns|default([]) %}
+{% set bar_away_regions = bar_away_regions|default([]) %}
+{% set presence_tracks = presence_tracks|default([]) %}
+{% set bar_hour_ticks = bar_hour_ticks|default([]) %}
+{% set bar_mode = bar_mode|default('day') %}
+<section class="panel prod-bar-v7{% if compact %} is-compact{% endif %}{% if clickable_gaps %} is-self{% endif %}"
+         id="prodBarPanel"
+         data-clickable="{{ '1' if clickable_gaps else '0' }}"
+         data-gap-base="{{ url_for('desk.offline_fill', day=day) }}"
+         data-now-pct="{{ now_pct if now_pct is not none else '' }}"
+         data-bar-mode="{{ bar_mode }}">
+  <div class="pb7-head">
+    <div class="pb7-head-left">
+      <h2>Productivity bar</h2>
+      <p class="pb7-sub">
+        {{ bar_view_label|default('Day') }} · 5-min blocks · {{ office_hours_label }}
+        {% if tz_name == 'Asia/Kolkata' %} · IST{% endif %}
+      </p>
+    </div>
+    <div class="pb7-head-right">
+      <div class="pb7-range" role="group" aria-label="Bar time range">
+        <a class="pb7-range-btn{% if bar_mode == 'work' %} is-on{% endif %}"
+           href="?day={{ day }}&bar=work"
+           title="Focus on office hours">Work hours</a>
+        <a class="pb7-range-btn{% if bar_mode == 'day' %} is-on{% endif %}"
+           href="?day={{ day }}&bar=day"
+           title="Show midnight to midnight">Full day</a>
+      </div>
+      <ul class="pb7-legend" aria-label="Activity types">
+        <li><i class="productive"></i> Productive</li>
+        <li><i class="neutral"></i> Neutral</li>
+        <li><i class="unproductive"></i> Low</li>
+        <li><i class="idle"></i> Idle</li>
+        {% if clickable_gaps %}
+        <li><i class="gap"></i> Fillable</li>
+        {% endif %}
+      </ul>
+    </div>
+  </div>
+
+  <div class="pb7-stats" aria-label="Day productivity summary">
+    <div class="pb7-stat">
+      <span>Productivity</span>
+      <strong>{{ (dt_productivity or 0)|round(0)|int }}%</strong>
+    </div>
+    <div class="pb7-stat">
+      <span>Desk time</span>
+      <strong>{{ humanize(desktime_seconds or 0) }}</strong>
+    </div>
+    <div class="pb7-stat">
+      <span>Idle</span>
+      <strong>{{ humanize(summary.idle_seconds or 0) }}</strong>
+    </div>
+    {% if gaps and clickable_gaps %}
+    <div class="pb7-stat warn">
+      <span>Gaps to fill</span>
+      <strong>{{ gaps|length }}</strong>
+    </div>
+    {% endif %}
+  </div>
+
+  <div class="pb7-body">
+    <div class="pb7-yaxis" aria-hidden="true">
+      <span>100%</span><span>75%</span><span>50%</span><span>25%</span><span>0%</span>
+    </div>
+    <div class="pb7-main">
+      <div class="pb7-scroll" id="prodBarScroll">
+        <div class="pb7-chart">
+          <div class="pb7-plot" id="prodPlot" role="img" aria-label="Productivity bar for {{ day }}"
+               data-view-start="{{ view_start_ts|default(0) }}"
+               data-view-end="{{ view_end_ts|default(0) }}">
+            <div class="pb7-grid-h" aria-hidden="true">
+              <i style="bottom:75%"></i><i style="bottom:50%"></i><i style="bottom:25%"></i>
+            </div>
+            <div class="pb7-grid-v" aria-hidden="true">
+              {% for t in bar_hour_ticks %}<i style="left:{{ t.left }}%"></i>{% endfor %}
+            </div>
+            <div class="pb7-office" style="left:{{ office_left_pct }}%;width:{{ office_width_pct }}%"
+                 title="Office hours {{ office_hours_label }}"></div>
+            {% for region in bar_away_regions %}
+            <div class="pb7-away {{ region.kind }}" style="left:{{ region.left }}%;width:{{ region.width }}%"></div>
+            {% endfor %}
+            {% if is_today and now_pct is not none %}
+            <div class="pb7-now" style="left:{{ now_pct }}%"><span>Now</span></div>
+            {% endif %}
+            <div class="pb7-cols">
+              {% for col in bar_columns %}
+              {% set tip_time = col.label ~ ('–' ~ col.label_end if col.label_end and col.label_end != col.label else '') %}
+              {% if col.fillable and clickable_gaps and not col.active %}
+              <a class="pb7-col fillable" style="left:{{ col.left }}%;width:{{ col.width }}%"
+                 href="{{ url_for('desk.offline_fill', day=day, start=col.gap_start, end=col.gap_end) }}"
+                 data-tip="{{ tip_time }}|gap"
+                 aria-label="Fill gap {{ tip_time }}"></a>
+              {% elif col.requested and not col.active %}
+              <div class="pb7-col requested" style="left:{{ col.left }}%;width:{{ col.width }}%;--i:{{ loop.index0 }}"
+                   data-tip="{{ tip_time }}|requested"
+                   title="Time request submitted"></div>
+              {% elif col.active or col.fillable %}
+              <div class="pb7-col cat-{{ col.category }}{% if col.fillable %} fillable{% endif %}"
+                   style="left:{{ col.left }}%;width:{{ col.width }}%;--i:{{ loop.index0 }}"
+                   data-tip="{{ tip_time }}|{{ col.productive_m }}|{{ col.neutral_m }}|{{ col.unproductive_m }}|{{ col.idle_m }}|{{ col.productivity|default(col.quality) }}|{{ col.category }}|{{ col.top_app|default('') }}|{{ col.top_domain|default('') }}{% if col.fillable %}|gap{% endif %}"
+                   {% if col.fillable and clickable_gaps %}
+                   role="link" tabindex="0"
+                   data-href="{{ url_for('desk.offline_fill', day=day, start=col.gap_start, end=col.gap_end) }}"
+                   {% endif %}>
+                {% if col.height_pct|default(0) > 0 %}
+                <span class="pb7-stack" style="height:{{ col.height_pct }}%" aria-hidden="true">
+                  {% if col.stack_i > 0 %}<i class="idle" style="flex:{{ col.stack_i }}"></i>{% endif %}
+                  {% if col.stack_u > 0 %}<i class="u" style="flex:{{ col.stack_u }}"></i>{% endif %}
+                  {% if col.stack_n > 0 %}<i class="n" style="flex:{{ col.stack_n }}"></i>{% endif %}
+                  {% if col.stack_p > 0 %}<i class="p" style="flex:{{ col.stack_p }}"></i>{% endif %}
+                </span>
+                {% endif %}
+              </div>
+              {% endif %}
+              {% else %}
+              <div class="pb7-empty">No activity yet — start the desktop agent to track your day.</div>
+              {% endfor %}
+            </div>
+          </div>
+
+          <div class="pb7-footer">
+            {% if presence_tracks %}
+            <div class="pb7-tracks" aria-hidden="true">
+              <div class="pb7-track">
+                <span class="pb7-track-label"><i class="presence"></i> Active</span>
+                <div class="pb7-track-rail presence">
+                  {% for t in presence_tracks %}
+                  <i style="left:{{ t.left }}%;width:{{ t.width }}%"></i>
+                  {% endfor %}
+                </div>
+              </div>
+              <div class="pb7-track">
+                <span class="pb7-track-label"><i class="schedule"></i> Office</span>
+                <div class="pb7-track-rail schedule">
+                  <i style="left:{{ office_left_pct }}%;width:{{ office_width_pct }}%"></i>
+                </div>
+              </div>
+            </div>
+            {% endif %}
+            <div class="pb7-axis" aria-hidden="true">
+              {% for t in bar_hour_ticks %}
+              <span class="{% if t.major|default(true) %}is-major{% endif %}{% if t.edge %} is-{{ t.edge }}{% endif %}"
+                    style="left:{{ t.left }}%">{{ t.label }}</span>
+              {% endfor %}
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="pb7-tip" id="prodFloatTip" hidden></div>
+
+  {% if gaps and clickable_gaps %}
+  <div class="gap-chips pb7-gaps" aria-label="Fillable gaps">
+    <p class="pb7-gaps-label">Click a gap (or chip) to request offline / idle time</p>
+    {% for g in gaps %}
+    <a class="gap-chip" href="{{ url_for('desk.offline_fill', day=day, start=g.start, end=g.end) }}">
+      <strong>{{ g.label_start }}–{{ g.label_end }}</strong>
+      <span>{{ humanize(g.duration) }}</span>
+      <em>Fill</em>
+    </a>
+    {% endfor %}
+  </div>
+  {% endif %}
+
+  {% if extra_hint %}
+  <p class="metric-hint prod-extra-hint">{{ extra_hint }}</p>
+  {% endif %}
+</section>

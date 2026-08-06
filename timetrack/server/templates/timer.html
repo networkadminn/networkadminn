@@ -1,0 +1,85 @@
+{% extends "base.html" %}
+{% block title %}Project timer · esstracker{% endblock %}
+{% block content %}
+<div class="page-head">
+  <div>
+    <p class="page-kicker">My Day</p>
+    <h1>Project timer</h1>
+    <p class="page-sub">Start and stop live project tracking — the web twin of esstracker’s tray timer.</p>
+  </div>
+</div>
+
+{% if running %}
+<section class="panel timer-live">
+  <div class="timer-badge live">Tracking now</div>
+  <div class="timer-clock" id="live-timer" data-start="{{ running.start_ts }}">{{ humanize(elapsed) }}</div>
+  <p class="timer-project">
+    {% if running.project %}{{ running.project.name }}{% else %}General{% endif %}
+    {% if running.task %}<span class="timer-task">{{ running.task.name }}</span>{% endif %}
+  </p>
+  {% if running.note %}<p class="muted">{{ running.note }}</p>{% endif %}
+  <form method="post">
+    <input type="hidden" name="action" value="stop" />
+    <button class="btn primary inline warn-btn" type="submit">Stop timer</button>
+  </form>
+</section>
+{% else %}
+<section class="panel timer-start">
+  <div class="panel-head">
+    <h2>Start a timer</h2>
+    <span class="muted">Chooses what the agent attributes time to</span>
+  </div>
+  <form method="post" class="stack-form timer-form">
+    <input type="hidden" name="action" value="start" />
+    <div class="timer-fields">
+      <label>Project
+        <select name="project_id" id="project-select">
+          <option value="">— General —</option>
+          {% for p in projects %}
+          <option value="{{ p.id }}">{{ p.name }}</option>
+          {% endfor %}
+        </select>
+      </label>
+      <label>Task
+        <select name="task_id" id="task-select">
+          <option value="">— None —</option>
+        </select>
+      </label>
+    </div>
+    <label>Note
+      <input name="note" placeholder="What are you working on?" />
+    </label>
+    <button class="btn primary inline" type="submit">Start timer</button>
+  </form>
+</section>
+{% endif %}
+{% endblock %}
+{% block scripts %}
+<script>
+  const tasksByProject = {{ tasks_by_project|tojson }};
+  const projectSelect = document.getElementById("project-select");
+  const taskSelect = document.getElementById("task-select");
+  if (projectSelect && taskSelect) {
+    function refill() {
+      const pid = projectSelect.value;
+      taskSelect.innerHTML = '<option value="">— None —</option>';
+      (tasksByProject[pid] || []).forEach(t => {
+        const o = document.createElement("option");
+        o.value = t.id; o.textContent = t.name;
+        taskSelect.appendChild(o);
+      });
+    }
+    projectSelect.addEventListener("change", refill);
+  }
+  const el = document.getElementById("live-timer");
+  if (el) {
+    const start = parseFloat(el.dataset.start);
+    setInterval(() => {
+      const s = Math.floor(Date.now()/1000 - start);
+      const h = Math.floor(s/3600), m = Math.floor((s%3600)/60), sec = s%60;
+      const pad = n => String(n).padStart(2, "0");
+      el.textContent = h ? `${h}:${pad(m)}:${pad(sec)}` : `${pad(m)}:${pad(sec)}`;
+    }, 1000);
+  }
+</script>
+{% endblock %}

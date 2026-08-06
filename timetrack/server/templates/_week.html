@@ -1,0 +1,12 @@
+<nav class="week-strip" aria-label="Week">
+  {% for d in week %}
+  <a class="week-day {% if d.is_selected %}is-selected{% endif %} {% if d.is_today %}is-today{% endif %}"
+     href="?day={{ d.day }}{% if team_id is defined and team_id %}&team_id={{ team_id }}{% endif %}"
+     title="{{ d.human }} · {{ d.pct }}%">
+    <span class="wd-label">{{ d.label }}</span>
+    <span class="wd-num">{{ d.date_num }}</span>
+    <span class="wd-bar"><i style="height: {{ [d.pct, 8]|max }}%"></i></span>
+    <span class="wd-pct">{{ d.pct|int }}%</span>
+  </a>
+  {% endfor %}
+</nav>

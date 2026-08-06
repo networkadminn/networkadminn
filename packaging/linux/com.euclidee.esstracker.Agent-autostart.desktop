@@ -1,0 +1,12 @@
+[Desktop Entry]
+Type=Application
+Version=1.0
+Name=esstracker (autostart)
+Comment=Start ESS employee tracker in the notification area
+Exec=esstracker-agent run
+Icon=esstracker
+Terminal=false
+Categories=Office;Utility;
+X-GNOME-Autostart-enabled=true
+X-GNOME-UsesNotifications=true
+NoDisplay=true

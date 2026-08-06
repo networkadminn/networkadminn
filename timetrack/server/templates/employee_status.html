@@ -1,0 +1,114 @@
+{% extends "base.html" %}
+{% block title %}My Day · esstracker{% endblock %}
+{% block content %}
+<div class="emp-day dash-v2">
+  <header class="dash-top">
+    <div class="dash-top-left">
+      <p class="dash-kicker">Your workspace</p>
+      <div class="dash-title-row">
+        <h1>My Day</h1>
+        <div class="dash-badges">
+          <span class="btn-daily">{{ office_hours_label }}</span>
+          {% if off_day %}<span class="pill">Off day</span>
+          {% elif absent %}<span class="pill warn">Absent</span>
+          {% elif late %}<span class="pill warn">Late</span>{% endif %}
+          {% if is_online %}<span class="pill live">Online</span>{% endif %}
+        </div>
+      </div>
+    </div>
+    <div class="dash-top-right">
+      <nav class="dt-date-nav" aria-label="Choose day">
+        <a class="dt-date-arrow" href="?day={{ prev_day }}&bar={{ bar_mode|default('work') }}" aria-label="Previous day">&larr;</a>
+        <form method="get" class="dt-date-form">
+          <input type="hidden" name="bar" value="{{ bar_mode|default('work') }}" />
+          <label class="dt-date-label">
+            <span>{{ day_label }}</span>
+            <input type="date" name="day" value="{{ day }}" onchange="this.form.submit()" />
+          </label>
+        </form>
+        <a class="dt-date-arrow" href="?day={{ next_day }}&bar={{ bar_mode|default('work') }}" aria-label="Next day">&rarr;</a>
+      </nav>
+      <a class="btn tiny" href="{{ url_for('desk.my_absence', day=day) }}">Absence</a>
+      <a class="btn tiny" href="{{ url_for('views.reports', scope='me', day=day) }}">Reports</a>
+      <a class="btn primary inline" href="{{ url_for('desk.offline_fill', day=day) }}">Fill gap</a>
+    </div>
+  </header>
+
+  {% include "_day_metrics.html" %}
+
+  {% set clickable_gaps = true %}
+  {% set compact = false %}
+  {% set extra_hint = none %}
+  {% include "_productivity_bar.html" %}
+
+  {% set cat_total = (summary.productive_seconds + summary.neutral_seconds + summary.unproductive_seconds + summary.idle_seconds) or 1 %}
+  <div class="two-col dash-admin-cols emp-day-bottom">
+    <section class="panel dash-panel emp-requests">
+      <div class="panel-head">
+        <div>
+          <h2>Offline / idle requests</h2>
+          <p class="emp-section-sub">Fill gaps when you were working offline or idle.</p>
+        </div>
+        <a class="btn tiny" href="{{ url_for('desk.offline_fill', day=day) }}">Add manually</a>
+      </div>
+      {% if my_requests %}
+      <div class="emp-req-grid">
+        {% for r in my_requests %}
+        <article class="emp-req-card status-{{ r.status }}">
+          <header>
+            <strong>{{ r.start_ts|clock }} – {{ r.end_ts|clock }}</strong>
+            {% if r.status == 'pending' %}<span class="pill warn">Pending</span>
+            {% elif r.status == 'approved' %}<span class="pill live">Approved</span>
+            {% else %}<span class="pill">Rejected</span>{% endif %}
+          </header>
+          <p>{{ r.note or 'No note' }}</p>
+          <footer>
+            <span class="tag {{ r.category }}">{{ r.category }}</span>
+            <span class="muted">{{ humanize(r.duration) }}</span>
+          </footer>
+        </article>
+        {% endfor %}
+      </div>
+      {% else %}
+      <div class="empty-state compact emp-empty">
+        <h3>No requests today</h3>
+        <p>Click striped gaps on the productivity bar to fill offline or idle time.</p>
+      </div>
+      {% endif %}
+    </section>
+
+    <section class="panel dash-panel emp-cat-panel">
+      <div class="panel-head">
+        <h2>Time breakdown</h2>
+        <span class="muted">today’s mix</span>
+      </div>
+      <div class="emp-cat-list">
+        <div class="emp-cat-row">
+          <span class="emp-cat-label"><i class="productive"></i> Productive</span>
+          <div class="emp-cat-bar"><i class="productive" style="width:{{ (100 * summary.productive_seconds / cat_total)|round(1) }}%"></i></div>
+          <strong>{{ humanize(summary.productive_seconds) }}</strong>
+        </div>
+        <div class="emp-cat-row">
+          <span class="emp-cat-label"><i class="neutral"></i> Neutral</span>
+          <div class="emp-cat-bar"><i class="neutral" style="width:{{ (100 * summary.neutral_seconds / cat_total)|round(1) }}%"></i></div>
+          <strong>{{ humanize(summary.neutral_seconds) }}</strong>
+        </div>
+        <div class="emp-cat-row">
+          <span class="emp-cat-label"><i class="unproductive"></i> Low productive</span>
+          <div class="emp-cat-bar"><i class="unproductive" style="width:{{ (100 * summary.unproductive_seconds / cat_total)|round(1) }}%"></i></div>
+          <strong>{{ humanize(summary.unproductive_seconds) }}</strong>
+        </div>
+        <div class="emp-cat-row">
+          <span class="emp-cat-label"><i class="idle"></i> Idle</span>
+          <div class="emp-cat-bar"><i class="idle" style="width:{{ (100 * summary.idle_seconds / cat_total)|round(1) }}%"></i></div>
+          <strong>{{ humanize(summary.idle_seconds) }}</strong>
+        </div>
+      </div>
+    </section>
+  </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script src="{{ url_for('static', filename='prod-bar.js') }}?v=18"></script>
+{% endblock %}

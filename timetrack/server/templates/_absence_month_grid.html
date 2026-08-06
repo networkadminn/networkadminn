@@ -1,0 +1,44 @@
+<div class="absence-month-grid absence-month-rich">
+  <div class="absence-month-head">
+    <span>Mon</span><span>Tue</span><span>Wed</span><span>Thu</span><span>Fri</span><span>Sat</span><span>Sun</span>
+  </div>
+  {% for week in weeks %}
+  <div class="absence-month-row">
+    {% for d in week %}
+    {% if d %}
+    {% set c = month_cells[d.strftime('%Y-%m-%d')] %}
+    <a class="absence-day rich {{ c.status }}{% if c.has_gap %} has-gap{% endif %}"
+       href="{{ url_for('views.admin_user', user_id=subject.id, day=d.strftime('%Y-%m-%d')) }}">
+      <span class="absence-day-top">
+        <span class="absence-day-num">{{ d.day }}</span>
+        <span class="absence-day-tag">
+          {% if c.status == 'present' %}P
+          {% elif c.status == 'late' %}L
+          {% elif c.status == 'idle' %}I
+          {% elif c.status == 'off' %}—
+          {% else %}A{% endif %}
+        </span>
+      </span>
+      {% if c.status == 'off' %}
+      <span class="absence-day-meta muted">Off day</span>
+      {% elif c.status == 'absent' %}
+      <span class="absence-day-meta muted">Absent</span>
+      {% else %}
+      <span class="absence-day-meta">
+        <span><em>In</em> {{ c.arrived }}</span>
+        <span><em>Out</em> {{ c.left }}</span>
+        <span><em>Desk</em> {{ c.desktime_label|default('—') }}</span>
+        <span><em>Prod</em> {{ c.productive_label|default('—') }}</span>
+        {% if c.has_gap or (c.idle|default(0)) > 0 %}
+        <span class="gap-line"><em>Idle</em> {{ c.idle_label|default('—') }}</span>
+        {% endif %}
+      </span>
+      {% endif %}
+    </a>
+    {% else %}
+    <span class="absence-day empty rich" aria-hidden="true"></span>
+    {% endif %}
+    {% endfor %}
+  </div>
+  {% endfor %}
+</div>

@@ -14,6 +14,7 @@ from ..analytics import (
     timeline_buckets,
 )
 from ..config import Config, load_config
+from ..paths import package_dir
 from ..storage import Storage
 
 
@@ -28,7 +29,12 @@ def _parse_day(value: str | None) -> datetime:
 
 def create_app(config: Config | None = None) -> Flask:
     cfg = config or load_config()
-    app = Flask(__name__)
+    root = package_dir("dashboard")
+    app = Flask(
+        __name__,
+        template_folder=str(root / "templates"),
+        static_folder=str(root / "static"),
+    )
     app.config["TIMETRACK_CONFIG"] = cfg
 
     def get_storage() -> Storage:

@@ -1,0 +1,171 @@
+{% extends "base.html" %}
+{% block title %}Employees · esstracker{% endblock %}
+{% block content %}
+<div class="page-head">
+  <div>
+    <p class="page-kicker">Company</p>
+    <h1>Employees</h1>
+    <p class="page-sub">esstracker-style people directory — accounts, online status, day view, screenshots, and reports.</p>
+  </div>
+  <form method="get" class="daynav" style="padding:6px 10px">
+    <input type="search" name="q" value="{{ q }}" placeholder="Search name, username, email…" style="border:0;min-width:220px;font-weight:600" />
+    <button class="btn tiny" type="submit">Search</button>
+  </form>
+</div>
+
+<div class="two-col">
+  <section class="panel">
+    <div class="panel-head"><h2>Add employee</h2></div>
+    <form method="post" class="stack-form">
+      <input type="hidden" name="action" value="create" />
+      <label>Username <input name="username" required autocomplete="off" placeholder="alice" /></label>
+      <label>Display name <input name="name" placeholder="Alice" /></label>
+      <label>Email <input name="email" type="email" placeholder="alice@company.com" /></label>
+      <label>Password <input name="password" type="password" required minlength="6" /></label>
+      <label class="check"><input type="checkbox" name="admin" value="1" /> Make admin</label>
+      <button class="btn primary inline" type="submit">Create employee</button>
+    </form>
+  </section>
+  <section class="panel tip-panel">
+    <div class="panel-head"><h2>Where things live</h2></div>
+    <ol class="steps">
+      <li><strong>Day view</strong> — arrival, productivity bar, apps (My Day).</li>
+      <li><strong>Screenshots</strong> — browse that person’s captures.</li>
+      <li><strong>Reports</strong> — 7-day productivity for one employee or the team.</li>
+      <li>Copy the <strong>API token</strong> into their agent.toml to start tracking.</li>
+    </ol>
+  </section>
+</div>
+
+<section class="panel">
+  <div class="panel-head">
+    <h2>People directory</h2>
+    <span class="muted">{{ rows|length }} shown</span>
+  </div>
+  <div class="grid-wrap">
+    <table class="grid dt-emp-table">
+      <thead>
+        <tr>
+          <th>Employee</th>
+          <th>Status</th>
+          <th>Role</th>
+          <th>Team</th>
+          <th>Private</th>
+          <th>Quick links</th>
+          <th>Manage</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for r in rows %}
+        {% set u = r.user %}
+        <tr class="no-click">
+          <td>
+            <div class="emp">
+              <span class="avatar {% if r.online %}online-ring{% endif %}">{{ u.name[0]|upper }}</span>
+              <span>
+                <strong>{{ u.name }}</strong>
+                <span class="muted">@{{ u.username }}{% if u.email %} · {{ u.email }}{% endif %}</span>
+              </span>
+            </div>
+          </td>
+          <td>
+            {% if not u.enabled %}<span class="status offline">Disabled</span>
+            {% elif r.online %}<span class="status online">Online</span>
+            {% else %}<span class="status offline">Offline</span>{% endif %}
+          </td>
+          <td><span class="role {{ u.role }}">{{ u.role }}</span></td>
+          <td>
+            <form method="post" class="inline-form team-pick">
+              <input type="hidden" name="action" value="team" />
+              <input type="hidden" name="user_id" value="{{ u.id }}" />
+              <select name="team_id" onchange="this.form.submit()">
+                <option value="">— None —</option>
+                {% for t in teams %}
+                <option value="{{ t.id }}" {% if u.team_id == t.id %}selected{% endif %}>{{ t.name }}</option>
+                {% endfor %}
+              </select>
+            </form>
+          </td>
+          <td>
+            <form method="post" class="inline-form">
+              <input type="hidden" name="action" value="private" />
+              <input type="hidden" name="user_id" value="{{ u.id }}" />
+              <button class="btn tiny {% if u.private_time_allowed %}is-allowed{% endif %}" type="submit">
+                {% if u.private_time_allowed %}Allowed{% else %}Blocked{% endif %}
+              </button>
+            </form>
+          </td>
+          <td class="actions">
+            <a class="btn tiny" href="{{ url_for('views.admin_user', user_id=u.id) }}">Day view</a>
+            <a class="btn tiny" href="{{ url_for('views.screenshots_browser', user_id=u.id) }}">Shots</a>
+            <a class="btn tiny" href="{{ url_for('views.reports', user_id=u.id, scope='me') }}">Report</a>
+          </td>
+          <td class="actions">
+            <details class="pwd">
+              <summary class="btn tiny">Edit</summary>
+              <form method="post" class="stack-form tight">
+                <input type="hidden" name="action" value="edit" />
+                <input type="hidden" name="user_id" value="{{ u.id }}" />
+                <input name="name" value="{{ u.display_name }}" placeholder="Display name" />
+                <input name="email" type="email" value="{{ u.email }}" placeholder="Email" />
+                <button class="btn primary inline" type="submit">Save profile</button>
+              </form>
+            </details>
+            <details class="pwd">
+              <summary class="btn tiny">Screenshots</summary>
+              <form method="post" class="stack-form tight">
+                <input type="hidden" name="action" value="screenshots" />
+                <input type="hidden" name="user_id" value="{{ u.id }}" />
+                <select name="shot_mode">
+                  <option value="company" {% if u.screenshots_enabled is none %}selected{% endif %}>Company default</option>
+                  <option value="on" {% if u.screenshots_enabled == true %}selected{% endif %}>Force ON</option>
+                  <option value="off" {% if u.screenshots_enabled == false %}selected{% endif %}>Force OFF</option>
+                </select>
+                <label>Interval (sec)
+                  <input type="number" name="interval" min="60" max="3600" value="{{ u.screenshot_interval or 300 }}" />
+                </label>
+                <button class="btn primary inline" type="submit">Save shots</button>
+              </form>
+            </details>
+            <form method="post" class="inline-form">
+              <input type="hidden" name="action" value="role" />
+              <input type="hidden" name="user_id" value="{{ u.id }}" />
+              <button class="btn tiny" type="submit">{% if u.role == 'admin' %}Make employee{% else %}Make admin{% endif %}</button>
+            </form>
+            <form method="post" class="inline-form">
+              <input type="hidden" name="action" value="rotate" />
+              <input type="hidden" name="user_id" value="{{ u.id }}" />
+              <button class="btn tiny" type="submit">Token</button>
+            </form>
+            <form method="post" class="inline-form">
+              <input type="hidden" name="action" value="toggle" />
+              <input type="hidden" name="user_id" value="{{ u.id }}" />
+              <button class="btn tiny" type="submit">{% if u.enabled %}Disable{% else %}Enable{% endif %}</button>
+            </form>
+            <details class="pwd">
+              <summary class="btn tiny">Password</summary>
+              <form method="post" class="stack-form tight">
+                <input type="hidden" name="action" value="password" />
+                <input type="hidden" name="user_id" value="{{ u.id }}" />
+                <input type="password" name="password" required minlength="6" placeholder="New password" />
+                <button class="btn primary inline" type="submit">Save</button>
+              </form>
+            </details>
+            {% if u.id != current_user.id %}
+            <form method="post" class="inline-form" onsubmit="return confirm('Delete {{ u.username }} permanently?\n\nThis removes their account, activity, screenshots, and gap requests. This cannot be undone.');">
+              <input type="hidden" name="action" value="delete" />
+              <input type="hidden" name="user_id" value="{{ u.id }}" />
+              <button class="btn tiny danger" type="submit">Delete</button>
+            </form>
+            {% endif %}
+            <code class="token" title="API token">{{ u.api_token }}</code>
+          </td>
+        </tr>
+        {% else %}
+        <tr><td colspan="7" class="empty">No employees match this search.</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</section>
+{% endblock %}

@@ -24,6 +24,12 @@ class ServerConfig:
     port: int = 8080
     # Consider a user "online" if seen within this many seconds.
     online_window: float = 300.0
+    # DeskTime-style effectiveness denominator (expected work day length).
+    expected_hours: float = float(os.environ.get("TIMETRACK_EXPECTED_HOURS", "8"))
+    # Optional expected arrival hour (local) for "late" highlighting, e.g. 9.5 = 09:30.
+    expected_arrival_hour: float = float(
+        os.environ.get("TIMETRACK_EXPECTED_ARRIVAL", "9.5")
+    )
 
     def finalize(self) -> "ServerConfig":
         os.makedirs(self.data_dir, exist_ok=True)

@@ -227,6 +227,72 @@ timetrack/
 | `POST /api/v1/activities`  | Bearer token    | Batch upload activity spans      |
 | `POST /api/v1/screenshots` | Bearer token    | Upload one screenshot (multipart)|
 
+## Install from packages (.deb / .exe)
+
+Pre-built installers are produced with `packaging/build.py`. **Build on the
+target OS** (a Linux host produces `.deb`; a Windows host produces `.exe`).
+
+### Linux — `.deb` (desktop app)
+
+```bash
+bash packaging/build_deb.sh
+# → dist/esstracker_0.1.0_<arch>.deb
+
+sudo apt install ./dist/esstracker_0.1.0_amd64.deb   # adjust arch
+```
+
+After install you get a DeskTime-style desktop app:
+
+1. Open **Applications → esstracker** (or it starts at login)
+2. **Sign in** with your work username & password (same as the website)
+3. Tracking runs in the **notification tray** — no config files to edit
+
+- Server is pre-set to your company URL (`/etc/esstracker/defaults.toml`)
+- Login saves `~/.config/esstracker/agent.toml` automatically
+- Tray: Private Time, Open My Day, Sync, Sign out, Quit
+- Autostart at login
+
+Optional helpers for window/idle detection:
+
+```bash
+sudo apt install xdotool x11-utils xprintidle
+```
+
+On vanilla GNOME (non-Ubuntu), enable tray support:
+
+```bash
+sudo apt install gnome-shell-extension-appindicator
+# then enable “AppIndicator and KStatusNotifierItem Support”
+```
+
+### Windows — `.exe`
+
+On a Windows machine (PowerShell):
+
+```powershell
+powershell -ExecutionPolicy Bypass -File packaging\build_windows.ps1
+# → dist\windows\TimeTrack.exe
+# → dist\windows\TimeTrack-Agent.exe
+# → dist\windows\TimeTrack-Server.exe
+```
+
+Copy the three executables to the machine that needs them. For employees,
+usually only **TimeTrack-Agent.exe** is required (plus an `agent.toml`).
+
+```text
+TimeTrack-Agent.exe ping
+TimeTrack-Agent.exe run
+```
+
+### Manual / one-liner builds
+
+```bash
+pip install -r requirements.txt pyinstaller
+python packaging/build.py deb       # Linux
+python packaging/build.py exe       # Windows
+python packaging/build.py binaries  # current OS only
+```
+
 ## Development
 
 ```bash

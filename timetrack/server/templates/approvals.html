@@ -1,0 +1,66 @@
+{% extends "base.html" %}
+{% block title %}Approvals · esstracker{% endblock %}
+{% block content %}
+<div class="approvals-page">
+  <div class="page-head">
+    <div>
+      <p class="page-kicker">Admin</p>
+      <h1>Offline / idle approvals</h1>
+      <p class="page-sub">Review employee gap fills. Approved time is added to their day; rejected requests are discarded.</p>
+    </div>
+    {% if pending %}
+    <span class="pill warn">{{ pending|length }} pending</span>
+    {% endif %}
+  </div>
+
+  <section class="panel">
+    <div class="panel-head"><h2>Pending</h2></div>
+    {% if pending %}
+    <div class="approval-cards">
+      {% for r in pending %}
+      <article class="approval-card">
+        <header>
+          <strong>{{ r.user.name }}</strong>
+          <span class="tag {{ r.category }}">{{ r.category }}</span>
+        </header>
+        <p class="approval-when">{{ r.start_ts|clock }} – {{ r.end_ts|clock }} · {{ humanize(r.duration) }}</p>
+        <p class="approval-note">{{ r.note or 'No note provided' }}</p>
+        <form method="post" class="approval-actions">
+          <input type="hidden" name="id" value="{{ r.id }}" />
+          <button class="btn primary tiny" name="action" value="approve">Approve</button>
+          <button class="btn ghost tiny" name="action" value="reject">Deny</button>
+        </form>
+      </article>
+      {% endfor %}
+    </div>
+    {% else %}
+    <div class="empty-state"><h3>All clear</h3><p>No pending offline or idle requests.</p></div>
+    {% endif %}
+  </section>
+
+  {% if recent %}
+  <section class="panel">
+    <div class="panel-head"><h2>Recent decisions</h2></div>
+    <table class="apps">
+      <thead>
+        <tr><th>Employee</th><th>When</th><th>Note</th><th class="num">Duration</th><th>Status</th></tr>
+      </thead>
+      <tbody>
+        {% for r in recent %}
+        <tr>
+          <td>{{ r.user.name }}</td>
+          <td>{{ r.start_ts|clock }} – {{ r.end_ts|clock }}</td>
+          <td>{{ r.note or '—' }}</td>
+          <td class="num">{{ humanize(r.duration) }}</td>
+          <td>
+            {% if r.status == 'approved' %}<span class="pill live">Approved</span>
+            {% else %}<span class="pill">Denied</span>{% endif %}
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </section>
+  {% endif %}
+</div>
+{% endblock %}

@@ -16,6 +16,7 @@ CREATE TABLE IF NOT EXISTS activities (
     id       INTEGER PRIMARY KEY AUTOINCREMENT,
     app      TEXT NOT NULL,
     title    TEXT NOT NULL DEFAULT '',
+    url      TEXT NOT NULL DEFAULT '',
     category TEXT NOT NULL DEFAULT 'neutral',
     idle     INTEGER NOT NULL DEFAULT 0,
     start_ts REAL NOT NULL,
@@ -43,6 +44,7 @@ class BufferedActivity:
     id: int
     app: str
     title: str
+    url: str
     category: str
     idle: bool
     start_ts: float
@@ -69,7 +71,15 @@ class AgentBuffer:
         self._conn = sqlite3.connect(db_path, check_same_thread=False)
         self._conn.row_factory = sqlite3.Row
         self._conn.executescript(_SCHEMA)
+        self._ensure_columns()
         self._conn.commit()
+
+    def _ensure_columns(self) -> None:
+        cols = {r["name"] for r in self._conn.execute("PRAGMA table_info(activities)")}
+        if "url" not in cols:
+            self._conn.execute(
+                "ALTER TABLE activities ADD COLUMN url TEXT NOT NULL DEFAULT ''"
+            )
 
     def close(self) -> None:
         self._conn.close()
@@ -81,12 +91,19 @@ class AgentBuffer:
         self.close()
 
     def add_activity(
-        self, app: str, title: str, category: str, idle: bool,
-        duration: float, now: float,
+        self,
+        app: str,
+        title: str,
+        category: str,
+        idle: bool,
+        duration: float,
+        now: float,
+        url: str = "",
     ) -> None:
         """Append an activity span, merging into the last *unsynced* row when
         it matches (keeps the buffer small without risking re-send gaps)."""
         start = now - duration
+        url = url or ""
         cur = self._conn.execute(
             "SELECT * FROM activities ORDER BY id DESC LIMIT 1"
         ).fetchone()
@@ -95,6 +112,7 @@ class AgentBuffer:
             and cur["synced"] == 0
             and cur["app"] == app
             and cur["title"] == title
+            and (cur["url"] if "url" in cur.keys() else "") == url
             and cur["category"] == category
             and bool(cur["idle"]) == idle
             and abs(cur["end_ts"] - start) <= max(1.0, duration)
@@ -107,9 +125,9 @@ class AgentBuffer:
         else:
             self._conn.execute(
                 "INSERT INTO activities "
-                "(app,title,category,idle,start_ts,end_ts,duration,synced) "
-                "VALUES (?,?,?,?,?,?,?,0)",
-                (app, title, category, int(idle), start, now, duration),
+                "(app,title,url,category,idle,start_ts,end_ts,duration,synced) "
+                "VALUES (?,?,?,?,?,?,?,?,0)",
+                (app, title, url, category, int(idle), start, now, duration),
             )
         self._conn.commit()
 
@@ -130,8 +148,14 @@ class AgentBuffer:
         ).fetchall()
         return [
             BufferedActivity(
-                id=r["id"], app=r["app"], title=r["title"], category=r["category"],
-                idle=bool(r["idle"]), start_ts=r["start_ts"], end_ts=r["end_ts"],
+                id=r["id"],
+                app=r["app"],
+                title=r["title"],
+                url=r["url"] if "url" in r.keys() else "",
+                category=r["category"],
+                idle=bool(r["idle"]),
+                start_ts=r["start_ts"],
+                end_ts=r["end_ts"],
                 duration=r["duration"],
             )
             for r in rows
@@ -166,13 +190,13 @@ class AgentBuffer:
         self._conn.commit()
 
     def pending_counts(self) -> tuple[int, int]:
-        a = self._conn.execute(
+        acts = self._conn.execute(
             "SELECT COUNT(*) FROM activities WHERE synced=0"
         ).fetchone()[0]
-        s = self._conn.execute(
+        shots = self._conn.execute(
             "SELECT COUNT(*) FROM screenshots WHERE synced=0"
         ).fetchone()[0]
-        return int(a), int(s)
+        return int(acts), int(shots)
 
 
 __all__ = ["AgentBuffer", "BufferedActivity", "BufferedShot"]

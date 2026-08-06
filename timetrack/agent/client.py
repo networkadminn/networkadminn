@@ -19,7 +19,12 @@ class ServerClient:
         return f"{self.base_url}{path}"
 
     def _headers(self, extra: dict | None = None) -> dict:
-        headers = {"Authorization": f"Bearer {self.token}"}
+        headers = {
+            "Authorization": f"Bearer {self.token}",
+            # Cloudflare / reverse proxies often block the default Python-urllib UA.
+            "User-Agent": "TimeTrack-Agent/0.1 (+https://tracker.euclideesolutions.com)",
+            "Accept": "application/json, */*",
+        }
         if extra:
             headers.update(extra)
         return headers
@@ -64,6 +69,58 @@ class ServerClient:
                 return 200 <= resp.status < 300
         except (urllib.error.URLError, OSError):
             return False
+
+    def set_private(self, active: bool) -> dict | None:
+        body = json.dumps({"active": active}).encode("utf-8")
+        req = urllib.request.Request(
+            self._url("/api/v1/private"),
+            data=body,
+            headers=self._headers({"Content-Type": "application/json"}),
+            method="POST",
+        )
+        try:
+            with urllib.request.urlopen(req, timeout=self.timeout) as resp:
+                return json.loads(resp.read().decode("utf-8"))
+        except (urllib.error.URLError, OSError, ValueError):
+            return None
+
+    def get_private(self) -> dict | None:
+        req = urllib.request.Request(
+            self._url("/api/v1/private"), headers=self._headers(), method="GET"
+        )
+        try:
+            with urllib.request.urlopen(req, timeout=self.timeout) as resp:
+                return json.loads(resp.read().decode("utf-8"))
+        except (urllib.error.URLError, OSError, ValueError):
+            return None
+
+    def login(self, username: str, password: str) -> dict | None:
+        """Exchange username/password for an API token (first-run desktop login)."""
+        body = json.dumps({"username": username, "password": password}).encode("utf-8")
+        req = urllib.request.Request(
+            self._url("/api/v1/agent/login"),
+            data=body,
+            headers={
+                "Content-Type": "application/json",
+                "User-Agent": "esstracker-Agent/0.1 (+https://tracker.euclideesolutions.com)",
+                "Accept": "application/json, */*",
+            },
+            method="POST",
+        )
+        try:
+            with urllib.request.urlopen(req, timeout=self.timeout) as resp:
+                data = json.loads(resp.read().decode("utf-8"))
+            if data.get("api_token"):
+                self.token = str(data["api_token"])
+            return data
+        except urllib.error.HTTPError as exc:
+            try:
+                err = json.loads(exc.read().decode("utf-8"))
+            except Exception:
+                err = {"error": f"HTTP {exc.code}"}
+            return {"ok": False, "error": err.get("error") or f"HTTP {exc.code}"}
+        except (urllib.error.URLError, OSError, ValueError) as exc:
+            return {"ok": False, "error": str(exc) or "network error"}
 
 
 def _encode_multipart(boundary: str, fields: dict, image_bytes: bytes) -> bytes:

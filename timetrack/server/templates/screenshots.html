@@ -1,0 +1,58 @@
+{% extends "base.html" %}
+{% block title %}Screenshots · esstracker{% endblock %}
+{% block content %}
+<div class="page-head">
+  <div>
+    <p class="page-kicker">Time tracking</p>
+    <h1>Screenshots</h1>
+    <p class="page-sub">esstracker-style gallery — filter by day, employee, and unproductive flags.</p>
+  </div>
+  <nav class="daynav" aria-label="Filters">
+    <a class="btn" href="?day={{ prev_day }}{% if selected_user %}&user_id={{ selected_user }}{% endif %}{% if flagged %}&flagged=1{% endif %}">&larr;</a>
+    <form method="get" class="dayform filters">
+      <input type="date" name="day" value="{{ day }}" onchange="this.form.submit()" />
+      {% if current_user.is_admin %}
+      <select name="user_id" onchange="this.form.submit()">
+        <option value="">All employees</option>
+        {% for u in users %}
+        <option value="{{ u.id }}" {% if selected_user == u.id %}selected{% endif %}>{{ u.name }}</option>
+        {% endfor %}
+      </select>
+      {% endif %}
+      <label class="check" style="padding:0 8px;white-space:nowrap">
+        <input type="checkbox" name="flagged" value="1" {% if flagged %}checked{% endif %} onchange="this.form.submit()" />
+        Unproductive only
+      </label>
+    </form>
+    <a class="btn" href="?day={{ next_day }}{% if selected_user %}&user_id={{ selected_user }}{% endif %}{% if flagged %}&flagged=1{% endif %}">&rarr;</a>
+  </nav>
+</div>
+
+<section class="panel">
+  <div class="panel-head">
+    <h2>{{ day }}</h2>
+    <span class="muted">{{ shots|length }} screenshot{{ 's' if shots|length != 1 else '' }}</span>
+  </div>
+  {% if shots %}
+  <div class="gallery">
+    {% for s in shots %}
+    <a class="shot {% if s.is_unproductive %}is-unproductive{% endif %}" href="{{ url_for('views.screenshot', shot_id=s.id) }}" target="_blank" rel="noopener"
+       title="{{ s.app }} — {{ s.title }}">
+      {% if s.is_unproductive %}<span class="shot-flag">Unproductive</span>{% endif %}
+      {% if s.blurred %}<span class="shot-flag blur">Blurred</span>{% endif %}
+      <img loading="lazy" src="{{ url_for('views.thumb', shot_id=s.id) }}" alt="{{ s.app }}" />
+      <span class="shot-meta">
+        <span class="shot-time">{{ s.ts|clock }}</span>
+        <span class="shot-app">{{ s.user.name if s.user else s.app }} · {{ s.app }}</span>
+      </span>
+    </a>
+    {% endfor %}
+  </div>
+  {% else %}
+  <div class="empty-state">
+    <h3>No screenshots</h3>
+    <p>Nothing matched this day/filter. Agents upload when screenshots are enabled in Settings.</p>
+  </div>
+  {% endif %}
+</section>
+{% endblock %}

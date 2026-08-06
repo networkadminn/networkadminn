@@ -1,0 +1,309 @@
+{% extends "base.html" %}
+{% block title %}Download esstracker · Windows, Mac, Linux{% endblock %}
+{% block head %}
+<meta name="description" content="Download the esstracker employee client for Windows, macOS, and Linux. Install, sign in, track from the tray — Euclidee Software Solutions." />
+<link rel="stylesheet" href="{{ url_for('static', filename='public.css') }}?v=14" />
+{% endblock %}
+{% block body %}
+<div class="pub-page dl-page">
+  <div class="pub-progress" id="scrollProgress" aria-hidden="true"></div>
+
+  <header class="pub-header" id="top">
+    <div class="pub-header-inner">
+      <a class="pub-logo" href="{{ url_for('views.home') }}">
+        <img src="{{ url_for('static', filename='brand/ess-mark.png') }}" alt="" />
+        <span>
+          <strong>esstracker</strong>
+          <small>Euclidee Software Solutions</small>
+        </span>
+      </a>
+      <nav class="pub-menu" aria-label="Sections">
+        <a href="{{ url_for('views.home') }}#tour">Tour</a>
+        <a href="#platforms" data-nav class="is-on">Download</a>
+        <a href="#install">Install</a>
+        <a href="#accuracy">Accuracy</a>
+      </nav>
+      <div class="pub-header-cta">
+        <a class="pub-link" href="{{ url_for('auth.login') }}">Sign in</a>
+        <a class="pub-btn" href="{{ url_for('auth.login') }}">Login</a>
+      </div>
+      <button class="pub-burger" type="button" id="navToggle" aria-label="Menu" aria-expanded="false">
+        <span></span><span></span>
+      </button>
+    </div>
+  </header>
+
+  <section class="dl-hero">
+    <div class="pub-container dl-hero-inner">
+      <div class="dl-hero-copy">
+        <p class="pub-eyebrow"><span class="pub-dot"></span> Desktop client · v{{ releases.version }}</p>
+        <h1>Download esstracker</h1>
+        <p class="pub-lead">
+          Install once. Sign in with your work account. Tracking runs in the
+          notification tray — the same flow as DeskTime, built for Euclidee.
+        </p>
+        <p class="dl-detect muted" id="osHint">Detecting your system…</p>
+      </div>
+      <div class="dl-hero-mark" aria-hidden="true">
+        <img src="{{ url_for('static', filename='brand/ess-mark.png') }}" alt="" />
+      </div>
+    </div>
+  </section>
+
+  <section class="dl-platforms" id="platforms">
+    <div class="pub-container">
+      <div class="dl-grid">
+        {# —— Windows —— #}
+        <article class="dl-card" data-os="windows" id="windows">
+          <header>
+            <span class="dl-os-icon" aria-hidden="true">
+              <svg viewBox="0 0 24 24" width="28" height="28"><path fill="currentColor" d="M3 5.5 10.5 4.4v7.1H3V5.5zm0 13 7.5 1.1v-7.2H3v6.1zM11.5 4.2 21 3v8.5h-9.5V4.2zm0 16.6L21 22v-8.6h-9.5v7.4z"/></svg>
+            </span>
+            <div>
+              <h2>Windows</h2>
+              <p>Windows 10 / 11 · 64-bit</p>
+            </div>
+          </header>
+          {% if releases.windows.ready and releases.windows.exe %}
+          <a class="pub-btn dl-primary" href="{{ url_for('views.download_file', platform='windows', filename=releases.windows.exe.name) }}">
+            Download .exe
+            <small>{{ releases.windows.exe.size_label }}</small>
+          </a>
+          {% else %}
+          <button class="pub-btn dl-primary" type="button" disabled>Windows .exe — building</button>
+          <p class="dl-note">Installer is produced on a Windows build machine (PyInstaller + client tray). Ask IT or check back shortly.</p>
+          {% endif %}
+          <ul class="dl-meta">
+            <li>Recommended for most PCs</li>
+            <li>System tray + Sign in window</li>
+            <li>May need “Allow app” if SmartScreen warns (unsigned builds)</li>
+          </ul>
+        </article>
+
+        {# —— Mac —— #}
+        <article class="dl-card" data-os="mac" id="mac">
+          <header>
+            <span class="dl-os-icon" aria-hidden="true">
+              <svg viewBox="0 0 24 24" width="28" height="28"><path fill="currentColor" d="M16.4 12.4c0-2.3 1.9-3.4 2-3.5-1.1-1.6-2.8-1.8-3.4-1.8-1.4-.2-2.8.9-3.5.9s-1.8-.8-3-.8c-1.5 0-3 .9-3.8 2.3-1.6 2.8-.4 7 1.2 9.3.8 1.1 1.7 2.3 2.9 2.3 1.2 0 1.6-.7 3-.7s1.8.7 3 .7 2-.9 2.8-2c.9-1.2 1.3-2.4 1.3-2.5-.1 0-2.5-1-2.5-3.9zM14.4 5.8c.6-.8 1.1-1.9.9-3-.9 0-2 .6-2.6 1.4-.6.7-1.1 1.8-.9 2.9 1 .1 2-.5 2.6-1.3z"/></svg>
+            </span>
+            <div>
+              <h2>macOS</h2>
+              <p>Monterey 12+ · Apple Silicon &amp; Intel</p>
+            </div>
+          </header>
+          <div class="dl-split">
+            {% if releases.mac.arm %}
+            <a class="pub-btn dl-primary" href="{{ url_for('views.download_file', platform='mac', filename=releases.mac.arm.name) }}">
+              Apple Silicon .dmg
+              <small>{{ releases.mac.arm.size_label }}</small>
+            </a>
+            {% else %}
+            <button class="pub-btn dl-primary" type="button" disabled>Apple Silicon .dmg</button>
+            {% endif %}
+            {% if releases.mac.intel %}
+            <a class="pub-btn-outline dl-secondary" href="{{ url_for('views.download_file', platform='mac', filename=releases.mac.intel.name) }}">
+              Intel .dmg
+              <small>{{ releases.mac.intel.size_label }}</small>
+            </a>
+            {% else %}
+            <button class="pub-btn-outline dl-secondary" type="button" disabled>Intel .dmg</button>
+            {% endif %}
+          </div>
+          {% if not releases.mac.ready %}
+          <p class="dl-note">DMG must be built on a Mac, code-signed &amp; notarized for Gatekeeper. Coming from our Mac build lane.</p>
+          {% endif %}
+          <ul class="dl-meta">
+            <li>Drag to <strong>Applications</strong> (required)</li>
+            <li>Grant Accessibility + Screen Recording when asked</li>
+            <li>Without those permissions, titles/screenshots stay empty</li>
+          </ul>
+        </article>
+
+        {# —— Linux —— #}
+        <article class="dl-card is-ready" data-os="linux" id="linux">
+          <header>
+            <span class="dl-os-icon" aria-hidden="true">
+              <svg viewBox="0 0 24 24" width="28" height="28"><path fill="currentColor" d="M12.5 2c-.4 1.4-1.5 2.5-2.8 2.7.5 1.8 2.1 3.1 4 3.1 1.2 0 2.3-.5 3.1-1.4C15.5 4.7 14 2.9 12.5 2zM8.2 9.1C6 9.1 4 11.4 4 14.2c0 3.4 2.2 5.6 4.9 5.6 1.1 0 1.7-.4 2.5-.4.8 0 1.2.4 2.5.4 2.7 0 3.9-2.5 3.9-2.5s-2.4-1-2.4-3.5c0-2.2 1.8-3.3 1.8-3.3s-1.7-1.4-3.6-1.4c-1.2 0-1.7.4-2.6.4-.8 0-1.6-.4-2.8-.4z"/></svg>
+            </span>
+            <div>
+              <h2>Linux</h2>
+              <p>Ubuntu 20.04–24.04 · Debian · amd64</p>
+            </div>
+            <span class="dl-badge">Ready</span>
+          </header>
+          {% if releases.linux.ready and releases.linux.deb %}
+          <a class="pub-btn dl-primary" id="linuxDownload" href="{{ url_for('views.download_file', platform='linux', filename=releases.linux.deb.name) }}">
+            Download .deb
+            <small>{{ releases.linux.deb.size_label }}</small>
+          </a>
+          {% else %}
+          <button class="pub-btn dl-primary" type="button" disabled>Linux .deb unavailable</button>
+          {% endif %}
+          <ul class="dl-meta">
+            <li>One app in Applications · round ESS icon</li>
+            <li>Sign in → tray · autostart at login</li>
+            <li>Best on X11; Wayland may hide window titles</li>
+          </ul>
+        </article>
+      </div>
+    </div>
+  </section>
+
+  <section class="dl-install" id="install">
+    <div class="pub-container">
+      <h2>Install in three steps</h2>
+      <p class="section-lead">Same employee experience on every OS.</p>
+      <ol class="dl-steps">
+        <li>
+          <strong>Install</strong>
+          <span>Open the downloaded installer (.exe / .dmg / .deb).</span>
+        </li>
+        <li>
+          <strong>Sign in</strong>
+          <span>Use your esstracker username &amp; password — no config files.</span>
+        </li>
+        <li>
+          <strong>Track</strong>
+          <span>esstracker stays in the tray and syncs to your company server.</span>
+        </li>
+      </ol>
+
+      <div class="dl-cmds">
+        <h3>Linux quick install</h3>
+        <pre><code>sudo apt install ./esstracker_*.deb
+# then: Applications → esstracker → Sign in</code></pre>
+        <p class="dl-note">The “unsandboxed as root / _apt” notice during install is harmless (same as DeskTime).</p>
+      </div>
+    </div>
+  </section>
+
+  <section class="dl-accuracy" id="accuracy">
+    <div class="pub-container">
+      <h2>Tracking accuracy by platform</h2>
+      <p class="section-lead">
+        We researched how production trackers (DeskTime and others) ship clients —
+        and the real limits of each OS. This is what to expect.
+      </p>
+      <div class="dl-acc-grid">
+        <article>
+          <h3>Windows</h3>
+          <ul>
+            <li>Active window via Win32 — generally reliable</li>
+            <li>Idle via last input tick — reliable</li>
+            <li>Screenshots need a normal desktop session (not locked RDP quirks)</li>
+            <li>Unsigned .exe may show SmartScreen — “More info → Run anyway”</li>
+            <li>Antivirus sometimes flags PyInstaller bundles (false positive)</li>
+          </ul>
+        </article>
+        <article>
+          <h3>macOS</h3>
+          <ul>
+            <li>Must live in <strong>/Applications</strong></li>
+            <li><strong>Accessibility</strong> permission required for window titles</li>
+            <li><strong>Screen Recording</strong> required for screenshots</li>
+            <li>Without notarization, Gatekeeper blocks launch (“unidentified developer”)</li>
+            <li>Build Apple Silicon vs Intel separately (DeskTime does the same)</li>
+          </ul>
+        </article>
+        <article>
+          <h3>Linux</h3>
+          <ul>
+            <li>X11 + <code>xdotool</code> / <code>xprintidle</code> = best accuracy</li>
+            <li>Wayland often blocks window titles for sandboxed apps</li>
+            <li>GNOME needs AppIndicator extension for the tray icon</li>
+            <li>Install tray deps via apt (bundled in our .deb Depends)</li>
+            <li>Must run inside a graphical session (not SSH-only)</li>
+          </ul>
+        </article>
+      </div>
+    </div>
+  </section>
+
+  <section class="pub-cta">
+    <div class="pub-container pub-cta-inner">
+      <div>
+        <h2>Already installed?</h2>
+        <p>Open the dashboard to review My Day, gaps, and team presence.</p>
+      </div>
+      <a class="pub-btn pub-btn-light" href="{{ url_for('auth.login') }}">Login to Dashboard</a>
+    </div>
+  </section>
+
+  <footer class="pub-footer">
+    <div class="pub-container">
+      <div class="pub-footer-grid">
+        <div class="pub-footer-brand">
+          <a class="pub-logo" href="{{ url_for('views.home') }}">
+            <img src="{{ url_for('static', filename='brand/ess-mark.png') }}" alt="" />
+            <span><strong>esstracker</strong><small>Euclidee Software Solutions</small></span>
+          </a>
+          <p>Self-hosted employee time tracking with productivity timelines, gap approvals, and team visibility.</p>
+        </div>
+        <div>
+          <h4>Product</h4>
+          <a href="{{ url_for('views.home') }}#tour">Tour</a>
+          <a href="{{ url_for('views.download_page') }}">Download</a>
+          <a href="{{ url_for('auth.login') }}">Sign in</a>
+        </div>
+        <div>
+          <h4>Clients</h4>
+          <a href="#windows">Windows</a>
+          <a href="#mac">macOS</a>
+          <a href="#linux">Linux</a>
+        </div>
+      </div>
+      <div class="pub-footer-bottom">
+        <img src="{{ url_for('static', filename='brand/euclidee-logo.png') }}" alt="Euclidee" />
+        <p>© Euclidee Software Solutions Private Limited</p>
+        <div>
+          <a href="{{ url_for('views.home') }}">Home</a>
+          <a href="{{ url_for('auth.login') }}">Login</a>
+        </div>
+      </div>
+    </div>
+  </footer>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+(function () {
+  const hint = document.getElementById("osHint");
+  const ua = navigator.userAgent || "";
+  const platform = navigator.platform || "";
+  let os = "unknown";
+  if (/Win/i.test(ua)) os = "windows";
+  else if (/Mac/i.test(ua) || /Macintosh/i.test(platform)) os = "mac";
+  else if (/Linux/i.test(ua) && !/Android/i.test(ua)) os = "linux";
+
+  document.querySelectorAll(".dl-card").forEach((card) => {
+    if (card.getAttribute("data-os") === os) card.classList.add("is-recommended");
+  });
+  if (hint) {
+    const labels = { windows: "Windows", mac: "macOS", linux: "Linux", unknown: "your device" };
+    hint.textContent = "We detected " + (labels[os] || "your device") + " — the matching card is highlighted.";
+    const target = document.getElementById(os);
+    if (target) {
+      hint.innerHTML = 'We detected <strong>' + labels[os] + '</strong> — <a href="#' + os + '">jump to your download</a>.';
+    }
+  }
+
+  const bar = document.getElementById("scrollProgress");
+  const onScroll = () => {
+    if (!bar) return;
+    const h = document.documentElement;
+    const max = h.scrollHeight - h.clientHeight;
+    bar.style.width = max > 0 ? ((h.scrollTop / max) * 100) + "%" : "0%";
+    document.querySelector(".pub-header")?.classList.toggle("is-scrolled", h.scrollTop > 8);
+  };
+  window.addEventListener("scroll", onScroll, { passive: true });
+  onScroll();
+
+  const burger = document.getElementById("navToggle");
+  burger?.addEventListener("click", () => {
+    const open = document.body.classList.toggle("pub-nav-open");
+    burger.setAttribute("aria-expanded", open ? "true" : "false");
+  });
+})();
+</script>
+{% endblock %}

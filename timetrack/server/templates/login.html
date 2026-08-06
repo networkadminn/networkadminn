@@ -1,19 +1,51 @@
 {% extends "base.html" %}
-{% block title %}Sign in &middot; TimeTrack{% endblock %}
-{% block content %}
-<div class="login-wrap">
-  <div class="login-card">
-    <div class="login-brand"><span class="logo">&#9200;</span> TimeTrack</div>
-    <p class="login-sub">Sign in to your workspace</p>
-    <form method="post" class="login-form">
-      <label>Username
-        <input type="text" name="username" autfocus required autocomplete="username" />
-      </label>
-      <label>Password
-        <input type="password" name="password" required autocomplete="current-password" />
-      </label>
-      <button class="btn primary" type="submit">Sign in</button>
-    </form>
-  </div>
+{% block title %}Sign in · esstracker{% endblock %}
+{% block body %}
+<div class="login-page">
+  <section class="login-hero" aria-label="esstracker">
+    <div class="login-hero-inner">
+      <div class="login-hero-brand">
+        <img class="login-logo" src="{{ url_for('static', filename='brand/euclidee-logo.png') }}" alt="Euclidee Software Solutions" />
+      </div>
+      <p class="login-product">esstracker</p>
+      <h1>Employee time tracking for Euclidee.</h1>
+      <p>Apps, idle, screenshots, and productivity — built for Euclidee Software Solutions Private Limited.</p>
+      <div class="login-metrics" aria-hidden="true">
+        <div class="login-metric">
+          <strong>IST</strong>
+          <span>Office hours</span>
+        </div>
+        <div class="login-metric">
+          <strong>Live</strong>
+          <span>Agent sync</span>
+        </div>
+        <div class="login-metric">
+          <strong>Admin</strong>
+          <span>Full visibility</span>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section class="login-panel">
+    <div class="login-card">
+      <img class="login-mark" src="{{ url_for('static', filename='brand/ess-mark.png') }}" alt="" />
+      <p class="login-kicker">Euclidee Software Solutions</p>
+      <h2>Sign in to esstracker</h2>
+      <p class="login-sub">Use your company username and password.</p>
+      <form method="post" class="login-form">
+        <label>Username
+          <input type="text" name="username" autofocus required autocomplete="username" placeholder="username" />
+        </label>
+        <label>Password
+          <input type="password" name="password" required autocomplete="current-password" placeholder="••••••••" />
+        </label>
+        <p class="login-forgot">
+          <a href="{{ url_for('auth.forgot_password') }}">Forgot password?</a>
+        </p>
+        <button class="btn primary" type="submit">Sign in</button>
+      </form>
+    </div>
+  </section>
 </div>
 {% endblock %}

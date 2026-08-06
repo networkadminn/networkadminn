@@ -1,4 +1,10 @@
-from timetrack.analytics import humanize, summarize, timeline_buckets
+from timetrack.analytics import (
+    format_clock,
+    humanize,
+    prepare_activities,
+    summarize,
+    timeline_buckets,
+)
 from timetrack.storage import Activity
 
 
@@ -30,6 +36,37 @@ def test_summarize_totals():
     assert s.neutral_seconds == 20
 
 
+def test_idle_counts_toward_arrival_and_left():
+    acts = [
+        _act("locked", "neutral", 60, idle=True, start=100),
+        _act("code", "productive", 30, start=200),
+        _act("locked", "neutral", 20, idle=True, start=300),
+    ]
+    s = summarize(acts)
+    assert s.arrival_ts == 100
+    assert s.last_seen_ts == 320
+    assert s.span_seconds == 220
+
+
+def test_overlap_dedup_first_wins():
+    acts = [
+        _act("code", "productive", 60, start=0),
+        _act("chrome", "unproductive", 50, start=40),  # overlaps 40–60 → kept as 60–90
+    ]
+    s = summarize(acts)
+    assert s.total_seconds == 90
+    assert s.productive_seconds == 60
+    assert s.unproductive_seconds == 30
+
+
+def test_day_window_clip():
+    acts = [_act("code", "productive", 200, start=50)]
+    s = summarize(acts, window_start=100, window_end=150)
+    assert s.active_seconds == 50
+    assert s.arrival_ts == 100
+    assert s.last_seen_ts == 150
+
+
 def test_productivity_and_effectiveness():
     acts = [
         _act("code", "productive", 75, start=0),
@@ -37,10 +74,11 @@ def test_productivity_and_effectiveness():
         _act("locked", "neutral", 100, idle=True, start=100),
     ]
     s = summarize(acts)
-    # 75 / (75 + 25) = 75%
     assert s.productivity_pct == 75.0
-    # active 100 / total 200 = 50%
     assert s.effectiveness_pct == 50.0
+    # DeskTime effectiveness may exceed 100 with overtime
+    assert s.desktime_effectiveness_pct(50) == 150.0
+    assert s.desktime_seconds(30) == 130.0
 
 
 def test_top_apps_sorted():
@@ -69,8 +107,61 @@ def test_timeline_buckets():
     assert buckets[0]["productive"] == 600
 
 
+def test_timeline_buckets_split_across_hours():
+    acts = [_act("code", "productive", 3600, start=1800)]
+    buckets = timeline_buckets(acts, 0, 7200, bucket_seconds=3600)
+    assert buckets[0]["productive"] == 1800
+    assert buckets[1]["productive"] == 1800
+
+
 def test_humanize():
     assert humanize(0) == "0s"
     assert humanize(59) == "59s"
-    assert humanize(90) == "1m 30s"
+    assert humanize(90) == "1m"
     assert humanize(3661) == "1h 1m"
+
+
+def test_format_clock_ampm():
+    assert format_clock(None) == "—"
+    text = format_clock(1_700_000_000)
+    assert ":" in text
+    assert text.endswith("AM") or text.endswith("PM")
+
+
+def test_productivity_bar_idle_gaps_fillable():
+    from timetrack.analytics import idle_gap_list, merge_bar_segments, productivity_bar_segments
+
+    # 10 min productive, then 20 min gap (idle only), then productive again
+    acts = [
+        _act("code", "productive", 600, start=0),
+        _act("locked", "neutral", 1200, idle=True, start=600),
+        _act("code", "productive", 300, start=1800),
+    ]
+    bar_raw = productivity_bar_segments(acts, 0, 3600, bucket_seconds=300.0)
+    assert any(s["kind"] == "productive" for s in bar_raw)
+    assert any(s.get("fillable") for s in bar_raw)
+    gaps = idle_gap_list(bar_raw)
+    assert gaps
+    assert gaps[0]["duration"] >= 300
+    merged = merge_bar_segments(bar_raw)
+    assert len(merged) < len(bar_raw)
+    assert any(s.get("buckets", 1) > 1 for s in merged)
+
+
+def test_productivity_bar_no_future_fillable_gaps():
+    from timetrack.analytics import idle_gap_list, productivity_bar_segments
+
+    # Activity only in the first 10 minutes; rest of the hour is empty.
+    acts = [_act("code", "productive", 600, start=0)]
+    # "Now" is 30 minutes in — only the past empty stretch may be fillable.
+    bar = productivity_bar_segments(
+        acts, 0, 3600, bucket_seconds=300.0, now_ts=1800.0
+    )
+    fillable = [s for s in bar if s.get("fillable")]
+    assert fillable
+    assert all(float(s["start"]) < 1800.0 for s in fillable)
+    assert all(float(s["gap_end"]) <= 1800.0 for s in fillable)
+    assert not any(float(s["start"]) >= 1800.0 and s.get("fillable") for s in bar)
+    gaps = idle_gap_list(bar)
+    assert gaps
+    assert gaps[0]["end"] <= 1800.0

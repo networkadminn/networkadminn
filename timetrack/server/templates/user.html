@@ -1,125 +1,292 @@
 {% extends "base.html" %}
-{% block title %}{{ subject.name }} &middot; TimeTrack{% endblock %}
+{% block title %}{{ subject.name }} · esstracker{% endblock %}
 {% block head %}
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
 {% endblock %}
 {% block content %}
-<div class="page-head">
-  <h1>
-    {% if not is_self %}<a class="back" href="{{ url_for('views.admin') }}?day={{ day }}">&larr; Team</a>{% endif %}
-    {{ subject.name }}
-    {% if not is_self %}<span class="muted">@{{ subject.username }}</span>{% endif %}
-  </h1>
-  <nav class="daynav">
-    <a class="btn" href="?day={{ prev_day }}">&larr;</a>
-    <form method="get" class="dayform">
-      <input type="date" name="day" value="{{ day }}" onchange="this.form.submit()" />
-    </form>
-    <a class="btn" href="?day={{ next_day }}">&rarr;</a>
-  </nav>
-</div>
-
-<section class="cards">
-  <div class="card score">
-    <div class="ring" style="--pct: {{ summary.productivity_pct }}">
-      <span class="ring-val">{{ summary.productivity_pct }}%</span>
+<div class="emp-day dash-v2">
+  <header class="dash-top">
+    <div class="dash-top-left">
+      <p class="dash-kicker">Employee profile</p>
+      <div class="dash-title-row">
+        <a class="back dash-back" href="{{ url_for('views.admin') }}?day={{ day }}" aria-label="Back to team">&larr;</a>
+        <h1>{{ subject.name }}</h1>
+        <div class="dash-badges">
+          <span class="btn-daily">{{ office_hours_label }}</span>
+          {% if off_day %}<span class="pill">Off day</span>
+          {% elif absent %}<span class="pill warn">Absent</span>
+          {% elif late %}<span class="pill warn">Late</span>{% endif %}
+          {% if is_online %}<span class="pill live">Online</span>{% endif %}
+        </div>
+      </div>
     </div>
-    <div class="card-label">Productivity</div>
-  </div>
-  <div class="card"><div class="stat">{{ humanize(summary.active_seconds) }}</div><div class="card-label">Active time</div></div>
-  <div class="card"><div class="stat">{{ humanize(summary.productive_seconds) }}</div><div class="card-label">Productive</div></div>
-  <div class="card"><div class="stat">{{ humanize(summary.idle_seconds) }}</div><div class="card-label">Idle</div></div>
-  <div class="card"><div class="stat">{{ summary.effectiveness_pct }}%</div><div class="card-label">Effectiveness</div></div>
-  <div class="card"><div class="stat">{{ humanize(summary.span_seconds) }}</div><div class="card-label">Arrived &rarr; last seen</div></div>
-</section>
+    <div class="dash-top-right">
+      <nav class="dt-date-nav" aria-label="Choose day">
+        <a class="dt-date-arrow" href="?day={{ prev_day }}" aria-label="Previous day">&larr;</a>
+        <form method="get" class="dt-date-form">
+          <label class="dt-date-label">
+            <span>{{ day_label }}</span>
+            <input type="date" name="day" value="{{ day }}" onchange="this.form.submit()" />
+          </label>
+        </form>
+        <a class="dt-date-arrow" href="?day={{ next_day }}" aria-label="Next day">&rarr;</a>
+      </nav>
+      <div class="seg-toggle" role="group" aria-label="View range">
+        <span class="is-on">Day</span>
+        <a href="{{ url_for('views.reports', day=day, range=7, user_id=subject.id) }}">Week</a>
+        <a href="{{ url_for('views.reports', day=day, range=30, user_id=subject.id) }}">Month</a>
+      </div>
+    </div>
+  </header>
 
-<div class="two-col">
-  <section class="panel">
-    <h2>Activity by hour (minutes)</h2>
-    <canvas id="hourly" height="140"></canvas>
+  {% include "_day_metrics.html" %}
+
+  {% set clickable_gaps = false %}
+  {% set compact = false %}
+  {% set extra_hint = none %}
+  {% include "_productivity_bar.html" %}
+
+  {% set cat_total = (summary.productive_seconds + summary.neutral_seconds + summary.unproductive_seconds + summary.idle_seconds) or 1 %}
+  <section class="panel dash-panel emp-cat-panel admin-day-mix">
+    <div class="panel-head">
+      <h2>Time breakdown</h2>
+      <span class="muted">productive · neutral · low · idle</span>
+    </div>
+    <div class="emp-cat-list emp-cat-list-row">
+      <div class="emp-cat-row">
+        <span class="emp-cat-label"><i class="productive"></i> Productive</span>
+        <div class="emp-cat-bar"><i class="productive" style="width:{{ (100 * summary.productive_seconds / cat_total)|round(1) }}%"></i></div>
+        <strong>{{ humanize(summary.productive_seconds) }}</strong>
+      </div>
+      <div class="emp-cat-row">
+        <span class="emp-cat-label"><i class="neutral"></i> Neutral</span>
+        <div class="emp-cat-bar"><i class="neutral" style="width:{{ (100 * summary.neutral_seconds / cat_total)|round(1) }}%"></i></div>
+        <strong>{{ humanize(summary.neutral_seconds) }}</strong>
+      </div>
+      <div class="emp-cat-row">
+        <span class="emp-cat-label"><i class="unproductive"></i> Low productive</span>
+        <div class="emp-cat-bar"><i class="unproductive" style="width:{{ (100 * summary.unproductive_seconds / cat_total)|round(1) }}%"></i></div>
+        <strong>{{ humanize(summary.unproductive_seconds) }}</strong>
+      </div>
+      <div class="emp-cat-row">
+        <span class="emp-cat-label"><i class="idle"></i> Idle</span>
+        <div class="emp-cat-bar"><i class="idle" style="width:{{ (100 * summary.idle_seconds / cat_total)|round(1) }}%"></i></div>
+        <strong>{{ humanize(summary.idle_seconds) }}</strong>
+      </div>
+    </div>
   </section>
-  <section class="panel">
-    <h2>Category split</h2>
-    <canvas id="cats" height="140"></canvas>
+
+  <section class="panel dash-panel dt-projects-panel">
+    <div class="panel-head">
+      <h2>Projects</h2>
+      {% if manual_seconds %}<span class="muted">{{ humanize(manual_seconds) }} logged</span>{% endif %}
+    </div>
+    <div class="dt-proj-track">
+      {% for p in project_timeline %}
+      <div class="dt-proj-block" style="left:{{ p.left }}%;width:{{ p.width }}%;background:{{ p.color }}"
+           title="{{ p.name }} · {{ p.label }}{% if p.note %} · {{ p.note }}{% endif %}"></div>
+      {% else %}
+      <div class="dt-proj-empty">No project time logged for this day.</div>
+      {% endfor %}
+    </div>
+    <div class="prod-hours pb7-axis-like">
+      {% for t in bar_hour_ticks %}
+      <span style="left:{{ t.left }}%">{{ t.label }}</span>
+      {% else %}
+      <span>12 AM</span><span>6 AM</span><span>12 PM</span><span>6 PM</span><span>12 AM</span>
+      {% endfor %}
+    </div>
+  </section>
+
+  <div class="two-col dash-admin-cols">
+    <section class="panel dash-panel">
+      <div class="panel-head">
+        <h2>Websites &amp; domains</h2>
+        <span class="muted">from window titles</span>
+      </div>
+      {% if sites %}
+      <table class="apps">
+        <thead><tr><th>Site</th><th>Category</th><th>Share</th><th class="num">Time</th></tr></thead>
+        <tbody>
+          {% for s in sites %}
+          <tr>
+            <td class="app-name">{{ s.domain }}</td>
+            <td><span class="tag {{ s.category }}">{{ s.category }}</span></td>
+            <td>
+              <div class="minibar"><div class="minibar-fill {{ s.category }}" style="width:{{ s.pct }}%"></div></div>
+              {{ s.pct }}%
+            </td>
+            <td class="num">{{ humanize(s.seconds) }}</td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+      {% else %}
+      <p class="empty">No websites detected for this day.</p>
+      {% endif %}
+    </section>
+    <section class="panel dash-panel">
+      <div class="panel-head">
+        <h2>Applications</h2>
+        <span class="muted">share of active time</span>
+      </div>
+      {% if apps %}
+      <table class="apps">
+        <thead>
+          <tr><th>Application</th><th>Category</th><th>Share</th><th class="num">Time</th></tr>
+        </thead>
+        <tbody>
+          {% for a in apps[:15] %}
+          <tr>
+            <td class="app-name">{{ a.app }}</td>
+            <td><span class="tag {{ a.category }}">{{ a.category }}</span></td>
+            <td>
+              <div class="minibar"><div class="minibar-fill {{ a.category }}" style="width:{{ a.pct }}%"></div></div>
+              {{ a.pct }}%
+            </td>
+            <td class="num">{{ humanize(a.seconds) }}</td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+      {% else %}
+      <div class="empty-state compact"><p>No application data for this day.</p></div>
+      {% endif %}
+    </section>
+  </div>
+
+  <section class="panel dash-panel" id="apps">
+    <div class="panel-head">
+      <h2>Activity detail</h2>
+      <span class="muted">apps · window titles · URLs</span>
+    </div>
+    {% if timeline %}
+    <div class="grid-wrap">
+      <table class="apps timeline-table">
+        <thead>
+          <tr>
+            <th>Time</th>
+            <th>App</th>
+            <th>Window / page</th>
+            <th>Website</th>
+            <th>Category</th>
+            <th class="num">Duration</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for t in timeline %}
+          <tr>
+            <td class="num">{{ t.start_ts|clock }}–{{ t.end_ts|clock }}</td>
+            <td class="app-name">{{ t.app }}</td>
+            <td class="title-cell" title="{{ t.title }}">{{ t.title or '—' }}</td>
+            <td>{% if t.domain %}<span class="site-chip">{{ t.domain }}</span>{% else %}—{% endif %}</td>
+            <td><span class="tag {{ t.category }}">{{ t.category }}</span></td>
+            <td class="num">{{ humanize(t.seconds) }}</td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+    {% else %}
+    <p class="empty">No detailed activity for this day.</p>
+    {% endif %}
+  </section>
+
+  <div class="two-col dash-admin-cols">
+    <section class="panel dash-panel">
+      <div class="panel-head">
+        <h2>Activity by hour</h2>
+        <span class="muted">minutes</span>
+      </div>
+      <canvas id="hourly" height="200"></canvas>
+    </section>
+    <section class="panel dash-panel">
+      <div class="panel-head"><h2>Category split</h2></div>
+      <canvas id="cats" height="140"></canvas>
+    </section>
+  </div>
+
+  <section class="panel dash-panel">
+    <div class="panel-head">
+      <h2>Screenshots</h2>
+      <span class="muted">
+        {{ screenshots|length }} captured
+        · <a href="{{ url_for('views.screenshots_browser', day=day, user_id=subject.id) }}">Open gallery</a>
+      </span>
+    </div>
+    {% if screenshots %}
+    <div class="gallery">
+      {% for s in screenshots[:12] %}
+      <a class="shot {% if s.is_unproductive %}is-unproductive{% endif %}" href="{{ url_for('views.screenshot', shot_id=s.id) }}" target="_blank"
+         title="{{ s.app }} — {{ s.title }}">
+        {% if s.is_unproductive %}<span class="shot-flag">Unproductive</span>{% endif %}
+        <img loading="lazy" src="{{ url_for('views.thumb', shot_id=s.id) }}" alt="screenshot at {{ s.ts|clock }}" />
+        <span class="shot-meta">
+          <span class="shot-time">{{ s.ts|clock }}</span>
+          <span class="shot-app">{{ s.app }}</span>
+        </span>
+      </a>
+      {% endfor %}
+    </div>
+    {% else %}
+    <p class="empty">No screenshots captured for this day.</p>
+    {% endif %}
   </section>
 </div>
-
-<section class="panel">
-  <h2>Top applications (minutes)</h2>
-  <canvas id="apps" height="90"></canvas>
-</section>
-
-<section class="panel">
-  <h2>Screenshots <span class="muted">({{ screenshots|length }})</span></h2>
-  {% if screenshots %}
-  <div class="gallery">
-    {% for s in screenshots %}
-    <a class="shot" href="{{ url_for('views.screenshot', shot_id=s.id) }}" target="_blank"
-       title="{{ s.app }} — {{ s.title }}">
-      <img loading="lazy"
-           src="{{ url_for('views.thumb', shot_id=s.id) }}"
-           alt="screenshot at {{ s.ts|clock }}" />
-      <span class="shot-meta">
-        <span class="shot-time">{{ s.ts|clock }}</span>
-        <span class="shot-app">{{ s.app }}</span>
-      </span>
-    </a>
-    {% endfor %}
-  </div>
-  {% else %}
-  <p class="empty">No screenshots captured for this day.</p>
-  {% endif %}
-</section>
 {% endblock %}
 
 {% block scripts %}
+<script src="{{ url_for('static', filename='prod-bar.js') }}?v=18"></script>
 <script>
   const DATA = {{ charts|tojson }};
-  const gridColor = "rgba(255,255,255,0.06)";
-  Chart.defaults.color = "#93a0b5";
-  Chart.defaults.borderColor = gridColor;
+  const grid = "rgba(15, 41, 28, 0.07)";
+  Chart.defaults.color = "#5F7A6A";
+  Chart.defaults.borderColor = grid;
+  Chart.defaults.font.family = "'Source Sans 3', sans-serif";
 
-  new Chart(document.getElementById("hourly"), {
-    type: "bar",
-    data: {
-      labels: DATA.labels,
-      datasets: [
-        { label: "Productive", data: DATA.productive, backgroundColor: "#2ecc71" },
-        { label: "Neutral", data: DATA.neutral, backgroundColor: "#7f8c9b" },
-        { label: "Unproductive", data: DATA.unproductive, backgroundColor: "#e74c3c" },
-        { label: "Idle", data: DATA.idle, backgroundColor: "#3a4457" }
-      ]
-    },
-    options: {
-      responsive: true,
-      scales: { x: { stacked: true }, y: { stacked: true, beginAtZero: true } },
-      plugins: { legend: { position: "bottom" } }
-    }
-  });
+  const hourlyEl = document.getElementById("hourly");
+  if (hourlyEl) {
+    new Chart(hourlyEl, {
+      type: "bar",
+      data: {
+        labels: DATA.labels,
+        datasets: [
+          { label: "Productive", data: DATA.productive, backgroundColor: "#0B7A4B", borderRadius: 4, maxBarThickness: 22, stack: "day" },
+          { label: "Neutral", data: DATA.neutral, backgroundColor: "#94A3B8", borderRadius: 4, maxBarThickness: 22, stack: "day" },
+          { label: "Unproductive", data: DATA.unproductive, backgroundColor: "#C0392B", borderRadius: 4, maxBarThickness: 22, stack: "day" }
+        ]
+      },
+      options: {
+        responsive: true, maintainAspectRatio: false,
+        animation: { duration: 800, easing: "easeOutQuart" },
+        interaction: { mode: "index", intersect: false },
+        scales: {
+          x: { stacked: true, grid: { display: false }, ticks: { maxRotation: 0, autoSkip: true, maxTicksLimit: 12, font: { size: 10, weight: "700" } } },
+          y: { stacked: true, beginAtZero: true, grid: { color: grid }, ticks: { font: { size: 10, weight: "700" } } }
+        },
+        plugins: { legend: { position: "bottom", labels: { boxWidth: 10, font: { size: 11, weight: "700" } } } }
+      }
+    });
+  }
 
-  new Chart(document.getElementById("cats"), {
-    type: "doughnut",
-    data: {
-      labels: ["Productive", "Unproductive", "Neutral", "Idle"],
-      datasets: [{
-        data: [DATA.category.productive, DATA.category.unproductive, DATA.category.neutral, DATA.category.idle],
-        backgroundColor: ["#2ecc71", "#e74c3c", "#7f8c9b", "#3a4457"]
-      }]
-    },
-    options: { plugins: { legend: { position: "bottom" } } }
-  });
-
-  new Chart(document.getElementById("apps"), {
-    type: "bar",
-    data: {
-      labels: DATA.apps.labels,
-      datasets: [{ label: "Minutes", data: DATA.apps.minutes, backgroundColor: "#4f8cff" }]
-    },
-    options: {
-      indexAxis: "y",
-      plugins: { legend: { display: false } },
-      scales: { x: { beginAtZero: true } }
-    }
-  });
+  const catsEl = document.getElementById("cats");
+  if (catsEl) {
+    new Chart(catsEl, {
+      type: "doughnut",
+      data: {
+        labels: ["Productive", "Neutral", "Unproductive", "Idle"],
+        datasets: [{
+          data: [DATA.category.productive, DATA.category.neutral, DATA.category.unproductive, DATA.category.idle],
+          backgroundColor: ["#0B7A4B", "#94A3B8", "#C0392B", "#CBD5E1"],
+          borderWidth: 0
+        }]
+      },
+      options: {
+        responsive: true, maintainAspectRatio: false,
+        animation: { duration: 800, easing: "easeOutQuart" },
+        plugins: { legend: { position: "bottom", labels: { boxWidth: 10, font: { size: 11, weight: "700" } } } }
+      }
+    });
+  }
 </script>
 {% endblock %}

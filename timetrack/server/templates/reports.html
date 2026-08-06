@@ -1,0 +1,156 @@
+{% extends "base.html" %}
+{% block title %}Reports · esstracker{% endblock %}
+{% block content %}
+<div class="page-head">
+  <div>
+    <p class="page-kicker">Insights</p>
+    <h1>Reports</h1>
+    <p class="page-sub">{{ range_days }}-day esstracker productivity, effectiveness, attendance, and top apps.</p>
+  </div>
+  <div class="dt-toolbar-actions">
+    <nav class="daynav">
+      <a class="btn" href="?day={{ prev_day }}&scope={{ scope }}&range={{ range_days }}{% if selected_user %}&user_id={{ selected_user }}{% endif %}">&larr;</a>
+      <form method="get" class="dayform filters">
+        <input type="date" name="day" value="{{ day }}" />
+        <select name="range" onchange="this.form.submit()">
+          <option value="7" {% if range_days == 7 %}selected{% endif %}>7 days</option>
+          <option value="14" {% if range_days == 14 %}selected{% endif %}>14 days</option>
+          <option value="30" {% if range_days == 30 %}selected{% endif %}>30 days</option>
+        </select>
+        {% if current_user.is_admin %}
+        <select name="scope" onchange="this.form.submit()">
+          <option value="me" {% if scope != 'team' %}selected{% endif %}>Employee</option>
+          <option value="team" {% if scope == 'team' %}selected{% endif %}>Whole team</option>
+        </select>
+        {% if scope != 'team' %}
+        <select name="user_id" onchange="this.form.submit()">
+          <option value="">Me</option>
+          {% for u in users %}
+          <option value="{{ u.id }}" {% if selected_user == u.id %}selected{% endif %}>{{ u.name }}</option>
+          {% endfor %}
+        </select>
+        {% endif %}
+        {% endif %}
+        <button class="btn tiny" type="submit">Apply</button>
+      </form>
+      <a class="btn" href="?day={{ next_day }}&scope={{ scope }}&range={{ range_days }}{% if selected_user %}&user_id={{ selected_user }}{% endif %}">&rarr;</a>
+    </nav>
+    {% if scope == 'team' and current_user.is_admin %}
+    <a class="btn tiny export" href="{{ url_for('desk.export_team_csv', day=day) }}">Export team CSV</a>
+    {% else %}
+    <a class="btn tiny export" href="{{ url_for('desk.export_day_csv', day=day, user_id=export_uid) }}">Export day CSV</a>
+    {% endif %}
+  </div>
+</div>
+
+<section class="metrics metrics-wide">
+  <div class="metric score">
+    <div class="ring" style="--pct: {{ avg_prod }}; --ring: var(--productive)">
+      <span class="ring-val">{{ avg_prod }}%</span>
+    </div>
+    <span class="metric-label">Avg productivity</span>
+  </div>
+  <div class="metric">
+    <span class="metric-label">Avg effectiveness</span>
+    <span class="metric-value">{{ avg_eff }}%</span>
+    <span class="metric-hint">vs {{ expected_hours|int }}h / day</span>
+  </div>
+  <div class="metric">
+    <span class="metric-label">Week tracked time</span>
+    <span class="metric-value">{{ humanize(week_active) }}</span>
+  </div>
+  <div class="metric">
+    <span class="metric-label">Week productive</span>
+    <span class="metric-value">{{ humanize(week_productive) }}</span>
+  </div>
+  <div class="metric">
+    <span class="metric-label">Week idle</span>
+    <span class="metric-value">{{ humanize(week_idle) }}</span>
+  </div>
+</section>
+
+<section class="panel">
+  <div class="panel-head"><h2>{{ range_days }}-day productivity</h2></div>
+  <div class="report-bars">
+    {% for d in days %}
+    <a class="report-day {% if d.day == day %}is-selected{% endif %}"
+       href="{% if scope == 'team' %}{{ url_for('views.admin', day=d.day) }}{% elif selected_user %}{{ url_for('views.admin_user', user_id=selected_user, day=d.day) }}{% else %}{{ url_for('views.me', day=d.day) }}{% endif %}">
+      <div class="report-col" style="height: {{ ((d.pct / max_pct) * 100)|round }}%">
+        <span class="report-tip">{{ d.pct }}%</span>
+      </div>
+      <span class="report-label">{{ d.label }}</span>
+      <span class="muted">{{ humanize(d.active) }}</span>
+    </a>
+    {% endfor %}
+  </div>
+</section>
+
+<div class="dt-mid">
+  <section class="panel">
+    <div class="panel-head"><h2>Daily breakdown</h2></div>
+    <table class="apps">
+      <thead>
+        <tr>
+          <th>Day</th>
+          <th>Productivity</th>
+          <th>Effectiveness</th>
+          <th class="num">Tracked</th>
+          <th class="num">Productive</th>
+          <th class="num">Idle</th>
+          {% if scope == 'team' %}
+          <th class="num">Present</th>
+          <th class="num">Late</th>
+          <th class="num">Absent</th>
+          {% endif %}
+        </tr>
+      </thead>
+      <tbody>
+        {% for d in days %}
+        <tr>
+          <td><a href="?day={{ d.day }}&scope={{ scope }}{% if selected_user %}&user_id={{ selected_user }}{% endif %}"><strong>{{ d.label }}</strong></a></td>
+          <td>
+            <div class="minibar"><div class="minibar-fill" style="width:{{ d.pct }}%"></div></div>
+            {{ d.pct }}%
+          </td>
+          <td><span class="eff-badge {% if d.eff >= 80 %}good{% elif d.eff >= 50 %}ok{% endif %}">{{ d.eff }}%</span></td>
+          <td class="num">{{ humanize(d.active) }}</td>
+          <td class="num prod-t">{{ humanize(d.productive) }}</td>
+          <td class="num">{{ humanize(d.idle) }}</td>
+          {% if scope == 'team' %}
+          <td class="num">{{ d.present }}</td>
+          <td class="num">{{ d.late }}</td>
+          <td class="num">{{ d.absent }}</td>
+          {% endif %}
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </section>
+
+  <section class="panel">
+    <div class="panel-head">
+      <h2>Top apps ({{ range_days }} days)</h2>
+      <span class="muted">share of active time</span>
+    </div>
+    {% if top_apps %}
+    <table class="apps">
+      <thead><tr><th>App</th><th>Category</th><th>Share</th></tr></thead>
+      <tbody>
+        {% for a in top_apps %}
+        <tr>
+          <td class="app-name">{{ a.app }}</td>
+          <td><span class="tag {{ a.category }}">{{ a.category }}</span></td>
+          <td>
+            <div class="minibar"><div class="minibar-fill {{ a.category }}" style="width:{{ a.pct }}%"></div></div>
+            {{ a.pct }}%
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+    {% else %}
+    <p class="empty">No app data for this range.</p>
+    {% endif %}
+  </section>
+</div>
+{% endblock %}

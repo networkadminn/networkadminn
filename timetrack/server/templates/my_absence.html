@@ -1,0 +1,82 @@
+{% extends "base.html" %}
+{% block title %}Absence calendar · esstracker{% endblock %}
+{% block content %}
+<div class="page-head">
+  <div>
+    <p class="page-kicker">Your attendance</p>
+    <h1>Absence calendar</h1>
+    <p class="page-sub">{{ month_label }} — each day shows arrival, left, desk time, productive, and idle gaps ({{ tz_name }}).</p>
+  </div>
+  <nav class="daynav">
+    <a class="btn" href="?day={{ prev_month }}">&larr; Prev</a>
+    <form method="get" class="dayform">
+      <input type="month" name="day" value="{{ '%04d-%02d'|format(year, month) }}" onchange="this.form.submit()" />
+    </form>
+    <a class="btn" href="?day={{ next_month }}">Next &rarr;</a>
+    <a class="btn primary inline" href="{{ url_for('views.me', day=day) }}">My Day</a>
+  </nav>
+</div>
+
+<section class="alert-summary">
+  <div class="alert-chip accent"><strong>{{ counts.present }}</strong><span>Present</span></div>
+  <div class="alert-chip late"><strong>{{ counts.late }}</strong><span>Late</span></div>
+  <div class="alert-chip idle"><strong>{{ counts.idle|default(0) }}</strong><span>Idle / gap</span></div>
+  <div class="alert-chip muted"><strong>{{ counts.absent }}</strong><span>Absent</span></div>
+  <div class="alert-chip"><strong>{{ counts.off }}</strong><span>Off days</span></div>
+</section>
+
+<section class="panel absence-month-panel">
+  <div class="panel-head">
+    <h2>{{ month_label }}</h2>
+    <span class="muted">Click a day to open My Day</span>
+  </div>
+  <div class="absence-month-grid absence-month-rich">
+    <div class="absence-month-head">
+      <span>Mon</span><span>Tue</span><span>Wed</span><span>Thu</span><span>Fri</span><span>Sat</span><span>Sun</span>
+    </div>
+    {% for week in weeks %}
+    <div class="absence-month-row">
+      {% for d in week %}
+      {% if d %}
+      {% set c = month_cells[d.strftime('%Y-%m-%d')] %}
+      <a class="absence-day rich {{ c.status }}{% if c.has_gap %} has-gap{% endif %}"
+         href="{{ url_for('views.me', day=d.strftime('%Y-%m-%d')) }}">
+        <span class="absence-day-top">
+          <span class="absence-day-num">{{ d.day }}</span>
+          <span class="absence-day-tag">
+            {% if c.status == 'present' %}P
+            {% elif c.status == 'late' %}L
+            {% elif c.status == 'idle' %}I
+            {% elif c.status == 'off' %}—
+            {% else %}A{% endif %}
+          </span>
+        </span>
+        {% if c.status == 'off' %}
+        <span class="absence-day-meta muted">Off day</span>
+        {% elif c.status == 'absent' %}
+        <span class="absence-day-meta muted">Absent</span>
+        {% else %}
+        <span class="absence-day-meta">
+          <span><em>In</em> {{ c.arrived }}</span>
+          <span><em>Out</em> {{ c.left }}</span>
+          <span><em>Desk</em> {{ c.desktime_label }}</span>
+          <span><em>Prod</em> {{ c.productive_label }}</span>
+          {% if c.has_gap or c.idle > 0 %}
+          <span class="gap-line"><em>Idle</em> {{ c.idle_label }}</span>
+          {% endif %}
+        </span>
+        {% endif %}
+      </a>
+      {% else %}
+      <span class="absence-day empty rich" aria-hidden="true"></span>
+      {% endif %}
+      {% endfor %}
+    </div>
+    {% endfor %}
+  </div>
+  <p class="metric-hint" style="margin-top:12px">
+    P = present · L = late · I = idle / gap · A = absent · — = off day.
+    Idle gaps (≥ 10 min) are highlighted on that date.
+  </p>
+</section>
+{% endblock %}

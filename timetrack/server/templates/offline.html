@@ -1,0 +1,81 @@
+{% extends "base.html" %}
+{% block title %}Fill time · esstracker{% endblock %}
+{% block content %}
+<div class="offline-page">
+  <div class="page-head">
+    <div>
+      <p class="page-kicker">My time</p>
+      <h1>Fill offline / idle gap</h1>
+      <p class="page-sub">
+        Explain time away from the computer or idle periods.
+        {% if requires_approval %}Submissions go to admin for approve or deny.{% else %}Time is added immediately.{% endif %}
+        Times use {{ tz_name }}.
+      </p>
+    </div>
+    <a class="btn ghost" href="{{ url_for('views.me', day=day) }}">← Back to My Day</a>
+  </div>
+
+  <div class="offline-layout">
+    <section class="panel offline-form-panel">
+      <form method="post" class="stack-form offline-form">
+        <input type="hidden" name="day" value="{{ day }}" />
+        <div class="fill-kind-toggle" role="group" aria-label="Fill type">
+          <label class="fill-kind">
+            <input type="radio" name="fill_kind" value="offline" checked />
+            <span>Offline / away</span>
+          </label>
+          <label class="fill-kind">
+            <input type="radio" name="fill_kind" value="idle" />
+            <span>Idle at desk</span>
+          </label>
+        </div>
+        <div class="form-row two">
+          <label>Start
+            <input type="datetime-local" name="start" value="{{ prefill_start }}" required />
+          </label>
+          <label>End
+            <input type="datetime-local" name="end" value="{{ prefill_end }}" required />
+          </label>
+        </div>
+        <label>Category
+          <select name="category">
+            <option value="productive">Productive (meeting, call, work away)</option>
+            <option value="neutral" selected>Neutral</option>
+            <option value="unproductive">Unproductive</option>
+          </select>
+        </label>
+        <label>Note
+          <input name="note" maxlength="500" placeholder="Client call, lunch, power cut, …" />
+        </label>
+        <button class="btn primary inline" type="submit">
+          {% if requires_approval %}Submit for approval{% else %}Add time{% endif %}
+        </button>
+      </form>
+    </section>
+
+    <section class="panel">
+      <div class="panel-head"><h2>Recent requests</h2></div>
+      {% if my_recent %}
+      <ul class="request-list">
+        {% for r in my_recent %}
+        <li>
+          <div>
+            <strong>{{ r.start_ts|clock }} – {{ r.end_ts|clock }}</strong>
+            <span class="muted">{{ r.note or 'No note' }}</span>
+          </div>
+          <div class="request-meta">
+            <span>{{ humanize(r.duration) }}</span>
+            {% if r.status == 'pending' %}<span class="pill warn">Pending</span>
+            {% elif r.status == 'approved' %}<span class="pill live">Approved</span>
+            {% else %}<span class="pill">Rejected</span>{% endif %}
+          </div>
+        </li>
+        {% endfor %}
+      </ul>
+      {% else %}
+      <div class="empty-state compact"><h3>Nothing yet</h3><p>Your submissions will show here.</p></div>
+      {% endif %}
+    </section>
+  </div>
+</div>
+{% endblock %}

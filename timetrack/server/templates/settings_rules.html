@@ -1,0 +1,449 @@
+{% extends "base.html" %}
+{% block title %}Categories · esstracker{% endblock %}
+{% block content %}
+<div class="cat-page">
+  <div class="page-head cat-head">
+    <div>
+      <p class="page-kicker">Settings</p>
+      <h1>App &amp; website categories</h1>
+      <p class="page-sub">
+        Assign productivity levels for tracked apps and domains.
+        Changes sync to agents within ~30 seconds.
+      </p>
+    </div>
+    <div class="cat-stats" aria-label="Category summary">
+      <div class="cat-stat"><strong>{{ counts.apps }}</strong><span>Apps</span></div>
+      <div class="cat-stat"><strong>{{ counts.sites }}</strong><span>Sites</span></div>
+      <div class="cat-stat ok"><strong>{{ counts.productive }}</strong><span>Productive</span></div>
+      <div class="cat-stat warn"><strong>{{ counts.unproductive }}</strong><span>Unproductive</span></div>
+      <div class="cat-stat muted"><strong>{{ counts.neutral }}</strong><span>Neutral</span></div>
+    </div>
+  </div>
+
+  <form method="post" class="rules-form cat-form" id="cat-form"
+        data-defaults-productive="{{ (defaults.productive or [])|join('|')|e }}"
+        data-defaults-unproductive="{{ (defaults.unproductive or [])|join('|')|e }}"
+        data-defaults-sites-productive="{{ (site_defaults.sites_productive or [])|join('|')|e }}"
+        data-defaults-sites-unproductive="{{ (site_defaults.sites_unproductive or [])|join('|')|e }}">
+    <div class="cat-toolbar">
+      <div class="cat-tabs" role="tablist" aria-label="Category views">
+        <button type="button" class="cat-tab is-on" data-tab="tracked" role="tab" aria-selected="true">Tracked items</button>
+        <button type="button" class="cat-tab" data-tab="keywords" role="tab" aria-selected="false">Keyword rules</button>
+      </div>
+      <label class="cat-search">
+        <span class="sr-only">Search</span>
+        <input type="search" id="cat-search" placeholder="Search apps or domains…" autocomplete="off" />
+      </label>
+      <div class="cat-filters" id="cat-filters" role="group" aria-label="Filter by category">
+        <button type="button" class="cat-filter is-on" data-filter="all">All</button>
+        <button type="button" class="cat-filter" data-filter="productive">Productive</button>
+        <button type="button" class="cat-filter" data-filter="neutral">Neutral</button>
+        <button type="button" class="cat-filter" data-filter="unproductive">Unproductive</button>
+      </div>
+    </div>
+
+    <div class="cat-pane is-on" data-pane="tracked" id="pane-tracked">
+      <div class="cat-legend">
+        <span><i class="dot productive"></i> Productive — counts toward productivity</span>
+        <span><i class="dot neutral"></i> Neutral — ignored in score</span>
+        <span><i class="dot unproductive"></i> Unproductive — counts against</span>
+      </div>
+
+      <div class="two-col cat-tracked-cols">
+        <section class="panel dash-panel cat-panel">
+          <div class="panel-head">
+            <h2>Applications</h2>
+            <span class="muted">last 14 days · {{ tracked_apps|length }}</span>
+          </div>
+          {% if tracked_apps %}
+          <div class="cat-table-wrap">
+            <table class="cat-table" id="cat-apps">
+              <thead>
+                <tr><th>App</th><th class="num">Time</th><th>Category</th></tr>
+              </thead>
+              <tbody>
+                {% for a in tracked_apps %}
+                <tr class="cat-row" data-kind="app" data-name="{{ a.name|e }}" data-cat="{{ a.category }}" data-search="{{ a.name|lower|e }}">
+                  <td class="cat-name">
+                    <strong>{{ a.name }}</strong>
+                  </td>
+                  <td class="num cat-time">{{ a.label }}</td>
+                  <td>
+                    <select class="cat-select {{ a.category }}" data-kind="app" data-name="{{ a.name|e }}" aria-label="Category for {{ a.name }}">
+                      <option value="productive" {% if a.category == 'productive' %}selected{% endif %}>Productive</option>
+                      <option value="neutral" {% if a.category == 'neutral' %}selected{% endif %}>Neutral</option>
+                      <option value="unproductive" {% if a.category == 'unproductive' %}selected{% endif %}>Unproductive</option>
+                    </select>
+                  </td>
+                </tr>
+                {% endfor %}
+              </tbody>
+            </table>
+          </div>
+          {% else %}
+          <div class="empty-state compact">
+            <h3>No apps yet</h3>
+            <p>Once agents track activity, apps appear here for quick categorization.</p>
+          </div>
+          {% endif %}
+        </section>
+
+        <section class="panel dash-panel cat-panel">
+          <div class="panel-head">
+            <h2>Websites &amp; domains</h2>
+            <span class="muted">last 14 days · {{ tracked_sites|length }}</span>
+          </div>
+          {% if tracked_sites %}
+          <div class="cat-table-wrap">
+            <table class="cat-table" id="cat-sites">
+              <thead>
+                <tr><th>Domain</th><th class="num">Time</th><th>Category</th></tr>
+              </thead>
+              <tbody>
+                {% for s in tracked_sites %}
+                <tr class="cat-row" data-kind="site" data-name="{{ s.name|e }}" data-cat="{{ s.category }}" data-search="{{ s.name|lower|e }}">
+                  <td class="cat-name">
+                    <strong>{{ s.name }}</strong>
+                  </td>
+                  <td class="num cat-time">{{ s.label }}</td>
+                  <td>
+                    <select class="cat-select {{ s.category }}" data-kind="site" data-name="{{ s.name|e }}" aria-label="Category for {{ s.name }}">
+                      <option value="productive" {% if s.category == 'productive' %}selected{% endif %}>Productive</option>
+                      <option value="neutral" {% if s.category == 'neutral' %}selected{% endif %}>Neutral</option>
+                      <option value="unproductive" {% if s.category == 'unproductive' %}selected{% endif %}>Unproductive</option>
+                    </select>
+                  </td>
+                </tr>
+                {% endfor %}
+              </tbody>
+            </table>
+          </div>
+          {% else %}
+          <div class="empty-state compact">
+            <h3>No websites yet</h3>
+            <p>Domains from browser titles and URLs show up here after tracking starts.</p>
+          </div>
+          {% endif %}
+        </section>
+      </div>
+      <p class="muted cat-note">Changing a category adds a matching keyword/domain rule. Save to apply.</p>
+    </div>
+
+    <div class="cat-pane" data-pane="keywords" id="pane-keywords" hidden>
+      <div class="cat-kw-hero">
+        <div>
+          <h2>Keyword rules</h2>
+          <p>
+            Match against app name + window title, or against website domains.
+            Domains are checked first; <strong>unproductive wins</strong> if both sides match.
+          </p>
+        </div>
+        <div class="cat-kw-actions">
+          <button type="button" class="btn tiny" id="kw-text-toggle">Edit as text</button>
+          <button type="button" class="btn tiny" id="kw-sort-all">Sort A–Z</button>
+        </div>
+      </div>
+
+      <div class="cat-kw-tips" aria-label="Matching tips">
+        <div class="cat-kw-tip">
+          <strong>Apps</strong>
+          <span>Substring match on <code>app + title</code> (e.g. <code>code</code>, <code>jira</code>)</span>
+        </div>
+        <div class="cat-kw-tip">
+          <strong>Sites</strong>
+          <span>Domain match (e.g. <code>youtube.com</code>, <code>docs.google.com</code>)</span>
+        </div>
+        <div class="cat-kw-tip">
+          <strong>Add</strong>
+          <span>Type a keyword and press Enter or comma. Click × to remove.</span>
+        </div>
+      </div>
+
+      <h3 class="rules-section-title">Application keywords</h3>
+      <div class="rules-grid cat-kw-grid" data-kw-group="apps">
+        {% macro kw_board(key, title, cat, placeholder, items) -%}
+        <section class="panel cat-kw {{ cat }}" data-kw-board data-kw-id="kw-{{ key }}" data-kw-cat="{{ cat }}">
+          <div class="panel-head">
+            <h2>{{ title }}</h2>
+            <span class="tag {{ cat }} kw-count" data-count-for="kw-{{ key }}">{{ items|length }}</span>
+          </div>
+          <div class="kw-chip-box" data-chips-for="kw-{{ key }}">
+            <div class="kw-chips" role="list"></div>
+            <input class="kw-add" type="text" placeholder="{{ placeholder }}"
+                   aria-label="Add to {{ title }}" data-add-for="kw-{{ key }}" autocomplete="off" />
+          </div>
+          <textarea class="kw-source" name="{{ key }}" id="kw-{{ key }}" rows="8" hidden>{{ items|join('\n') }}</textarea>
+          <details class="kw-raw">
+            <summary>Raw text</summary>
+            <textarea class="kw-raw-edit" data-raw-for="kw-{{ key }}" rows="8" spellcheck="false">{{ items|join('\n') }}</textarea>
+          </details>
+        </section>
+        {%- endmacro %}
+
+        {{ kw_board('productive', 'Productive apps', 'productive', 'Add app keyword…', rules.productive) }}
+        {{ kw_board('unproductive', 'Unproductive apps', 'unproductive', 'Add app keyword…', rules.unproductive) }}
+        {{ kw_board('neutral', 'Neutral apps', 'neutral', 'Add app keyword…', rules.neutral) }}
+      </div>
+
+      <h3 class="rules-section-title">Website &amp; domain keywords</h3>
+      <div class="rules-grid two cat-kw-grid" data-kw-group="sites">
+        {{ kw_board('sites_productive', 'Productive sites', 'productive', 'Add domain… e.g. github.com', rules.sites_productive) }}
+        {{ kw_board('sites_unproductive', 'Unproductive sites', 'unproductive', 'Add domain… e.g. youtube.com', rules.sites_unproductive) }}
+      </div>
+    </div>
+
+    <div class="cat-savebar form-actions">
+      <button class="btn primary inline" type="submit">Save categories</button>
+      <p class="muted">Agents pick up new rules automatically within ~30 seconds.</p>
+    </div>
+  </form>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+(function () {
+  var form = document.getElementById("cat-form");
+  if (!form) return;
+
+  var search = document.getElementById("cat-search");
+  var filters = document.getElementById("cat-filters");
+  var filter = "all";
+  var activeTab = "tracked";
+  var textMode = false;
+
+  var defaultSets = {
+    "kw-productive": splitDefaults(form.getAttribute("data-defaults-productive")),
+    "kw-unproductive": splitDefaults(form.getAttribute("data-defaults-unproductive")),
+    "kw-sites_productive": splitDefaults(form.getAttribute("data-defaults-sites-productive")),
+    "kw-sites_unproductive": splitDefaults(form.getAttribute("data-defaults-sites-unproductive")),
+    "kw-neutral": {}
+  };
+
+  function splitDefaults(raw) {
+    var map = {};
+    (raw || "").split("|").forEach(function (x) {
+      var k = x.trim().toLowerCase();
+      if (k) map[k] = true;
+    });
+    return map;
+  }
+
+  function linesOf(id) {
+    var el = document.getElementById(id);
+    if (!el) return [];
+    return el.value.split(/\n/).map(function (s) { return s.trim(); }).filter(Boolean);
+  }
+
+  function writeLines(id, items, skipRender) {
+    var el = document.getElementById(id);
+    if (!el) return;
+    var seen = {};
+    var out = [];
+    items.forEach(function (item) {
+      var k = String(item || "").trim();
+      if (!k) return;
+      var lk = k.toLowerCase();
+      if (seen[lk]) return;
+      seen[lk] = true;
+      out.push(k);
+    });
+    el.value = out.join("\n");
+    var raw = form.querySelector('[data-raw-for="' + id + '"]');
+    if (raw && document.activeElement !== raw) raw.value = el.value;
+    var count = form.querySelector('[data-count-for="' + id + '"]');
+    if (count) count.textContent = String(out.length);
+    if (!skipRender) renderChips(id);
+  }
+
+  function removeFrom(id, name) {
+    var needle = (name || "").toLowerCase();
+    writeLines(id, linesOf(id).filter(function (x) { return x.toLowerCase() !== needle; }));
+  }
+
+  function addTo(id, name) {
+    var items = linesOf(id);
+    items.push(name);
+    writeLines(id, items);
+  }
+
+  function applyCategory(kind, name, cat) {
+    if (kind === "site") {
+      removeFrom("kw-sites_productive", name);
+      removeFrom("kw-sites_unproductive", name);
+      if (cat === "productive") addTo("kw-sites_productive", name);
+      if (cat === "unproductive") addTo("kw-sites_unproductive", name);
+      return;
+    }
+    removeFrom("kw-productive", name);
+    removeFrom("kw-unproductive", name);
+    removeFrom("kw-neutral", name);
+    if (cat === "productive") addTo("kw-productive", name);
+    else if (cat === "unproductive") addTo("kw-unproductive", name);
+    else addTo("kw-neutral", name);
+  }
+
+  function renderChips(id) {
+    var box = form.querySelector('[data-chips-for="' + id + '"] .kw-chips');
+    if (!box) return;
+    var q = (search && search.value || "").trim().toLowerCase();
+    var defs = defaultSets[id] || {};
+    box.innerHTML = "";
+    linesOf(id).forEach(function (item) {
+      if (q && item.toLowerCase().indexOf(q) === -1) return;
+      var chip = document.createElement("button");
+      chip.type = "button";
+      chip.className = "kw-chip" + (defs[item.toLowerCase()] ? " is-default" : "");
+      chip.setAttribute("role", "listitem");
+      chip.title = defs[item.toLowerCase()] ? "Built-in default — click × to remove" : "Click × to remove";
+      chip.innerHTML = "<span></span><i aria-hidden=\"true\">×</i>";
+      chip.querySelector("span").textContent = item;
+      chip.querySelector("i").addEventListener("click", function (ev) {
+        ev.stopPropagation();
+        removeFrom(id, item);
+      });
+      box.appendChild(chip);
+    });
+    if (!box.children.length) {
+      var empty = document.createElement("p");
+      empty.className = "kw-empty";
+      empty.textContent = q ? "No keywords match your search." : "No keywords yet — add one above.";
+      box.appendChild(empty);
+    }
+  }
+
+  function renderAllChips() {
+    form.querySelectorAll("[data-kw-id]").forEach(function (board) {
+      renderChips(board.getAttribute("data-kw-id"));
+    });
+  }
+
+  function filterBoards() {
+    form.querySelectorAll("[data-kw-board]").forEach(function (board) {
+      var cat = board.getAttribute("data-kw-cat") || "";
+      var show = filter === "all" || cat === filter;
+      board.hidden = !show;
+    });
+  }
+
+  form.querySelectorAll(".cat-select").forEach(function (sel) {
+    sel.addEventListener("change", function () {
+      var kind = sel.getAttribute("data-kind");
+      var name = sel.getAttribute("data-name");
+      var cat = sel.value;
+      applyCategory(kind, name, cat);
+      sel.className = "cat-select " + cat;
+      var row = sel.closest(".cat-row");
+      if (row) row.setAttribute("data-cat", cat);
+      applyFilters();
+    });
+  });
+
+  form.querySelectorAll(".kw-add").forEach(function (input) {
+    function commit() {
+      var id = input.getAttribute("data-add-for");
+      var parts = input.value.split(/[,\n]/).map(function (s) { return s.trim(); }).filter(Boolean);
+      if (!parts.length) return;
+      parts.forEach(function (p) { addTo(id, p); });
+      input.value = "";
+    }
+    input.addEventListener("keydown", function (ev) {
+      if (ev.key === "Enter" || ev.key === ",") {
+        ev.preventDefault();
+        commit();
+      }
+    });
+    input.addEventListener("blur", function () {
+      if (input.value.trim()) commit();
+    });
+  });
+
+  form.querySelectorAll(".kw-raw-edit").forEach(function (raw) {
+    raw.addEventListener("input", function () {
+      var id = raw.getAttribute("data-raw-for");
+      writeLines(id, raw.value.split(/\n/), true);
+      renderChips(id);
+    });
+  });
+
+  var textToggle = document.getElementById("kw-text-toggle");
+  if (textToggle) {
+    textToggle.addEventListener("click", function () {
+      textMode = !textMode;
+      form.classList.toggle("is-text-mode", textMode);
+      textToggle.textContent = textMode ? "Edit as chips" : "Edit as text";
+      if (textMode) {
+        form.querySelectorAll(".kw-raw").forEach(function (d) { d.open = true; });
+      }
+    });
+  }
+
+  var sortBtn = document.getElementById("kw-sort-all");
+  if (sortBtn) {
+    sortBtn.addEventListener("click", function () {
+      form.querySelectorAll("[data-kw-id]").forEach(function (board) {
+        var id = board.getAttribute("data-kw-id");
+        var items = linesOf(id).slice().sort(function (a, b) {
+          return a.toLowerCase().localeCompare(b.toLowerCase());
+        });
+        writeLines(id, items);
+      });
+    });
+  }
+
+  function applyFilters() {
+    var q = (search && search.value || "").trim().toLowerCase();
+    if (activeTab === "tracked") {
+      form.querySelectorAll(".cat-row").forEach(function (row) {
+        var cat = row.getAttribute("data-cat") || "";
+        var hay = row.getAttribute("data-search") || "";
+        var okCat = filter === "all" || cat === filter;
+        var okQ = !q || hay.indexOf(q) !== -1;
+        row.hidden = !(okCat && okQ);
+      });
+    } else {
+      filterBoards();
+      renderAllChips();
+    }
+  }
+
+  if (search) {
+    search.addEventListener("input", applyFilters);
+  }
+
+  form.querySelectorAll(".cat-filter").forEach(function (btn) {
+    btn.addEventListener("click", function () {
+      form.querySelectorAll(".cat-filter").forEach(function (b) { b.classList.remove("is-on"); });
+      btn.classList.add("is-on");
+      filter = btn.getAttribute("data-filter") || "all";
+      applyFilters();
+    });
+  });
+
+  form.querySelectorAll(".cat-tab").forEach(function (tab) {
+    tab.addEventListener("click", function () {
+      var id = tab.getAttribute("data-tab");
+      activeTab = id;
+      form.querySelectorAll(".cat-tab").forEach(function (t) {
+        t.classList.toggle("is-on", t === tab);
+        t.setAttribute("aria-selected", t === tab ? "true" : "false");
+      });
+      form.querySelectorAll(".cat-pane").forEach(function (pane) {
+        var on = pane.getAttribute("data-pane") === id;
+        pane.classList.toggle("is-on", on);
+        pane.hidden = !on;
+      });
+      if (search) {
+        search.placeholder = id === "keywords"
+          ? "Search keywords…"
+          : "Search apps or domains…";
+      }
+      if (filters) filters.hidden = false;
+      applyFilters();
+    });
+  });
+
+  renderAllChips();
+})();
+</script>
+{% endblock %}

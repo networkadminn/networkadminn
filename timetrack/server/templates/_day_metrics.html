@@ -1,0 +1,77 @@
+{# Shared day metrics — DeskTime-style 8 KPI cards #}
+{% set spark_line = spark_line|default('0,38 20,38 40,38 60,38 80,38 100,38 120,38') %}
+{% set spark_area = spark_area|default('0,40 0,38 20,38 40,38 60,38 80,38 100,38 120,38 120,40') %}
+{% macro sparkline(tone='ok') -%}
+  <svg class="dt-spark tone-{{ tone }}" viewBox="0 0 120 40" preserveAspectRatio="none" aria-hidden="true">
+    <polygon class="dt-spark-area" points="{{ spark_area }}"></polygon>
+    <polyline class="dt-spark-line" points="{{ spark_line }}" fill="none"></polyline>
+  </svg>
+{%- endmacro %}
+
+<section class="dash-metrics dash-metrics-kpi" aria-label="Day summary">
+  <div class="dt-kpi-grid">
+    <article class="dt-kpi">
+      <header>
+        <span>Arrival time</span>
+      </header>
+      <strong class="ok">{{ arrived }}</strong>
+      {{ sparkline('ok') }}
+    </article>
+
+    <article class="dt-kpi">
+      <header>
+        <span>{% if left_display == 'ONLINE' %}Status{% else %}Left time{% endif %}</span>
+      </header>
+      <strong class="{% if left_display == 'ONLINE' %}ok live{% else %}ok{% endif %}">{{ left_display }}</strong>
+      {{ sparkline('ok') }}
+    </article>
+
+    <article class="dt-kpi">
+      <header>
+        <span>Productive time</span>
+      </header>
+      <strong class="ok">{{ humanize(summary.productive_seconds) }}</strong>
+      {{ sparkline('ok') }}
+    </article>
+
+    <article class="dt-kpi">
+      <header>
+        <span>Desktime time</span>
+      </header>
+      <strong class="ok">{{ humanize(desktime_seconds) }}</strong>
+      {{ sparkline('ok') }}
+    </article>
+
+    <article class="dt-kpi">
+      <header>
+        <span>Time at work</span>
+      </header>
+      <strong class="ok">{{ humanize(summary.span_seconds) }}</strong>
+      {{ sparkline('ok') }}
+    </article>
+
+    <article class="dt-kpi">
+      <header>
+        <span>Idle time</span>
+      </header>
+      <strong>{% if summary.idle_seconds %}{{ humanize(summary.idle_seconds) }}{% else %}0m{% endif %}</strong>
+      {{ sparkline('muted') }}
+    </article>
+
+    <article class="dt-kpi">
+      <header>
+        <span>Productivity</span>
+      </header>
+      <strong class="{% if dt_productivity >= 50 %}ok{% else %}warn{% endif %}">{{ dt_productivity }}%</strong>
+      {{ sparkline('warn' if dt_productivity < 50 else 'ok') }}
+    </article>
+
+    <article class="dt-kpi">
+      <header>
+        <span>Effectiveness</span>
+      </header>
+      <strong class="{% if dt_effectiveness >= 50 %}ok{% else %}warn{% endif %}">{{ dt_effectiveness }}%</strong>
+      {{ sparkline('warn' if dt_effectiveness < 50 else 'ok') }}
+    </article>
+  </div>
+</section>

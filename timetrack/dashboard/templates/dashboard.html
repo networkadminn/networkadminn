@@ -3,52 +3,54 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>TimeTrack &middot; {{ day }}</title>
+  <title>TimeTrack · {{ day }}</title>
   <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}" />
 </head>
 <body>
   <header class="topbar">
     <div class="brand">
-      <span class="logo">&#9200;</span>
-      <span>TimeTrack</span>
+      <span class="brand-mark" aria-hidden="true">T</span>
+      TimeTrack
     </div>
-    <nav class="daynav">
-      <a class="btn" href="?day={{ prev_day }}">&larr;</a>
+    <nav class="daynav" aria-label="Choose day">
+      <a class="btn" href="?day={{ prev_day }}" aria-label="Previous day">&larr;</a>
       <form method="get" class="dayform">
         <input type="date" name="day" value="{{ day }}" onchange="this.form.submit()" />
       </form>
-      <a class="btn" href="?day={{ next_day }}">&rarr;</a>
+      <a class="btn" href="?day={{ next_day }}" aria-label="Next day">&rarr;</a>
     </nav>
   </header>
 
   <main class="wrap">
-    <section class="cards">
-      <div class="card score">
+    <p class="page-kicker">Local mode</p>
+    <h1 class="page-title">Activity for {{ day }}</h1>
+
+    <section class="metrics" aria-label="Day metrics">
+      <div class="metric score">
         <div class="ring" style="--pct: {{ summary.productivity_pct }}">
           <span class="ring-val">{{ summary.productivity_pct }}%</span>
         </div>
-        <div class="card-label">Productivity</div>
+        <div class="metric-label">Productivity</div>
       </div>
-
-      <div class="card">
-        <div class="stat">{{ humanize(summary.active_seconds) }}</div>
-        <div class="card-label">Time at work (active)</div>
+      <div class="metric">
+        <div class="metric-label">Active time</div>
+        <div class="metric-value">{{ humanize(summary.active_seconds) }}</div>
       </div>
-      <div class="card">
-        <div class="stat">{{ humanize(summary.productive_seconds) }}</div>
-        <div class="card-label">Productive time</div>
+      <div class="metric">
+        <div class="metric-label">Productive</div>
+        <div class="metric-value">{{ humanize(summary.productive_seconds) }}</div>
       </div>
-      <div class="card">
-        <div class="stat">{{ humanize(summary.idle_seconds) }}</div>
-        <div class="card-label">Idle time</div>
+      <div class="metric">
+        <div class="metric-label">Idle</div>
+        <div class="metric-value">{{ humanize(summary.idle_seconds) }}</div>
       </div>
-      <div class="card">
-        <div class="stat">{{ summary.effectiveness_pct }}%</div>
-        <div class="card-label">Effectiveness</div>
+      <div class="metric">
+        <div class="metric-label">Effectiveness</div>
+        <div class="metric-value">{{ summary.effectiveness_pct }}%</div>
       </div>
-      <div class="card">
-        <div class="stat">{{ humanize(summary.span_seconds) }}</div>
-        <div class="card-label">Arrived &rarr; last seen</div>
+      <div class="metric">
+        <div class="metric-label">Arrived → last</div>
+        <div class="metric-value">{{ humanize(summary.span_seconds) }}</div>
       </div>
     </section>
 
@@ -100,7 +102,7 @@
     </section>
 
     <footer class="foot">
-      Local database: <code>{{ backend }}</code> &middot; data never leaves your machine.
+      Local database: <code>{{ backend }}</code> · data never leaves your machine.
     </footer>
   </main>
 </body>

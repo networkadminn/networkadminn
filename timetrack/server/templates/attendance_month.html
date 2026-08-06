@@ -1,0 +1,104 @@
+{% extends "base.html" %}
+{% block title %}Absence calendar · esstracker{% endblock %}
+{% block content %}
+<div class="page-head">
+  <div>
+    <p class="page-kicker">Company</p>
+    <h1>Absence calendar</h1>
+    <p class="page-sub">{% if view == 'month_team' %}Team month grid{% else %}Month view for one employee{% endif %} — {{ month_label }}.</p>
+  </div>
+  <nav class="daynav">
+    <a class="btn {% if view == 'week' %}primary{% endif %}" href="{{ url_for('desk.attendance', view='week', day=day) }}">Week</a>
+    <a class="btn {% if view != 'week' %}primary{% endif %}" href="{{ url_for('desk.attendance', view='month', day=day) }}">Month</a>
+    <a class="btn" href="?view=month&day={{ prev_month }}">&larr;</a>
+    <form method="get" class="dayform">
+      <input type="hidden" name="view" value="month" />
+      <input type="month" name="day" value="{{ '%04d-%02d'|format(year, month) }}" onchange="this.form.submit()" />
+    </form>
+    <a class="btn" href="?view=month&day={{ next_month }}">&rarr;</a>
+  </nav>
+</div>
+
+{% if subject is defined and subject %}
+<section class="panel absence-month-panel">
+  <div class="panel-head">
+    <h2>{{ subject.name }}</h2>
+    <form method="get" class="inline-form">
+      <input type="hidden" name="view" value="month" />
+      <input type="hidden" name="day" value="{{ day }}" />
+      <select name="user_id" onchange="this.form.submit()">
+        <option value="">Pick employee…</option>
+        {% for u in employees %}
+        <option value="{{ u.id }}" {% if u.id == subject.id %}selected{% endif %}>{{ u.name }}</option>
+        {% endfor %}
+      </select>
+    </form>
+  </div>
+  {% include "_absence_month_grid.html" %}
+</section>
+{% elif matrix is defined %}
+<section class="alert-summary">
+  <div class="alert-chip accent"><strong>{{ totals.present }}</strong><span>Present cells</span></div>
+  <div class="alert-chip late"><strong>{{ totals.late }}</strong><span>Late</span></div>
+  <div class="alert-chip muted"><strong>{{ totals.absent }}</strong><span>Absent</span></div>
+  <div class="alert-chip"><strong>{{ totals.off }}</strong><span>Off</span></div>
+</section>
+<section class="panel">
+  <div class="panel-head">
+    <h2>{{ month_label }}</h2>
+    <form method="get" class="inline-form">
+      <input type="hidden" name="view" value="month" />
+      <input type="hidden" name="day" value="{{ day }}" />
+      <select name="user_id" onchange="this.form.submit()">
+        <option value="">Team month table</option>
+        {% for u in employees %}
+        <option value="{{ u.id }}">{{ u.name }} — calendar</option>
+        {% endfor %}
+      </select>
+    </form>
+  </div>
+  <div class="grid-wrap scroll-x">
+    <table class="grid attendance-grid">
+      <thead>
+        <tr>
+          <th>Employee</th>
+          {% for d in month_days %}
+          <th><span class="muted">{{ d.strftime('%d') }}</span><br />{{ d.strftime('%a') }}</th>
+          {% endfor %}
+        </tr>
+      </thead>
+      <tbody>
+        {% for row in matrix %}
+        <tr class="no-click">
+          <td><strong>{{ row.user.name }}</strong></td>
+          {% for c in row.cells %}
+          <td>
+            <a class="att-cell {{ c.status }}" href="{{ url_for('views.admin_user', user_id=row.user.id) }}?day={{ c.day }}" title="{{ c.arrived }} – {{ c.left }}">
+              {% if c.status == 'present' %}P{% elif c.status == 'late' %}L{% elif c.status == 'off' %}—{% else %}A{% endif %}
+            </a>
+          </td>
+          {% endfor %}
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</section>
+{% else %}
+<section class="panel">
+  <p class="page-sub">Choose an employee from the month view dropdown, or switch to <a href="{{ url_for('desk.attendance', view='week', day=day) }}">week grid</a>.</p>
+  <form method="get" class="stack-form" style="max-width:320px">
+    <input type="hidden" name="view" value="month" />
+    <input type="hidden" name="day" value="{{ day }}" />
+    <label>Employee calendar
+      <select name="user_id" required>
+        {% for u in employees %}
+        <option value="{{ u.id }}">{{ u.name }}</option>
+        {% endfor %}
+      </select>
+    </label>
+    <button class="btn primary" type="submit">Open</button>
+  </form>
+</section>
+{% endif %}
+{% endblock %}

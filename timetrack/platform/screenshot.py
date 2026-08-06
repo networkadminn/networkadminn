@@ -1,7 +1,7 @@
 """Cross-platform screenshot capture (Windows / macOS / Linux via ``mss``).
 
-Produces a downscaled JPEG to keep uploads small. Returns ``None`` when no
-display is available (e.g. headless servers/CI) so callers can skip silently.
+Produces a downscaled JPEG to keep uploads small. Supports optional blur
+(DeskTime-style privacy). Returns ``None`` when no display is available.
 """
 
 from __future__ import annotations
@@ -9,20 +9,22 @@ from __future__ import annotations
 import io
 
 
-def capture_jpeg(max_width: int = 1280, quality: int = 60) -> tuple[bytes, int, int] | None:
-    """Capture the virtual desktop and return ``(jpeg_bytes, width, height)``.
-
-    ``None`` is returned when capture is not possible.
-    """
+def capture_jpeg(
+    max_width: int = 1920,
+    quality: int = 82,
+    blur: bool = False,
+    blur_radius: int = 12,
+) -> tuple[bytes, int, int] | None:
+    """Capture the virtual desktop and return ``(jpeg_bytes, width, height)``."""
     try:
         import mss  # type: ignore
-        from PIL import Image  # type: ignore
+        from PIL import Image, ImageFilter  # type: ignore
     except Exception:
         return None
 
     try:
         with mss.mss() as sct:
-            monitor = sct.monitors[0]  # [0] is the full virtual screen
+            monitor = sct.monitors[0]
             raw = sct.grab(monitor)
             img = Image.frombytes("RGB", raw.size, raw.bgra, "raw", "BGRX")
     except Exception:
@@ -32,6 +34,10 @@ def capture_jpeg(max_width: int = 1280, quality: int = 60) -> tuple[bytes, int, 
     if width > max_width and width > 0:
         ratio = max_width / float(width)
         img = img.resize((max_width, max(1, int(height * ratio))))
+
+    if blur:
+        # Heavy blur so text is unreadable but layout/apps remain recognizable.
+        img = img.filter(ImageFilter.GaussianBlur(radius=max(4, blur_radius)))
 
     buf = io.BytesIO()
     img.save(buf, format="JPEG", quality=quality, optimize=True)

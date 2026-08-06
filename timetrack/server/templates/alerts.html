@@ -1,0 +1,136 @@
+{% extends "base.html" %}
+{% block title %}Alerts · esstracker{% endblock %}
+{% block content %}
+<div class="page-head">
+  <div>
+    <p class="page-kicker">Company</p>
+    <h1>Alerts</h1>
+    <p class="page-sub">What needs attention today — offline agents, late arrivals, approvals, and flagged shots.</p>
+  </div>
+  <nav class="daynav" aria-label="Choose day">
+    <form method="get" class="dayform">
+      <input type="date" name="day" value="{{ day }}" onchange="this.form.submit()" />
+    </form>
+  </nav>
+</div>
+
+<section class="alert-summary">
+  <div class="alert-chip warn">
+    <strong>{{ offline_agents|length }}</strong>
+    <span>Offline agents</span>
+  </div>
+  <div class="alert-chip late">
+    <strong>{{ late_list|length }}</strong>
+    <span>Late today</span>
+  </div>
+  <div class="alert-chip muted">
+    <strong>{{ absent_list|length }}</strong>
+    <span>Absent</span>
+  </div>
+  <div class="alert-chip accent">
+    <strong>{{ pending|length }}</strong>
+    <span>Pending approvals</span>
+  </div>
+  <div class="alert-chip danger">
+    <strong>{{ flagged_shots|length }}</strong>
+    <span>Flagged screenshots</span>
+  </div>
+</section>
+
+<div class="two-col">
+  <section class="panel">
+    <div class="panel-head">
+      <h2>Offline agents</h2>
+      <span class="muted">no ping in {{ online_window }}s</span>
+    </div>
+    {% if offline_agents %}
+    <ul class="rank-list">
+      {% for row in offline_agents %}
+      <li>
+        <a href="{{ url_for('views.admin_user', user_id=row.user.id) }}?day={{ day }}">
+          <span class="avatar">{{ row.user.name[0]|upper }}</span>
+          <span class="rank-meta">
+            <strong>{{ row.user.name }}</strong>
+            <span class="muted">Last seen {{ row.last_seen }}{% if row.ago != '—' %} · {{ row.ago }} ago{% endif %}</span>
+          </span>
+          <span class="status offline">Offline</span>
+        </a>
+      </li>
+      {% endfor %}
+    </ul>
+    {% else %}
+    <div class="empty-state compact"><h3>All clear</h3><p>Everyone enabled looks online.</p></div>
+    {% endif %}
+  </section>
+
+  <section class="panel">
+    <div class="panel-head"><h2>Late arrivals</h2></div>
+    {% if late_list %}
+    <ul class="rank-list">
+      {% for row in late_list %}
+      <li>
+        <a href="{{ url_for('views.admin_user', user_id=row.user.id) }}?day={{ day }}">
+          <span class="avatar warn">{{ row.user.name[0]|upper }}</span>
+          <span class="rank-meta">
+            <strong>{{ row.user.name }}</strong>
+            <span class="muted">Arrived {{ row.arrived }}</span>
+          </span>
+          <span class="status late">Late</span>
+        </a>
+      </li>
+      {% endfor %}
+    </ul>
+    {% else %}
+    <div class="empty-state compact"><h3>On time</h3><p>No late arrivals for this day.</p></div>
+    {% endif %}
+  </section>
+</div>
+
+<section class="panel">
+  <div class="panel-head">
+    <h2>Pending offline approvals</h2>
+    <a class="btn tiny" href="{{ url_for('desk.approvals') }}">Open approvals</a>
+  </div>
+  {% if pending %}
+  <ul class="rank-list">
+    {% for r in pending %}
+    <li>
+      <a href="{{ url_for('desk.approvals') }}">
+        <span class="avatar">{{ r.user.name[0]|upper }}</span>
+        <span class="rank-meta">
+          <strong>{{ r.user.name }}</strong>
+          <span class="muted">{{ humanize(r.duration) }} · {{ r.note or 'No note' }}</span>
+        </span>
+        <span class="tag neutral">pending</span>
+      </a>
+    </li>
+    {% endfor %}
+  </ul>
+  {% else %}
+  <p class="empty">No pending offline requests.</p>
+  {% endif %}
+</section>
+
+<section class="panel">
+  <div class="panel-head">
+    <h2>Unproductive screenshots</h2>
+    <span class="muted">{{ day }}</span>
+  </div>
+  {% if flagged_shots %}
+  <div class="gallery">
+    {% for s in flagged_shots %}
+    <a class="shot is-unproductive" href="{{ url_for('views.screenshot', shot_id=s.id) }}" target="_blank" rel="noopener">
+      <span class="shot-flag">Unproductive</span>
+      <img src="{{ url_for('views.thumb', shot_id=s.id) }}" alt="{{ s.app }}" loading="lazy" />
+      <span class="shot-meta">
+        <span class="shot-app">{{ s.app or 'App' }}</span>
+        <span>{{ s.user.name if s.user else '' }}</span>
+      </span>
+    </a>
+    {% endfor %}
+  </div>
+  {% else %}
+  <p class="empty">No flagged screenshots today.</p>
+  {% endif %}
+</section>
+{% endblock %}

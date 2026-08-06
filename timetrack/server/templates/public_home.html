@@ -1,0 +1,630 @@
+{% extends "base.html" %}
+{% block title %}esstracker · Employee Time & Productivity Tracking{% endblock %}
+{% block head %}
+<meta name="description" content="esstracker — self-hosted employee time tracking, productivity timelines, gap approvals, and team dashboards by Euclidee Software Solutions." />
+<link rel="stylesheet" href="{{ url_for('static', filename='public.css') }}?v=20" />
+{% endblock %}
+{% block body %}
+<div class="pub-page">
+  <div class="pub-progress" id="scrollProgress" aria-hidden="true"></div>
+
+  <header class="pub-header" id="top">
+    <div class="pub-header-inner">
+      <a class="pub-logo" href="{{ url_for('views.home') }}">
+        <img src="{{ url_for('static', filename='brand/ess-mark.png') }}" alt="" />
+        <span>
+          <strong>esstracker</strong>
+          <small>Euclidee Software Solutions</small>
+        </span>
+      </a>
+
+      <nav class="pub-menu" aria-label="Sections">
+        <a href="#tour" data-nav data-tour-open>Tour</a>
+        <a href="#roles" data-nav>Roles</a>
+        <a href="#workflow" data-nav>Workflow</a>
+        <a href="#features" data-nav>Features</a>
+        <a href="{{ url_for('views.download_page') }}">Download</a>
+        <a href="#faq" data-nav>FAQ</a>
+      </nav>
+
+      <div class="pub-header-cta">
+        <a class="pub-link" href="{{ url_for('auth.login') }}">Sign in</a>
+        <a class="pub-btn" href="{{ url_for('views.download_page') }}">Download</a>
+      </div>
+
+      <button class="pub-burger" type="button" id="navToggle" aria-label="Menu" aria-expanded="false">
+        <span></span><span></span>
+      </button>
+    </div>
+  </header>
+
+  <section class="pub-hero">
+    <div class="pub-hero-grid">
+      <div class="pub-hero-text">
+        <div class="pub-eyebrow">
+          <span class="pub-dot"></span>
+          Self-hosted workforce intelligence
+        </div>
+        <h1>
+          Track time.<br />
+          <em class="pub-rotate" aria-live="polite">
+            <span class="pub-rotate-word is-on">Boost productivity.</span>
+            <span class="pub-rotate-word">Manage teams.</span>
+            <span class="pub-rotate-word">Approve every gap.</span>
+            <span class="pub-rotate-word">See live presence.</span>
+          </em>
+        </h1>
+        <p class="pub-lead">
+          esstracker gives employees a beautiful My Day view and gives managers
+          a powerful admin dashboard — timelines, gap approvals, and IST office hours in one workspace.
+        </p>
+        <div class="pub-hero-btns">
+          <a class="pub-btn pub-btn-lg" href="{{ url_for('views.download_page') }}">
+            Download for your OS
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 3v12M7 10l5 5 5-5M5 21h14"/></svg>
+          </a>
+          <a class="pub-btn-outline" href="{{ url_for('auth.login') }}">Login to Dashboard</a>
+        </div>
+        <dl class="pub-stats">
+          <div><dt>24h</dt><dd>Full timeline</dd></div>
+          <div><dt>5m</dt><dd>Activity blocks</dd></div>
+          <div><dt>IST</dt><dd>Office hours</dd></div>
+          <div><dt class="live">Live</dt><dd>Presence board</dd></div>
+        </dl>
+      </div>
+
+      <div class="pub-hero-visual">
+        <div class="pub-dashboard">
+          <div class="pub-dash-bar">
+            <i></i><i></i><i></i>
+            <span>esstracker · Admin</span>
+          </div>
+          <div class="pub-dash-body">
+            <div class="pub-dash-side">
+              <span class="on"></span><span></span><span></span><span></span><span></span>
+            </div>
+            <div class="pub-dash-main">
+              <div class="pub-dash-kpis">
+                <div><b>6h 12m</b><small>Desk time</small></div>
+                <div class="accent"><b>78%</b><small>Productive</small></div>
+                <div><b>4</b><small>Late today</small></div>
+                <div class="live"><b>12</b><small>Online</small></div>
+              </div>
+              <div class="pub-dash-chart" aria-hidden="true">
+                <span style="--h:62%"></span>
+                <span style="--h:48%"></span>
+                <span style="--h:85%"></span>
+                <span style="--h:38%"></span>
+                <span style="--h:94%"></span>
+                <span style="--h:70%"></span>
+                <span style="--h:55%"></span>
+                <span style="--h:80%"></span>
+              </div>
+              <div class="pub-dash-timeline">
+                <div class="pub-dash-timeline-label">
+                  <span>Productivity today</span>
+                  <span>9 AM — 6 PM</span>
+                </div>
+                <div class="pub-dash-bar2">
+                  <i class="g" style="flex:3"></i>
+                  <i class="g" style="flex:2"></i>
+                  <i class="n" style="flex:1"></i>
+                  <i class="r" style="flex:1"></i>
+                  <i class="gap" style="flex:1.2"></i>
+                  <i class="g" style="flex:2.5"></i>
+                  <i class="n" style="flex:0.8"></i>
+                  <i class="g" style="flex:2"></i>
+                </div>
+                <div class="pub-dash-legend">
+                  <span class="g">Productive</span>
+                  <span class="n">Neutral</span>
+                  <span class="r">Unproductive</span>
+                  <span class="gap">Idle gap</span>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+        <div class="pub-float pub-float-a">Late arrivals tracked</div>
+        <div class="pub-float pub-float-b">Gap approvals</div>
+        <div class="pub-float pub-float-c"><span class="pub-pulse"></span>12 online</div>
+      </div>
+    </div>
+  </section>
+
+  <div class="pub-strip reveal" aria-hidden="true">
+    <div class="pub-strip-track">
+      <span>My Day</span><span>Admin Dashboard</span><span>Productivity Bar</span>
+      <span>Gap Approvals</span><span>Live Board</span><span>Screenshots</span>
+      <span>Reports</span><span>IST Hours</span><span>Desktop Agent</span>
+      <span>My Day</span><span>Admin Dashboard</span><span>Productivity Bar</span>
+      <span>Gap Approvals</span><span>Live Board</span><span>Screenshots</span>
+      <span>Reports</span><span>IST Hours</span><span>Desktop Agent</span>
+    </div>
+  </div>
+
+  <section class="pub-band pub-band-dark" id="workflow">
+    <div class="pub-container reveal">
+      <div class="pub-section-label">01 — Workflow</div>
+      <h2>From desktop activity to trusted reports</h2>
+      <p class="pub-section-desc">Three steps. No confusion. Accurate data your team can rely on.</p>
+      <div class="pub-steps">
+        <article class="pub-step">
+          <span class="pub-step-num">1</span>
+          <h3>Agent syncs</h3>
+          <p>Apps, websites, idle time, and optional screenshots flow to your self-hosted server.</p>
+        </article>
+        <article class="pub-step">
+          <span class="pub-step-num">2</span>
+          <h3>Employee My Day</h3>
+          <p>Arrival, desk time, productivity bar, and clickable idle gaps to fill offline time.</p>
+        </article>
+        <article class="pub-step">
+          <span class="pub-step-num">3</span>
+          <h3>Admin approves</h3>
+          <p>Review gap requests, monitor live presence, and export clean productivity reports.</p>
+        </article>
+      </div>
+    </div>
+  </section>
+
+  <section class="pub-container pub-section" id="roles">
+    <div class="pub-section-head reveal">
+      <div class="pub-section-label">02 — Built for everyone</div>
+      <h2>Two experiences. One platform.</h2>
+    </div>
+    <div class="pub-roles reveal">
+      <article class="pub-role employee">
+        <span class="pub-role-tag">Employee</span>
+        <h3>My Day</h3>
+        <p>Your arrival, desk time, productive hours, status, and productivity timeline — private and clear.</p>
+        <ul>
+          <li>Click idle gaps to request fill time</li>
+          <li>Track your approval requests</li>
+          <li>Pause with Private Time</li>
+        </ul>
+        <a href="{{ url_for('auth.login') }}">Open My Day →</a>
+      </article>
+      <article class="pub-role admin">
+        <span class="pub-role-tag">Admin</span>
+        <h3>Team Dashboard</h3>
+        <p>Total hours, late arrivals, rankings, live board, screenshots, and gap approvals in one view.</p>
+        <ul>
+          <li>Most productive &amp; effective today</li>
+          <li>Approve or deny gap fills</li>
+          <li>Full team visibility</li>
+        </ul>
+        <a href="{{ url_for('auth.login') }}">Open Dashboard →</a>
+      </article>
+    </div>
+  </section>
+
+  <section class="pub-band pub-band-tour" id="tour">
+    <div class="pub-container reveal">
+      <div class="pub-section-head center">
+        <div class="pub-section-label">03 — Product tour</div>
+        <h2>Walk the real product</h2>
+        <p class="pub-section-desc">Open a live-style dashboard and follow the pointer — Admin overview or Employee My Day.</p>
+      </div>
+      <div class="tour-launch tour-launch-dual">
+        <button type="button" class="pub-btn pub-btn-lg" data-tour-open data-tour-role="admin">
+          Admin dashboard tour
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M8 5v14l11-7z"/></svg>
+        </button>
+        <button type="button" class="pub-btn-outline pub-btn-lg" data-tour-open data-tour-role="employee">
+          Employee My Day tour
+        </button>
+        <p class="tour-launch-hint">Spotlight walkthrough · click Next · Escape to close</p>
+      </div>
+    </div>
+  </section>
+
+  {# Logged-in style product walkthrough #}
+  <div class="ptour" id="productTour" hidden aria-hidden="true">
+    <div class="ptour-top">
+      <div class="ptour-brand">
+        <img src="{{ url_for('static', filename='brand/ess-mark.png') }}" alt="" />
+        <span id="ptourRole">Admin · Dashboard</span>
+      </div>
+      <div class="ptour-progress"><i id="ptourProgress"></i></div>
+      <div class="ptour-switch">
+        <button type="button" id="ptourAsAdmin">Admin</button>
+        <button type="button" id="ptourAsEmp">Employee</button>
+      </div>
+      <button type="button" class="ptour-close" id="ptourClose" aria-label="Close">×</button>
+    </div>
+
+    <div class="ptour-shell">
+      <aside class="ptour-side" aria-hidden="true">
+        <div class="ptour-side-brand">
+          <img src="{{ url_for('static', filename='brand/ess-mark.png') }}" alt="" />
+          <strong>esstracker</strong>
+        </div>
+        <nav class="ptour-side-nav ptour-nav-admin">
+          <span class="on">Dashboard</span>
+          <span>Attendance</span>
+          <span>Live</span>
+          <span>Approvals</span>
+          <span>Employees</span>
+          <span>Reports</span>
+          <span>Settings</span>
+        </nav>
+        <nav class="ptour-side-nav ptour-nav-emp">
+          <span class="on">My Day</span>
+          <span>Fill time</span>
+          <span>Private Time</span>
+        </nav>
+      </aside>
+
+      <div class="ptour-scroll">
+        {# —— Admin view —— #}
+        <div class="ptour-view" id="ptourAdmin">
+          <header class="ptour-toolbar" data-pt="a-welcome">
+            <div>
+              <h1>Dashboard</h1>
+              <p>Team overview for <strong>today</strong> · 12 employees</p>
+            </div>
+            <div class="ptour-toolbar-actions" data-pt="a-filters">
+              <span class="ptour-chip">←</span>
+              <span class="ptour-chip date">2026-07-17</span>
+              <span class="ptour-chip">All teams ▾</span>
+              <span class="ptour-chip">→</span>
+              <span class="ptour-chip accent">Export</span>
+              <span class="ptour-chip">Alerts</span>
+            </div>
+          </header>
+
+          <div class="ptour-week" aria-hidden="true">
+            <i></i><i></i><i class="on"></i><i></i><i></i><i></i><i></i>
+          </div>
+
+          <section class="ptour-hero">
+            <div class="ptour-rings" data-pt="a-rings">
+              <div class="ptour-ring">
+                <div class="ptour-ring-viz" style="--pct:78"><b>78%</b></div>
+                <div><strong>Productivity</strong><s>Productive ÷ desk time</s></div>
+              </div>
+              <div class="ptour-ring">
+                <div class="ptour-ring-viz" style="--pct:86"><b>86%</b></div>
+                <div><strong>Effectiveness</strong><s>Productive ÷ 8h goal</s></div>
+              </div>
+            </div>
+            <div class="ptour-att" data-pt="a-attendance">
+              <div class="on"><b>9</b><s>Online</s></div>
+              <div><b>11</b><s>Present</s></div>
+              <div class="late"><b>2</b><s>Late</s></div>
+              <div><b>1</b><s>Absent</s></div>
+            </div>
+            <div class="ptour-totals">
+              <div><s>Desk time</s><b>42h 18m</b></div>
+              <div><s>Productive</s><b>33h 02m</b></div>
+              <div><s>Unproductive</s><b>4h 10m</b></div>
+              <div><s>Idle</s><b>5h 06m</b></div>
+            </div>
+            <div class="ptour-split" data-pt="a-split">
+              <div class="ptour-split-head"><strong>Team time split</strong><s>42h tracked</s></div>
+              <div class="ptour-split-bar"><i class="g" style="width:62%"></i><i class="n" style="width:12%"></i><i class="r" style="width:10%"></i><i class="i" style="width:16%"></i></div>
+            </div>
+          </section>
+
+          <section class="ptour-panel" data-pt="a-live">
+            <div class="ptour-panel-h"><strong>Live now</strong><s>auto-refresh</s></div>
+            <div class="ptour-live">
+              <div><n>A</n><div><b>Alice</b><s>VS Code</s></div><i class="on"></i></div>
+              <div><n>R</n><div><b>Rahul</b><s>Chrome · Jira</s></div><i class="on"></i></div>
+              <div><n>P</n><div><b>Priya</b><s>Idle 3m</s></div><i></i></div>
+              <div><n>S</n><div><b>Sam</b><s>Figma</s></div><i class="on"></i></div>
+            </div>
+          </section>
+
+          <section class="ptour-leaders" data-pt="a-leaders">
+            <div class="ptour-panel"><div class="ptour-panel-h"><strong>Late</strong></div><ul><li><n>1</n>Priya <e>09:42</e></li><li><n>2</n>Dev <e>09:28</e></li></ul></div>
+            <div class="ptour-panel"><div class="ptour-panel-h"><strong>Most productive</strong></div><ul><li><n>1</n>Alice <e>92%</e></li><li><n>2</n>Rahul <e>81%</e></li></ul></div>
+            <div class="ptour-panel"><div class="ptour-panel-h"><strong>Most effective</strong></div><ul><li><n>1</n>Alice <e>96%</e></li><li><n>2</n>Sam <e>88%</e></li></ul></div>
+            <div class="ptour-panel"><div class="ptour-panel-h"><strong>Attention</strong></div><ul><li><n>1</n>Dev <e>22%</e></li><li><n>2</n>Priya <e>18%</e></li></ul></div>
+          </section>
+
+          <section class="ptour-panel" data-pt="a-table">
+            <div class="ptour-panel-h"><strong>Employees</strong><s>click a row → full day</s></div>
+            <table class="ptour-table">
+              <thead><tr><th>Name</th><th>Status</th><th>Desk</th><th>Prod</th></tr></thead>
+              <tbody>
+                <tr class="hot"><td>Alice</td><td><span class="pill on">Online</span></td><td>6h 24m</td><td>92%</td></tr>
+                <tr><td>Rahul</td><td><span class="pill on">Online</span></td><td>5h 50m</td><td>81%</td></tr>
+                <tr><td>Priya</td><td><span class="pill">Idle</span></td><td>4h 12m</td><td>74%</td></tr>
+              </tbody>
+            </table>
+          </section>
+        </div>
+
+        {# —— Employee view —— #}
+        <div class="ptour-view" id="ptourEmp" hidden>
+          <header class="ptour-toolbar" data-pt="e-welcome">
+            <div>
+              <h1>My Day</h1>
+              <p><span class="pill on">Online</span> Office hours 09:00 – 18:00 IST</p>
+            </div>
+            <div class="ptour-toolbar-actions">
+              <span class="ptour-chip">←</span>
+              <span class="ptour-chip date">Today</span>
+              <span class="ptour-chip">→</span>
+              <span class="ptour-chip accent" data-pt="e-fill">Fill gap</span>
+            </div>
+          </header>
+
+          <div class="ptour-week" aria-hidden="true">
+            <i></i><i></i><i class="on"></i><i></i><i></i><i></i><i></i>
+          </div>
+
+          <section class="ptour-kpis" data-pt="e-kpis">
+            <div><s>Arrival</s><b>09:12</b></div>
+            <div><s>Left / status</s><b class="live">ONLINE</b></div>
+            <div><s>Desktime</s><b>6h 24m</b><em>78% productive</em></div>
+            <div><s>Productive</s><b>5h 01m</b><em>86% of goal</em></div>
+          </section>
+
+          <section class="ptour-panel" data-pt="e-bar">
+            <div class="ptour-panel-h"><strong>Productivity timeline</strong><s>9 AM — 6 PM</s></div>
+            <div class="ptour-prodbar">
+              <i class="g"></i><i class="g"></i><i class="g"></i><i class="n"></i>
+              <i class="gap" data-pt="e-gap"></i>
+              <i class="g"></i><i class="r"></i><i class="g"></i><i class="g"></i><i class="n"></i><i class="g"></i>
+            </div>
+            <div class="ptour-legend">
+              <span class="g">Productive</span><span class="n">Neutral</span><span class="r">Unproductive</span><span class="gap">Fillable gap</span>
+            </div>
+            <p class="ptour-hint">Idle gaps appear empty. Click one to explain offline time.</p>
+          </section>
+
+          <section class="ptour-panel" data-pt="e-requests">
+            <div class="ptour-panel-h"><strong>My offline / idle requests</strong></div>
+            <table class="ptour-table">
+              <thead><tr><th>When</th><th>Note</th><th>Status</th></tr></thead>
+              <tbody>
+                <tr><td>10:30 – 11:00</td><td>Client call</td><td><span class="pill warn">Pending</span></td></tr>
+                <tr><td>13:00 – 13:30</td><td>Lunch (office)</td><td><span class="pill on">Approved</span></td></tr>
+              </tbody>
+            </table>
+            <p class="ptour-hint">Apps, websites, and screenshots are visible to admins only.</p>
+          </section>
+        </div>
+      </div>
+    </div>
+
+    <div class="ptour-spot" id="ptourSpot" aria-hidden="true"></div>
+    <div class="ptour-pointer" id="ptourPointer" aria-hidden="true">
+      <svg viewBox="0 0 24 24" width="28" height="28"><path fill="#fff" stroke="#0a6b42" stroke-width="1.2" d="M4 3l16 8.5-7 1.5-3.5 7z"/></svg>
+    </div>
+
+    <div class="ptour-tip" id="ptourTip" role="dialog" aria-modal="true">
+      <p class="ptour-tip-step" id="ptourTipStep">1 / 8</p>
+      <h3 id="ptourTipTitle">Title</h3>
+      <p id="ptourTipText">Text</p>
+      <div class="ptour-tip-actions">
+        <button type="button" class="ghost" id="ptourTipSkip">Skip</button>
+        <div>
+          <button type="button" id="ptourTipPrev">Back</button>
+          <button type="button" class="primary" id="ptourTipNext">Next</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <section class="pub-container pub-section" id="features">
+    <div class="pub-section-head reveal">
+      <div class="pub-section-label">04 — Features</div>
+      <h2>Everything your team needs</h2>
+    </div>
+    <div class="pub-features reveal">
+      <article class="pub-feat highlight">
+        <span class="pub-feat-num">01</span>
+        <h3>Admin dashboard</h3>
+        <p>Team totals, late arrivals, effectiveness leaders, and live presence.</p>
+      </article>
+      <article class="pub-feat">
+        <span class="pub-feat-num">02</span>
+        <h3>Employee My Day</h3>
+        <p>Arrival, status, desk time, and productivity in a personal view.</p>
+      </article>
+      <article class="pub-feat">
+        <span class="pub-feat-num">03</span>
+        <h3>Productivity bar</h3>
+        <p>Visual timeline with office-hours band and idle gaps.</p>
+      </article>
+      <article class="pub-feat">
+        <span class="pub-feat-num">04</span>
+        <h3>Gap approvals</h3>
+        <p>Employees submit; admins approve or deny for accurate records.</p>
+      </article>
+      <article class="pub-feat">
+        <span class="pub-feat-num">05</span>
+        <h3>Apps &amp; websites</h3>
+        <p>Category rules for apps and domains used in reports.</p>
+      </article>
+      <article class="pub-feat">
+        <span class="pub-feat-num">06</span>
+        <h3>Screenshots</h3>
+        <p>Optional screenshot review for admins when needed.</p>
+      </article>
+    </div>
+  </section>
+
+  <section class="pub-band pub-band-quote">
+    <div class="pub-container reveal">
+      <div class="pub-quotes">
+        <blockquote>
+          <p>"Employees finally understand their own day without feeling watched."</p>
+          <footer>HR · Cleaner experience</footer>
+        </blockquote>
+        <blockquote class="featured">
+          <p>"Who is late, productive, and online — all in one glance."</p>
+          <footer>Manager · Team visibility</footer>
+        </blockquote>
+        <blockquote>
+          <p>"Gap approvals turned idle time into data we trust."</p>
+          <footer>Operations · Better accuracy</footer>
+        </blockquote>
+      </div>
+    </div>
+  </section>
+
+  <section class="pub-container pub-section">
+    <div class="pub-pills reveal">
+      <a href="#features"><strong>Self-hosted</strong><span>Your server, your data</span></a>
+      <a href="#workflow"><strong>IST ready</strong><span>Office hours built-in</span></a>
+      <a href="#roles"><strong>Private time</strong><span>Employee pause control</span></a>
+      <a class="accent" href="{{ url_for('auth.login') }}"><strong>Login →</strong><span>Open your workspace</span></a>
+    </div>
+  </section>
+
+  <section class="pub-container pub-section" id="faq">
+    <div class="pub-section-head reveal">
+      <div class="pub-section-label">05 — FAQ</div>
+      <h2>Quick answers</h2>
+    </div>
+    <div class="pub-faq reveal">
+      <details open>
+        <summary>Who can use esstracker?</summary>
+        <p>Employees see My Day. Admins get the full dashboard, reports, screenshots, and approvals.</p>
+      </details>
+      <details>
+        <summary>How do idle gaps work?</summary>
+        <p>Idle time shows as gaps on the bar. Employees click to submit offline time for admin approval.</p>
+      </details>
+      <details>
+        <summary>Is this cloud or self-hosted?</summary>
+        <p>Self-hosted by Euclidee Software Solutions — private, secure, under your control.</p>
+      </details>
+      <details>
+        <summary>How do I get started?</summary>
+        <p>Click Login with your company credentials. The desktop agent syncs activity automatically.</p>
+      </details>
+      <details>
+        <summary>What does the agent track?</summary>
+        <p>Applications, websites, idle periods, and optional screenshots synced to your server.</p>
+      </details>
+    </div>
+  </section>
+
+  <section class="pub-cta reveal">
+    <div class="pub-container pub-cta-inner">
+      <div>
+        <div class="pub-section-label light">Ready</div>
+        <h2>Launch your esstracker workspace</h2>
+        <p>Sign in to open the employee or admin dashboard.</p>
+      </div>
+      <a class="pub-btn pub-btn-lg pub-btn-light" href="{{ url_for('auth.login') }}">
+        Login now
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M5 12h14M13 6l6 6-6 6"/></svg>
+      </a>
+    </div>
+  </section>
+
+  <footer class="pub-footer reveal">
+    <div class="pub-container pub-footer-grid">
+      <div class="pub-footer-brand">
+        <a class="pub-logo" href="{{ url_for('views.home') }}">
+          <img src="{{ url_for('static', filename='brand/ess-mark.png') }}" alt="" />
+          <span><strong>esstracker</strong><small>Euclidee Software Solutions</small></span>
+        </a>
+        <p>Self-hosted employee time tracking with productivity timelines, gap approvals, and team visibility.</p>
+        <a class="pub-btn" href="{{ url_for('auth.login') }}">Login to workspace</a>
+      </div>
+      <div>
+        <h4>Product</h4>
+        <a href="#tour" data-tour-open>Tour</a>
+        <a href="#roles">Roles</a>
+        <a href="#workflow">Workflow</a>
+        <a href="#features">Features</a>
+        <a href="#faq">FAQ</a>
+        <a href="{{ url_for('views.download_page') }}">Download</a>
+      </div>
+      <div>
+        <h4>Company</h4>
+        <span>Euclidee Software Solutions Pvt. Ltd.</span>
+        <span>Time tracking &amp; productivity</span>
+        <a href="{{ url_for('views.download_page') }}">Download app</a>
+        <a href="{{ url_for('auth.login') }}">Sign in</a>
+        <a href="#top">Back to top ↑</a>
+      </div>
+    </div>
+    <div class="pub-container pub-footer-bottom">
+      <img src="{{ url_for('static', filename='brand/euclidee-logo.png') }}" alt="Euclidee" />
+      <p>© 2026 Euclidee Software Solutions Private Limited · esstracker</p>
+      <div>
+        <a href="#tour" data-tour-open>Tour</a>
+        <a href="#faq">Help</a>
+        <a href="{{ url_for('auth.login') }}">Login</a>
+      </div>
+    </div>
+  </footer>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+(function () {
+  var progressBar = document.getElementById("scrollProgress");
+  var header = document.querySelector(".pub-header");
+  var navToggle = document.getElementById("navToggle");
+
+  if (progressBar) {
+    window.addEventListener("scroll", function () {
+      var h = document.documentElement.scrollHeight - window.innerHeight;
+      progressBar.style.width = (h > 0 ? (window.scrollY / h) * 100 : 0) + "%";
+      if (header) header.classList.toggle("is-scrolled", window.scrollY > 24);
+    }, { passive: true });
+  }
+
+  document.querySelectorAll('a[href^="#"]').forEach(function (a) {
+    a.addEventListener("click", function (e) {
+      var id = a.getAttribute("href");
+      if (!id || id === "#") return;
+      var el = document.querySelector(id);
+      if (!el) return;
+      e.preventDefault();
+      el.scrollIntoView({ behavior: "smooth", block: "start" });
+      if (header) header.classList.remove("is-open");
+      if (navToggle) navToggle.setAttribute("aria-expanded", "false");
+    });
+  });
+
+  if (navToggle && header) {
+    navToggle.addEventListener("click", function () {
+      var open = header.classList.toggle("is-open");
+      navToggle.setAttribute("aria-expanded", open ? "true" : "false");
+    });
+  }
+
+  var navLinks = document.querySelectorAll("[data-nav]");
+  var sections = [];
+  navLinks.forEach(function (link) {
+    var el = document.querySelector(link.getAttribute("href"));
+    if (el) sections.push({ el: el, link: link });
+  });
+  if (sections.length && "IntersectionObserver" in window) {
+    var navObs = new IntersectionObserver(function (entries) {
+      entries.forEach(function (entry) {
+        if (entry.isIntersecting) {
+          navLinks.forEach(function (l) { l.classList.remove("is-on"); });
+          var m = sections.find(function (s) { return s.el === entry.target; });
+          if (m) m.link.classList.add("is-on");
+        }
+      });
+    }, { rootMargin: "-35% 0px -55% 0px", threshold: 0 });
+    sections.forEach(function (s) { navObs.observe(s.el); });
+  }
+
+  var words = document.querySelectorAll(".pub-rotate-word");
+  if (words.length) {
+    var wi = 0;
+    setInterval(function () {
+      words[wi].classList.remove("is-on");
+      wi = (wi + 1) % words.length;
+      words[wi].classList.add("is-on");
+    }, 3000);
+  }
+})();
+</script>
+<script src="{{ url_for('static', filename='tour-walk.js') }}?v=20"></script>
+{% endblock %}

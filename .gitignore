@@ -22,6 +22,11 @@ config.toml
 .coverage
 htmlcov/
 
+# Packaging
+*.deb
+*.spec
+packaging/.cache/
+
 # OS / editor
 .DS_Store
 .idea/

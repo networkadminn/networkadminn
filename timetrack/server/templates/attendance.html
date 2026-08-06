@@ -1,0 +1,73 @@
+{% extends "base.html" %}
+{% block title %}Attendance · esstracker{% endblock %}
+{% block content %}
+<div class="page-head">
+  <div>
+    <p class="page-kicker">Company</p>
+    <h1>Attendance</h1>
+    <p class="page-sub">Weekly present · late · absent grid — esstracker shift overview style.</p>
+  </div>
+  <nav class="daynav">
+    <a class="btn" href="{{ url_for('desk.attendance', view='week', day=day) }}">Week</a>
+    <a class="btn primary" href="{{ url_for('desk.attendance', view='month', day=day) }}">Month</a>
+    <a class="btn" href="?day={{ prev_week }}">&larr; Prev</a>
+    <form method="get" class="dayform">
+      <input type="date" name="day" value="{{ day }}" onchange="this.form.submit()" />
+    </form>
+    <a class="btn" href="?day={{ next_week }}">Next &rarr;</a>
+  </nav>
+</div>
+
+<section class="alert-summary">
+  <div class="alert-chip accent"><strong>{{ totals.present }}</strong><span>Present cells</span></div>
+  <div class="alert-chip late"><strong>{{ totals.late }}</strong><span>Late cells</span></div>
+  <div class="alert-chip muted"><strong>{{ totals.absent }}</strong><span>Absent cells</span></div>
+  <div class="alert-chip"><strong>{{ totals.off|default(0) }}</strong><span>Off-day cells</span></div>
+</section>
+
+<section class="panel">
+  <div class="panel-head">
+    <h2>Week of {{ day }}</h2>
+    <span class="muted">{{ matrix|length }} employees</span>
+  </div>
+  <div class="grid-wrap">
+    <table class="grid attendance-grid">
+      <thead>
+        <tr>
+          <th>Employee</th>
+          {% for d in week_days %}
+          <th>{{ d.strftime('%a') }}<br /><span class="muted">{{ d.strftime('%d') }}</span></th>
+          {% endfor %}
+        </tr>
+      </thead>
+      <tbody>
+        {% for row in matrix %}
+        <tr class="no-click">
+          <td>
+            <div class="emp">
+              <span class="avatar">{{ row.user.name[0]|upper }}</span>
+              <strong>{{ row.user.name }}</strong>
+            </div>
+          </td>
+          {% for c in row.cells %}
+          <td>
+            <a class="att-cell {{ c.status }}" href="{{ url_for('views.admin_user', user_id=row.user.id) }}?day={{ c.day }}"
+               title="In {{ c.arrived }} · Out {{ c.left }} · Desk {{ c.desktime_label|default('—') }} · Prod {{ c.productive_label|default('—') }}{% if c.has_gap %} · Idle {{ c.idle_label }}{% endif %}">
+              {% if c.status == 'present' %}P
+              {% elif c.status == 'late' %}L
+              {% elif c.status == 'idle' %}I
+              {% elif c.status == 'off' %}—
+              {% else %}A{% endif %}
+            </a>
+          </td>
+          {% endfor %}
+        </tr>
+        {% else %}
+        <tr><td colspan="8" class="empty">No employees yet.</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  <p class="metric-hint" style="margin-top:12px">P = present · L = late · I = idle/gap · A = absent · — = off day ({{ tz_name|default('Asia/Kolkata') }}) — hover a cell for In / Out / Desk / Prod / Idle.</p>
+</section>
+{% endblock %}

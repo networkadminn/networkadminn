@@ -1,4 +1,4 @@
-"""Agent configuration (server URL, token, intervals, categorization rules)."""
+"""Persist and load employee agent config (DeskTime-style zero-touch)."""
 
 from __future__ import annotations
 
@@ -7,99 +7,189 @@ from dataclasses import dataclass, field
 from pathlib import Path
 
 from ..config import Config as _CoreConfig
-from ..config import _merge_rules  # reuse default categorization rules
+from ..config import merge_rules as _merge_rules
 
 try:
     import tomllib
 except ModuleNotFoundError:  # pragma: no cover
     tomllib = None  # type: ignore[assignment]
 
+DEFAULT_SERVER_URL = "https://tracker.euclideesolutions.com"
 DEFAULT_BUFFER_PATH = os.path.join(
-    os.path.expanduser("~"), ".local", "share", "timetrack", "agent-buffer.db"
+    os.path.expanduser("~"), ".local", "share", "esstracker", "agent-buffer.db"
 )
 DEFAULT_SHOTS_DIR = os.path.join(
-    os.path.expanduser("~"), ".local", "share", "timetrack", "agent-shots"
+    os.path.expanduser("~"), ".local", "share", "esstracker", "agent-shots"
+)
+USER_CONFIG_PATH = Path(
+    os.path.expanduser("~"), ".config", "esstracker", "agent.toml"
+)
+LOCK_PATH = Path(
+    os.path.expanduser("~"), ".local", "share", "esstracker", "agent.lock"
 )
 
 
 @dataclass
 class AgentConfig:
-    server_url: str = "http://127.0.0.1:8080"
+    server_url: str = DEFAULT_SERVER_URL
     api_token: str = ""
     poll_interval: float = 5.0
     idle_threshold: float = 180.0
     screenshots_enabled: bool = True
     screenshot_interval: float = 300.0
-    screenshot_max_width: int = 1280
+    screenshot_max_width: int = 1920
     flush_interval: float = 30.0
     batch_size: int = 200
     buffer_path: str = DEFAULT_BUFFER_PATH
     shots_dir: str = DEFAULT_SHOTS_DIR
     rules: dict[str, list[str]] = field(default_factory=lambda: _merge_rules({}))
+    config_path: str = ""
 
-    def categorize(self, app: str, title: str = "") -> str:
-        # Delegate to the core categorizer for identical behavior.
+    def categorize(self, app: str, title: str = "", url: str = "") -> str:
         core = _CoreConfig(rules=self.rules)
-        return core.categorize(app, title)
+        return core.categorize(app, title, url=url)
+
+    @property
+    def is_signed_in(self) -> bool:
+        return bool(self.api_token and self.server_url)
+
+
+def user_config_path() -> Path:
+    return USER_CONFIG_PATH
+
+
+def ensure_data_dirs(cfg: AgentConfig | None = None) -> None:
+    USER_CONFIG_PATH.parent.mkdir(parents=True, exist_ok=True)
+    LOCK_PATH.parent.mkdir(parents=True, exist_ok=True)
+    if cfg:
+        Path(cfg.buffer_path).parent.mkdir(parents=True, exist_ok=True)
+        Path(cfg.shots_dir).mkdir(parents=True, exist_ok=True)
 
 
 def _candidate_paths() -> list[Path]:
+    home = Path(os.path.expanduser("~"))
     return [
         Path.cwd() / "agent.toml",
         Path.cwd() / "config.toml",
-        Path(os.path.expanduser("~")) / ".config" / "timetrack" / "agent.toml",
+        home / ".config" / "esstracker" / "agent.toml",
+        home / ".config" / "timetrack" / "agent.toml",
+        Path("/etc/esstracker/agent.toml"),
+        Path("/etc/esstracker/defaults.toml"),
+        Path("/etc/timetrack/agent.toml"),
     ]
 
 
 def load_agent_config(path: str | os.PathLike[str] | None = None) -> AgentConfig:
     cfg = AgentConfig()
+    # Bake company default from /etc if present before user file
+    defaults = Path("/etc/esstracker/defaults.toml")
+    if defaults.is_file() and tomllib is not None:
+        try:
+            with open(defaults, "rb") as fh:
+                data = tomllib.load(fh)
+            agent = data.get("agent", data)
+            if agent.get("server_url"):
+                cfg.server_url = str(agent["server_url"])
+        except Exception:
+            pass
 
     candidate: Path | None = None
     if path is not None:
         candidate = Path(path)
     else:
         for p in _candidate_paths():
-            if p.is_file():
+            if p.is_file() and p.name != "defaults.toml":
                 candidate = p
                 break
 
-    if candidate is None or not candidate.is_file() or tomllib is None:
-        _apply_env(cfg)
-        return cfg
-
-    with open(candidate, "rb") as fh:
-        data = tomllib.load(fh)
-
-    agent = data.get("agent", data)  # allow [agent] table or top-level keys
-    cfg.server_url = str(agent.get("server_url", cfg.server_url))
-    cfg.api_token = str(agent.get("api_token", cfg.api_token))
-    cfg.poll_interval = float(agent.get("poll_interval", cfg.poll_interval))
-    cfg.idle_threshold = float(agent.get("idle_threshold", cfg.idle_threshold))
-    cfg.screenshots_enabled = bool(
-        agent.get("screenshots_enabled", cfg.screenshots_enabled)
-    )
-    cfg.screenshot_interval = float(
-        agent.get("screenshot_interval", cfg.screenshot_interval)
-    )
-    cfg.screenshot_max_width = int(
-        agent.get("screenshot_max_width", cfg.screenshot_max_width)
-    )
-    cfg.flush_interval = float(agent.get("flush_interval", cfg.flush_interval))
-    cfg.batch_size = int(agent.get("batch_size", cfg.batch_size))
-    cfg.buffer_path = str(agent.get("buffer_path", cfg.buffer_path))
-    cfg.shots_dir = str(agent.get("shots_dir", cfg.shots_dir))
-    cfg.rules = _merge_rules(data.get("rules", {}) or {})
+    if candidate is not None and candidate.is_file() and tomllib is not None:
+        with open(candidate, "rb") as fh:
+            data = tomllib.load(fh)
+        agent = data.get("agent", data)
+        cfg.server_url = str(agent.get("server_url", cfg.server_url))
+        cfg.api_token = str(agent.get("api_token", cfg.api_token))
+        cfg.poll_interval = float(agent.get("poll_interval", cfg.poll_interval))
+        cfg.idle_threshold = float(agent.get("idle_threshold", cfg.idle_threshold))
+        cfg.screenshots_enabled = bool(
+            agent.get("screenshots_enabled", cfg.screenshots_enabled)
+        )
+        cfg.screenshot_interval = float(
+            agent.get("screenshot_interval", cfg.screenshot_interval)
+        )
+        cfg.screenshot_max_width = int(
+            agent.get("screenshot_max_width", cfg.screenshot_max_width)
+        )
+        cfg.flush_interval = float(agent.get("flush_interval", cfg.flush_interval))
+        cfg.batch_size = int(agent.get("batch_size", cfg.batch_size))
+        cfg.buffer_path = str(agent.get("buffer_path", cfg.buffer_path))
+        cfg.shots_dir = str(agent.get("shots_dir", cfg.shots_dir))
+        cfg.rules = _merge_rules(data.get("rules", {}) or {})
+        cfg.config_path = str(candidate)
 
     _apply_env(cfg)
+    if not cfg.config_path:
+        cfg.config_path = str(USER_CONFIG_PATH)
+    ensure_data_dirs(cfg)
     return cfg
 
 
+def save_agent_config(cfg: AgentConfig, path: str | os.PathLike[str] | None = None) -> Path:
+    """Write agent.toml so next launch needs no setup (DeskTime-style)."""
+    dest = Path(path or cfg.config_path or USER_CONFIG_PATH)
+    dest.parent.mkdir(parents=True, exist_ok=True)
+    # Escape quotes in token/url for TOML basic strings
+    def q(s: str) -> str:
+        return '"' + s.replace("\\", "\\\\").replace('"', '\\"') + '"'
+
+    text = (
+        "# Auto-saved by esstracker — do not share this file\n"
+        "[agent]\n"
+        f"server_url = {q(cfg.server_url)}\n"
+        f"api_token = {q(cfg.api_token)}\n"
+        f"poll_interval = {float(cfg.poll_interval)}\n"
+        f"idle_threshold = {float(cfg.idle_threshold)}\n"
+        f"screenshots_enabled = {'true' if cfg.screenshots_enabled else 'false'}\n"
+        f"screenshot_interval = {float(cfg.screenshot_interval)}\n"
+        f"flush_interval = {float(cfg.flush_interval)}\n"
+        f"buffer_path = {q(cfg.buffer_path)}\n"
+        f"shots_dir = {q(cfg.shots_dir)}\n"
+    )
+    dest.write_text(text, encoding="utf-8")
+    try:
+        os.chmod(dest, 0o600)
+    except OSError:
+        pass
+    cfg.config_path = str(dest)
+    return dest
+
+
+def clear_saved_token(cfg: AgentConfig | None = None) -> None:
+    """Sign out: wipe token from user config (login window shows next run)."""
+    cfg = cfg or load_agent_config()
+    cfg.api_token = ""
+    save_agent_config(cfg)
+
+
 def _apply_env(cfg: AgentConfig) -> None:
-    """Environment variables override file/defaults (handy for deployment)."""
+    if os.environ.get("ESSTRACKER_SERVER_URL"):
+        cfg.server_url = os.environ["ESSTRACKER_SERVER_URL"]
     if os.environ.get("TIMETRACK_SERVER_URL"):
         cfg.server_url = os.environ["TIMETRACK_SERVER_URL"]
+    if os.environ.get("ESSTRACKER_API_TOKEN"):
+        cfg.api_token = os.environ["ESSTRACKER_API_TOKEN"]
     if os.environ.get("TIMETRACK_API_TOKEN"):
         cfg.api_token = os.environ["TIMETRACK_API_TOKEN"]
 
 
-__all__ = ["AgentConfig", "load_agent_config", "DEFAULT_BUFFER_PATH"]
+__all__ = [
+    "AgentConfig",
+    "DEFAULT_BUFFER_PATH",
+    "DEFAULT_SERVER_URL",
+    "LOCK_PATH",
+    "USER_CONFIG_PATH",
+    "clear_saved_token",
+    "ensure_data_dirs",
+    "load_agent_config",
+    "save_agent_config",
+    "user_config_path",
+]
