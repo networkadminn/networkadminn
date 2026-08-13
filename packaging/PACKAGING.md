@@ -1,6 +1,6 @@
 # Cross-platform client packaging (accuracy notes)
 
-esstracker follows the same distribution model as DeskTime-class trackers:
+timeforge follows the same distribution model as DeskTime-class trackers:
 
 | OS | Artifact | Build host | Notes |
 |----|----------|------------|-------|
@@ -38,7 +38,7 @@ esstracker follows the same distribution model as DeskTime-class trackers:
 |------|---------|
 | **Compatible .deb for 20 + 22 + 24** | `bash packaging/build_deb_compat.sh` (Docker; first run compiles Python 3.11 on Ubuntu 20.04) |
 | Quick .deb on this machine | `bash packaging/build_deb.sh` (blocked on Ubuntu 24.04 host — use compat script) |
-| 22.04 + 24.04 only (faster Docker) | `ESSTRACKER_BUILD_IMAGE=ubuntu:22.04 bash packaging/build_deb_compat.sh` |
+| 22.04 + 24.04 only (faster Docker) | `TIMEFORGE_BUILD_IMAGE=ubuntu:22.04 bash packaging/build_deb_compat.sh` |
 
 Compatible packaging details:
 
@@ -51,12 +51,12 @@ Compatible packaging details:
 ```bash
 # Recommended: one package for all LTS clients
 bash packaging/build_deb_compat.sh
-# → dist/esstracker_*.deb and dist/releases/
+# → dist/timeforge_*.deb and dist/releases/
 
 # Windows (on a Windows PC)
 powershell -ExecutionPolicy Bypass -File packaging\build_windows.ps1
-# → dist/windows/esstracker-Agent.exe + install.ps1
-# → dist/releases/esstracker-*-windows.zip
+# → dist/windows/timeforge-Agent.exe + install.ps1
+# → dist/releases/timeforge-*-windows.zip
 # Install on an employee PC:
 #   powershell -ExecutionPolicy Bypass -File dist\windows\install.ps1 -Launch
 
@@ -69,11 +69,11 @@ bash packaging/build_mac.sh
 
 | Ubuntu | Windows |
 |--------|---------|
-| Applications → esstracker | Start Menu → esstracker |
+| Applications → timeforge | Start Menu → timeforge |
 | `/etc/xdg/autostart/…` | Startup folder shortcut |
-| `/etc/esstracker/defaults.toml` | `%LOCALAPPDATA%\Programs\esstracker\defaults.toml` |
-| `~/.config/esstracker/agent.toml` | `%APPDATA%\esstracker\agent.toml` |
-| `~/.local/share/esstracker/` | `%LOCALAPPDATA%\esstracker\` |
+| `/etc/timeforge/defaults.toml` | `%LOCALAPPDATA%\Programs\timeforge\defaults.toml` |
+| `~/.config/timeforge/agent.toml` | `%APPDATA%\timeforge\agent.toml` |
+| `~/.local/share/timeforge/` | `%LOCALAPPDATA%\timeforge\` |
 | Tray (AppIndicator / xorg) | Tray (win32 notification area) |
 
 Upload artifacts to the server:

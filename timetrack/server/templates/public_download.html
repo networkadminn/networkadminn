@@ -1,7 +1,7 @@
 {% extends "base.html" %}
-{% block title %}Download esstracker · Windows, Mac, Linux{% endblock %}
+{% block title %}Download timeforge · Windows, Mac, Linux{% endblock %}
 {% block head %}
-<meta name="description" content="Download the esstracker employee client for Windows, macOS, and Linux. Install, sign in, track from the tray — Euclidee Software Solutions." />
+<meta name="description" content="Download the timeforge employee client for Windows, macOS, and Linux. Install, sign in, track from the tray — Timeforge." />
 <link rel="stylesheet" href="{{ url_for('static', filename='public.css') }}?v=21" />
 {% endblock %}
 {% block body %}
@@ -11,10 +11,10 @@
   <header class="pub-header" id="top">
     <div class="pub-header-inner">
       <a class="pub-logo" href="{{ url_for('views.home') }}">
-        <img src="{{ url_for('static', filename='brand/ess-mark.png') }}" alt="" />
+        <img src="{{ url_for('static', filename='brand/timeforge-mark.png') }}" alt="" />
         <span>
-          <strong>esstracker</strong>
-          <small>Euclidee Software Solutions</small>
+          <strong>timeforge</strong>
+          <small>Timeforge</small>
         </span>
       </a>
       <nav class="pub-menu" aria-label="Sections">
@@ -37,15 +37,15 @@
     <div class="pub-container dl-hero-inner">
       <div class="dl-hero-copy">
         <p class="pub-eyebrow"><span class="pub-dot"></span> Desktop client · v{{ releases.version }}</p>
-        <h1>Download esstracker</h1>
+        <h1>Download timeforge</h1>
         <p class="pub-lead">
           Install once. Sign in with your work account. Tracking runs in the
-          notification tray — the same flow as DeskTime, built for Euclidee.
+          notification tray — the same flow as DeskTime, built for Timeforge.
         </p>
         <p class="dl-detect muted" id="osHint">Detecting your system…</p>
       </div>
       <div class="dl-hero-mark" aria-hidden="true">
-        <img src="{{ url_for('static', filename='brand/ess-mark.png') }}" alt="" />
+        <img src="{{ url_for('static', filename='brand/timeforge-mark.png') }}" alt="" />
       </div>
     </div>
   </section>
@@ -144,7 +144,7 @@
           <button class="pub-btn dl-primary" type="button" disabled>Linux .deb unavailable</button>
           {% endif %}
           <ul class="dl-meta">
-            <li>One app in Applications · round ESS icon</li>
+            <li>One app in Applications · round Timeforge icon</li>
             <li>Sign in → tray · autostart at login</li>
             <li>Best on X11; Wayland may hide window titles</li>
           </ul>
@@ -164,11 +164,11 @@
         </li>
         <li>
           <strong>Sign in</strong>
-          <span>Use your esstracker username &amp; password — no config files.</span>
+          <span>Use your timeforge username &amp; password — no config files.</span>
         </li>
         <li>
           <strong>Track</strong>
-          <span>esstracker stays in the tray and syncs to your company server.</span>
+          <span>timeforge stays in the tray and syncs to your company server.</span>
         </li>
       </ol>
 
@@ -176,10 +176,10 @@
         <h3>Windows quick install</h3>
         <pre><code>Expand the zip, then in that folder:
 powershell -ExecutionPolicy Bypass -File .\install.ps1 -Launch
-# Start → esstracker → Sign in (tray icon in notification area)</code></pre>
+# Start → timeforge → Sign in (tray icon in notification area)</code></pre>
         <h3>Linux quick install</h3>
-        <pre><code>sudo apt install ./esstracker_*.deb
-# then: Applications → esstracker → Sign in</code></pre>
+        <pre><code>sudo apt install ./timeforge_*.deb
+# then: Applications → timeforge → Sign in</code></pre>
         <p class="dl-note">The “unsandboxed as root / _apt” notice during install is harmless (same as DeskTime).</p>
       </div>
     </div>
@@ -242,8 +242,8 @@ powershell -ExecutionPolicy Bypass -File .\install.ps1 -Launch
       <div class="pub-footer-grid">
         <div class="pub-footer-brand">
           <a class="pub-logo" href="{{ url_for('views.home') }}">
-            <img src="{{ url_for('static', filename='brand/ess-mark.png') }}" alt="" />
-            <span><strong>esstracker</strong><small>Euclidee Software Solutions</small></span>
+            <img src="{{ url_for('static', filename='brand/timeforge-mark.png') }}" alt="" />
+            <span><strong>timeforge</strong><small>Timeforge</small></span>
           </a>
           <p>Self-hosted employee time tracking with productivity timelines, gap approvals, and team visibility.</p>
         </div>
@@ -261,8 +261,8 @@ powershell -ExecutionPolicy Bypass -File .\install.ps1 -Launch
         </div>
       </div>
       <div class="pub-footer-bottom">
-        <img src="{{ url_for('static', filename='brand/euclidee-logo.png') }}" alt="Euclidee" />
-        <p>© Euclidee Software Solutions Private Limited</p>
+        <img src="{{ url_for('static', filename='brand/timeforge-logo.png') }}" alt="Timeforge" />
+        <p>© Timeforge</p>
         <div>
           <a href="{{ url_for('views.home') }}">Home</a>
           <a href="{{ url_for('auth.login') }}">Login</a>

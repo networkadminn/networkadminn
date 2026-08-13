@@ -42,7 +42,7 @@ class Agent:
         self.username = ""
         self.display_name = ""
         self.role = ""
-        self.company_name = "Euclidee Software Solutions"
+        self.company_name = "Timeforge"
         self._tray = None
         self._loop_thread: threading.Thread | None = None
         self._was_idle = False
@@ -103,11 +103,11 @@ class Agent:
             skew = time.time() - float(server_ts)
             if abs(skew) >= 120:
                 print(
-                    f"[esstracker] WARNING: clock skew {skew:+.0f}s vs server. "
+                    f"[timeforge] WARNING: clock skew {skew:+.0f}s vs server. "
                     "Fix system time (NTP) for accurate tracking."
                 )
             elif abs(skew) >= 30:
-                print(f"[esstracker] clock offset {skew:+.1f}s vs server")
+                print(f"[timeforge] clock offset {skew:+.1f}s vs server")
         rules = ping.get("rules")
         if isinstance(rules, dict):
             from ..config import merge_rules

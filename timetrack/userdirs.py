@@ -11,14 +11,14 @@ def _home() -> Path:
     return Path(os.path.expanduser("~"))
 
 
-def data_dir(app: str = "esstracker") -> Path:
+def data_dir(app: str = "timeforge") -> Path:
     """Writable per-user data directory (DB, screenshots, lock file)."""
     if sys.platform == "win32":
         base = os.environ.get("LOCALAPPDATA") or str(_home() / "AppData" / "Local")
         folder = {
-            "esstracker": "esstracker",
-            "timetrack": "esstracker",
-            "timetrack-server": "esstracker-Server",
+            "timeforge": "timeforge",
+            "timetrack": "timeforge",
+            "timetrack-server": "timeforge-Server",
         }.get(app, app)
         return Path(base) / folder
     if sys.platform == "darwin":
@@ -29,11 +29,11 @@ def data_dir(app: str = "esstracker") -> Path:
     return _home() / ".local" / "share" / app
 
 
-def config_dir(app: str = "esstracker") -> Path:
+def config_dir(app: str = "timeforge") -> Path:
     """Per-user config directory (agent.toml)."""
     if sys.platform == "win32":
         base = os.environ.get("APPDATA") or str(_home() / "AppData" / "Roaming")
-        folder = "esstracker" if app in ("esstracker", "timetrack") else app
+        folder = "timeforge" if app in ("timeforge", "timetrack") else app
         return Path(base) / folder
     if sys.platform == "darwin":
         return _home() / "Library" / "Application Support" / app

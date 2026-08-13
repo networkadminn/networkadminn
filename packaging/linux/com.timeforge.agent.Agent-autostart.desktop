@@ -1,10 +1,10 @@
 [Desktop Entry]
 Type=Application
 Version=1.0
-Name=esstracker (autostart)
-Comment=Start ESS employee tracker in the notification area
-Exec=esstracker-agent run
-Icon=esstracker
+Name=timeforge (autostart)
+Comment=Start Timeforge employee tracker in the notification area
+Exec=timeforge-agent run
+Icon=timeforge
 Terminal=false
 Categories=Office;Utility;
 X-GNOME-Autostart-enabled=true

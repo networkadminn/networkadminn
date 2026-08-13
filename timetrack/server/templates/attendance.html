@@ -1,11 +1,11 @@
 {% extends "base.html" %}
-{% block title %}Attendance · esstracker{% endblock %}
+{% block title %}Attendance · timeforge{% endblock %}
 {% block content %}
 <div class="page-head">
   <div>
     <p class="page-kicker">Company</p>
     <h1>Attendance</h1>
-    <p class="page-sub">Weekly present · late · absent grid — esstracker shift overview style.</p>
+    <p class="page-sub">Weekly present · late · absent grid — timeforge shift overview style.</p>
   </div>
   <nav class="daynav">
     <a class="btn" href="{{ url_for('desk.attendance', view='week', day=day) }}">Week</a>

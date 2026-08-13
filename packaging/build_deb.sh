@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Build Linux .deb for esstracker (Applications menu + tray + ESS logo)
+# Build Linux .deb for timeforge (Applications menu + tray + Timeforge logo)
 #
 # For a package that installs cleanly on Ubuntu 20.04, 22.04, AND 24.04,
 # prefer:  bash packaging/build_deb_compat.sh  (Docker / Ubuntu 20.04)
@@ -22,10 +22,10 @@ case "${HOST_VER}" in
   24.04*|24.10*|25.*)
     echo "STOP: Ubuntu 24 host embeds GLIBC 2.38 — package will NOT run on 20.04/22.04."
     echo "Use instead:  bash packaging/build_deb_compat.sh"
-    if [ "${ESSTRACKER_FORCE_HOST_BUILD:-}" != "1" ]; then
+    if [ "${TIMEFORGE_FORCE_HOST_BUILD:-}" != "1" ]; then
       exit 1
     fi
-    echo "ESSTRACKER_FORCE_HOST_BUILD=1 set — continuing anyway (24.04-only clients)."
+    echo "TIMEFORGE_FORCE_HOST_BUILD=1 set — continuing anyway (24.04-only clients)."
     ;;
 esac
 
@@ -33,6 +33,6 @@ python3 -m pip install -q -r requirements.txt pyinstaller Pillow 2>/dev/null || 
 python3 packaging/build.py deb
 
 echo ""
-echo "Done. Package is under dist/esstracker_*.deb"
-echo "Install:  sudo apt install ./dist/esstracker_*.deb"
-echo "Then open Applications → esstracker (ESS logo in the tray)"
+echo "Done. Package is under dist/timeforge_*.deb"
+echo "Install:  sudo apt install ./dist/timeforge_*.deb"
+echo "Then open Applications → timeforge (Timeforge logo in the tray)"

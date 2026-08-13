@@ -1,0 +1,29 @@
+{% extends "base.html" %}
+{% block title %}Accept invite · timeforge{% endblock %}
+{% block body %}
+<div class="login-page">
+  <section class="login-panel" style="margin:auto">
+    <div class="login-card">
+      <img class="login-mark" src="{{ url_for('static', filename='brand/timeforge-mark.png') }}" alt="" />
+      <p class="login-kicker">Team invite</p>
+      <h2>Join {{ org.name if org else 'Timeforge' }}</h2>
+      <p class="login-sub">You’re joining as <strong>{{ email }}</strong>. Choose a username and password.</p>
+      <form method="post" class="login-form">
+        <label>Display name
+          <input type="text" name="display_name" value="{{ display_name }}" placeholder="Your name" />
+        </label>
+        <label>Username
+          <input type="text" name="username" required autocomplete="username" placeholder="username" />
+        </label>
+        <label>Password
+          <input type="password" name="password" required minlength="6" autocomplete="new-password" />
+        </label>
+        <button class="btn primary" type="submit">Create account</button>
+      </form>
+      <p class="login-forgot" style="margin-top:16px">
+        Already have an account? <a href="{{ url_for('auth.login') }}">Sign in</a>
+      </p>
+    </div>
+  </section>
+</div>
+{% endblock %}

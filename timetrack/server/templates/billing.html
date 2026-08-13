@@ -1,0 +1,52 @@
+{% extends "base.html" %}
+{% block title %}Plan & billing · timeforge{% endblock %}
+{% block content %}
+<div class="page-head">
+  <div>
+    <p class="page-kicker">Company</p>
+    <h1>Plan &amp; billing</h1>
+    <p class="page-sub">Workspace status, trial window, and seat usage for «{{ org.name if org else workspace_name }}».</p>
+  </div>
+</div>
+
+<section class="panel">
+  <div class="billing-grid">
+    <div class="billing-card">
+      <p class="muted small">Status</p>
+      <strong class="billing-value">{{ org.status if org else '—' }}</strong>
+    </div>
+    <div class="billing-card">
+      <p class="muted small">Plan</p>
+      <strong class="billing-value">{{ org.plan if org else '—' }}</strong>
+    </div>
+    <div class="billing-card">
+      <p class="muted small">Seats</p>
+      <strong class="billing-value">{{ seats }}{% if org and org.max_seats %} / {{ org.max_seats }}{% endif %}</strong>
+    </div>
+    <div class="billing-card">
+      <p class="muted small">Days left</p>
+      <strong class="billing-value">{% if org and org.days_left is not none %}{{ org.days_left }}{% else %}—{% endif %}</strong>
+    </div>
+  </div>
+
+  <dl class="billing-meta">
+    <div><dt>Workspace</dt><dd><code>{{ org.slug if org else '—' }}</code> · {{ org.name if org else '—' }}</dd></div>
+    <div><dt>Billing email</dt><dd>{{ org.billing_email or '—' }}</dd></div>
+    <div><dt>Trial ends</dt><dd>{{ org.trial_ends_at or '—' }}</dd></div>
+    <div><dt>Paid until</dt><dd>{{ org.paid_until or '—' }}</dd></div>
+  </dl>
+
+  {% if org and org.status == 'trial' %}
+  <p class="muted">Your {{ trial_days }}-day trial is active. Ask the platform admin to mark this workspace as paid when you’re ready.</p>
+  {% elif org and org.status == 'expired' %}
+  <p class="flash error" style="margin:0">Trial ended. Contact platform support to activate a paid plan.</p>
+  {% elif org and org.status == 'active' %}
+  <p class="muted">Paid plan is active. Seat limit and renewals are managed by the platform admin.</p>
+  {% endif %}
+
+  <p style="margin-top:18px">
+    <a class="btn" href="{{ url_for('views.employees') }}">Invite employees</a>
+    <a class="btn ghost" href="{{ url_for('desk.company_settings') }}">Company settings</a>
+  </p>
+</section>
+{% endblock %}

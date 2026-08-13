@@ -1,4 +1,4 @@
-"""Build esstracker release artifacts (.exe on Windows, .deb on Linux).
+"""Build timeforge release artifacts (.exe on Windows, .deb on Linux).
 
 Usage:
     python packaging/build.py exe          # Windows: standalone .exe files
@@ -25,8 +25,8 @@ BUILD = ROOT / "build"
 PACKAGING = ROOT / "packaging"
 LINUX = PACKAGING / "linux"
 VERSION = "0.2.6"
-APP_ID = "com.euclidee.esstracker"
-PKG_NAME = "esstracker"
+APP_ID = "com.timeforge.agent"
+PKG_NAME = "timeforge"
 
 # Full set (Windows / local binaries). Employee .deb is client-only.
 APPS = (
@@ -93,13 +93,13 @@ def _sep() -> str:
 
 
 def _windows_icon() -> Path | None:
-    """Build packaging/windows/esstracker.ico from PNG if needed."""
-    ico = WINDOWS / "esstracker.ico"
+    """Build packaging/windows/timeforge.ico from PNG if needed."""
+    ico = WINDOWS / "timeforge.ico"
     if ico.is_file():
         return ico
-    png = ROOT / "timetrack" / "agent" / "assets" / "ess-mark.png"
+    png = ROOT / "timetrack" / "agent" / "assets" / "timeforge-mark.png"
     if not png.is_file():
-        png = LINUX / "icons" / "esstracker-256.png"
+        png = LINUX / "icons" / "timeforge-256.png"
     if not png.is_file():
         return None
     try:
@@ -199,14 +199,14 @@ def build_exe() -> Path:
     out = build_binaries(onefile=True)
     mapping = {
         "timetrack.exe": "TimeTrack.exe",
-        "timetrack-agent.exe": "esstracker-Agent.exe",
-        "timetrack-server.exe": "esstracker-Server.exe",
+        "timetrack-agent.exe": "timeforge-Agent.exe",
+        "timetrack-server.exe": "timeforge-Server.exe",
         "timetrack": "TimeTrack.exe" if platform.system() == "Windows" else "TimeTrack",
         "timetrack-agent": (
-            "esstracker-Agent.exe" if platform.system() == "Windows" else "esstracker-Agent"
+            "timeforge-Agent.exe" if platform.system() == "Windows" else "timeforge-Agent"
         ),
         "timetrack-server": (
-            "esstracker-Server.exe" if platform.system() == "Windows" else "esstracker-Server"
+            "timeforge-Server.exe" if platform.system() == "Windows" else "timeforge-Server"
         ),
     }
     for src_name, dst_name in mapping.items():
@@ -225,36 +225,36 @@ def _install_icons(deb_root: Path) -> None:
     hicolor = deb_root / "usr" / "share" / "icons" / "hicolor"
     sizes = (16, 22, 24, 32, 48, 64, 128, 256, 512)
     for size in sizes:
-        src = icon_src / f"esstracker-{size}.png"
+        src = icon_src / f"timeforge-{size}.png"
         if not src.exists():
-            src = icon_src / "esstracker.png"
+            src = icon_src / "timeforge.png"
         if not src.exists():
             continue
         dest_dir = hicolor / f"{size}x{size}" / "apps"
         dest_dir.mkdir(parents=True, exist_ok=True)
-        shutil.copy2(src, dest_dir / "esstracker.png")
+        shutil.copy2(src, dest_dir / "timeforge.png")
     # Also ship a pixmaps fallback
     pix = deb_root / "usr" / "share" / "pixmaps"
     pix.mkdir(parents=True, exist_ok=True)
-    master = icon_src / "esstracker-256.png"
+    master = icon_src / "timeforge-256.png"
     if not master.exists():
-        master = icon_src / "esstracker.png"
+        master = icon_src / "timeforge.png"
     if master.exists():
-        shutil.copy2(master, pix / "esstracker.png")
+        shutil.copy2(master, pix / "timeforge.png")
 
 
 def _write_wrapper(path: Path, target: str, *, default_args: str = "") -> None:
     path.write_text(
         "#!/bin/sh\n"
-        "# esstracker launcher — Ubuntu 20.04 / 22.04 / 24.04 compatible\n"
-        'export ESSTRACKER_ICON="${ESSTRACKER_ICON:-/usr/share/icons/hicolor/256x256/apps/esstracker.png}"\n'
+        "# timeforge launcher — Ubuntu 20.04 / 22.04 / 24.04 compatible\n"
+        'export TIMEFORGE_ICON="${TIMEFORGE_ICON:-/usr/share/icons/hicolor/256x256/apps/timeforge.png}"\n'
         # Prefer X11 for active-window, idle, and tray backends across Ubuntu releases
-        'if [ -z "${ESSTRACKER_FORCE_WAYLAND:-}" ]; then\n'
+        'if [ -z "${TIMEFORGE_FORCE_WAYLAND:-}" ]; then\n'
         '  export GDK_BACKEND="${GDK_BACKEND:-x11}"\n'
         "fi\n"
         # Help AppIndicator / notifications on GNOME
         'export XDG_CURRENT_DESKTOP="${XDG_CURRENT_DESKTOP:-$XDG_SESSION_DESKTOP}"\n'
-        f'BIN="/opt/esstracker/{target}"\n'
+        f'BIN="/opt/timeforge/{target}"\n'
         'if [ ! -x "$BIN" ]; then echo "missing $BIN" >&2; exit 127; fi\n'
         + (
             'if [ "$#" -eq 0 ]; then\n'
@@ -287,8 +287,8 @@ def build_deb() -> Path:
         shutil.rmtree(deb_root)
 
     bindir = deb_root / "usr" / "bin"
-    optdir = deb_root / "opt" / "esstracker"
-    etcdir = deb_root / "etc" / "esstracker"
+    optdir = deb_root / "opt" / "timeforge"
+    etcdir = deb_root / "etc" / "timeforge"
     docdir = deb_root / "usr" / "share" / "doc" / PKG_NAME
     appsdir = deb_root / "usr" / "share" / "applications"
     metadird = deb_root / "usr" / "share" / "metainfo"
@@ -306,23 +306,23 @@ def build_deb() -> Path:
         os.chmod(dst, 0o755)
 
     # Client wrappers only
-    _write_wrapper(bindir / "esstracker-agent", "timetrack-agent", default_args="run")
-    _write_wrapper(bindir / "esstracker", "timetrack-agent", default_args="run")
+    _write_wrapper(bindir / "timeforge-agent", "timetrack-agent", default_args="run")
+    _write_wrapper(bindir / "timeforge", "timetrack-agent", default_args="run")
     _write_wrapper(bindir / "timetrack-agent", "timetrack-agent")
 
     # Desktop integration — ONE app entry (no Server in Applications)
     _install_icons(deb_root)
     shutil.copy2(
-        LINUX / "com.euclidee.esstracker.Agent.desktop",
-        appsdir / "com.euclidee.esstracker.Agent.desktop",
+        LINUX / "com.timeforge.agent.Agent.desktop",
+        appsdir / "com.timeforge.agent.Agent.desktop",
     )
     shutil.copy2(
-        LINUX / "com.euclidee.esstracker.Agent-autostart.desktop",
-        autostart / "com.euclidee.esstracker.Agent.desktop",
+        LINUX / "com.timeforge.agent.Agent-autostart.desktop",
+        autostart / "com.timeforge.agent.Agent.desktop",
     )
     shutil.copy2(
-        LINUX / "com.euclidee.esstracker.metainfo.xml",
-        metadird / "com.euclidee.esstracker.metainfo.xml",
+        LINUX / "com.timeforge.agent.metainfo.xml",
+        metadird / "com.timeforge.agent.metainfo.xml",
     )
 
     # Config examples + baked company server (zero-touch)
@@ -337,7 +337,7 @@ def build_deb() -> Path:
     legacy_etc = deb_root / "etc" / "timetrack"
     legacy_etc.mkdir(parents=True, exist_ok=True)
     (legacy_etc / "README").write_text(
-        "Config moved to /etc/esstracker/ — just Sign in from the app.\n",
+        "Config moved to /etc/timeforge/ — just Sign in from the app.\n",
         encoding="utf-8",
     )
 
@@ -345,12 +345,12 @@ def build_deb() -> Path:
     if (ROOT / "TIMETRACK.md").exists():
         shutil.copy2(ROOT / "TIMETRACK.md", readme)
     else:
-        readme.write_text("esstracker — Euclidee Software Solutions\n", encoding="utf-8")
+        readme.write_text("timeforge — Timeforge\n", encoding="utf-8")
     (docdir / "copyright").write_text(
         "Format: https://www.debian.org/doc/packaging-manuals/copyright-format/1.0/\n"
         f"Upstream-Name: {PKG_NAME}\n"
         "Source: https://tracker.euclideesolutions.com/\n\n"
-        "Files: *\nCopyright: Euclidee Software Solutions\nLicense: MIT\n",
+        "Files: *\nCopyright: Timeforge\nLicense: MIT\n",
         encoding="utf-8",
     )
 
@@ -359,15 +359,15 @@ Version: {VERSION}
 Section: utils
 Priority: optional
 Architecture: {deb_arch}
-Maintainer: Euclidee Software Solutions <noreply@euclideesolutions.com>
+Maintainer: Timeforge <no-reply@euclideesolutions.com>
 Depends: libc6 (>= 2.31), libgtk-3-0t64 | libgtk-3-0, libnotify-bin, libayatana-appindicator3-1 | libappindicator3-1, gir1.2-gtk-3.0, gir1.2-ayatanaappindicator3-0.1 | gir1.2-appindicator3-0.1, python3-gi, libx11-6
 Recommends: xdotool, x11-utils, xprintidle, gnome-shell-extension-appindicator | gnome-shell-extension-ubuntu-appindicators
-Provides: timetrack
-Conflicts: timetrack
-Replaces: timetrack
-Description: esstracker (ESS) — employee desktop tracker
+Provides: timetrack, esstracker
+Conflicts: timetrack, esstracker
+Replaces: timetrack, esstracker
+Description: timeforge — employee desktop tracker
  Client app with system-tray status, notifications, and sync to your
- company esstracker server. Compatible with Ubuntu 20.04 / 22.04 / 24.04
+ company timeforge server. Compatible with Ubuntu 20.04 / 22.04 / 24.04
  (X11 recommended; Wayland tray needs AppIndicator).
  .
  Homepage: https://tracker.euclideesolutions.com/
@@ -377,7 +377,10 @@ Description: esstracker (ESS) — employee desktop tracker
     postinst = """#!/bin/sh
 set -e
 # Remove leftover Server menu entry from older packages
+rm -f /usr/share/applications/com.timeforge.agent.Server.desktop
+rm -f /usr/share/applications/com.euclidee.esstracker.Agent.desktop
 rm -f /usr/share/applications/com.euclidee.esstracker.Server.desktop
+rm -f /etc/xdg/autostart/com.euclidee.esstracker.Agent.desktop
 if command -v update-desktop-database >/dev/null 2>&1; then
   update-desktop-database -q /usr/share/applications || true
 fi
@@ -388,8 +391,8 @@ if command -v update-icon-caches >/dev/null 2>&1; then
   update-icon-caches /usr/share/icons/hicolor >/dev/null 2>&1 || true
 fi
 echo ""
-echo "  esstracker (ESS) client installed."
-echo "  Open Applications → esstracker → Sign in"
+echo "  timeforge client installed."
+echo "  Open Applications → timeforge → Sign in"
 echo "  Supported: Ubuntu 20.04 / 22.04 / 24.04 (amd64)"
 echo "  Tip: X11 session gives the best window-title + tray support."
 echo ""
@@ -483,7 +486,7 @@ def build_exe_client() -> Path:
     src = out / "timetrack-agent.exe"
     if not src.exists():
         src = out / "timetrack-agent"
-    dst = out / "esstracker-Agent.exe"
+    dst = out / "timeforge-Agent.exe"
     if src.exists():
         if dst.exists():
             dst.unlink()
@@ -503,12 +506,12 @@ def build_exe_client() -> Path:
         shutil.copy2(uninstall_ps1, out / "uninstall.ps1")
     readme = out / "README-WINDOWS.txt"
     readme.write_text(
-        "esstracker (ESS) — Windows client\n"
+        "timeforge — Windows client\n"
         "=================================\n\n"
         "1. Right-click install.ps1 → Run with PowerShell\n"
         "   (or: powershell -ExecutionPolicy Bypass -File .\\install.ps1)\n"
-        "2. Open Start → esstracker → Sign in\n"
-        "3. The ESS icon appears in the system tray (notification area).\n"
+        "2. Open Start → timeforge → Sign in\n"
+        "3. The Timeforge icon appears in the system tray (notification area).\n"
         "4. Autostart at logon is enabled (like Ubuntu xdg-autostart).\n\n"
         f"Version: {VERSION}\n"
         "Server: https://tracker.euclideesolutions.com/\n",
@@ -519,7 +522,7 @@ def build_exe_client() -> Path:
     if dst.exists():
         _publish_release(dst)
         # Also zip the install kit for the download page
-        kit = DIST / "releases" / f"esstracker-{VERSION}-windows.zip"
+        kit = DIST / "releases" / f"timeforge-{VERSION}-windows.zip"
         if kit.exists():
             kit.unlink()
         shutil.make_archive(str(kit.with_suffix("")), "zip", out)
@@ -550,7 +553,7 @@ def build_dmg(*, arch: str = "") -> Path:
             "if __name__ == '__main__':\n    main()\n",
             encoding="utf-8",
         )
-        icon_png = LINUX / "icons" / "esstracker-512.png"
+        icon_png = LINUX / "icons" / "timeforge-512.png"
         cmd = [
             sys.executable,
             "-m",
@@ -559,7 +562,7 @@ def build_dmg(*, arch: str = "") -> Path:
             "--clean",
             "--windowed",
             "--name",
-            "esstracker",
+            "timeforge",
             "--osx-bundle-identifier",
             APP_ID,
             "--distpath",
@@ -579,7 +582,7 @@ def build_dmg(*, arch: str = "") -> Path:
             cmd.extend(["--hidden-import", mod])
         cmd.append(str(launcher))
         _run(cmd)
-        app_dir = out / "esstracker.app"
+        app_dir = out / "timeforge.app"
 
     if not app_dir.exists():
         sys.exit(f"missing macOS app bundle under {out}")
@@ -598,7 +601,7 @@ def build_dmg(*, arch: str = "") -> Path:
 
     rel = DIST / "releases"
     rel.mkdir(parents=True, exist_ok=True)
-    dmg_path = rel / f"esstracker-{VERSION}-{tag}.dmg"
+    dmg_path = rel / f"timeforge-{VERSION}-{tag}.dmg"
     if dmg_path.exists():
         dmg_path.unlink()
     _run(
@@ -606,7 +609,7 @@ def build_dmg(*, arch: str = "") -> Path:
             "hdiutil",
             "create",
             "-volname",
-            "esstracker",
+            "timeforge",
             "-srcfolder",
             str(stage),
             "-ov",

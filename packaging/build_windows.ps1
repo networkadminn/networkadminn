@@ -1,11 +1,11 @@
-# Build Windows esstracker CLIENT .exe (run on Windows)
+# Build Windows timeforge CLIENT .exe (run on Windows)
 # Usage:  powershell -ExecutionPolicy Bypass -File packaging\build_windows.ps1
 #
 # Produces (same role as Ubuntu .deb):
-#   dist/windows/esstracker-Agent.exe   — tray client
+#   dist/windows/timeforge-Agent.exe   — tray client
 #   dist/windows/defaults.toml          — company server URL
 #   dist/windows/install.ps1            — Start Menu + autostart
-#   dist/releases/esstracker-*-windows.zip
+#   dist/releases/timeforge-*-windows.zip
 #
 # Accuracy notes:
 # - Build ON Windows — Linux cannot produce a real PE .exe.
@@ -34,9 +34,9 @@ $VenvPy = Join-Path $Root ".venv\Scripts\python.exe"
 $WinDir = Join-Path $Root "dist\windows"
 Write-Host ""
 Write-Host "Done. Windows client kit:"
-Write-Host "  $WinDir\esstracker-Agent.exe"
+Write-Host "  $WinDir\timeforge-Agent.exe"
 Write-Host "  $WinDir\install.ps1"
-Write-Host "  dist\releases\esstracker-*-windows.zip"
+Write-Host "  dist\releases\timeforge-*-windows.zip"
 Write-Host ""
 Write-Host "Install on this PC:"
 Write-Host "  powershell -ExecutionPolicy Bypass -File dist\windows\install.ps1 -Launch"

@@ -24,17 +24,17 @@ def _is_frozen() -> bool:
 
 
 def _logo_path() -> str | None:
-    env = os.environ.get("ESSTRACKER_ICON")
+    env = os.environ.get("TIMEFORGE_ICON")
     candidates = [
         Path(env) if env else None,
-        Path("/usr/share/icons/hicolor/128x128/apps/esstracker.png"),
-        Path("/usr/share/icons/hicolor/256x256/apps/esstracker.png"),
-        Path(__file__).resolve().parent / "assets" / "ess-mark.png",
+        Path("/usr/share/icons/hicolor/128x128/apps/timeforge.png"),
+        Path("/usr/share/icons/hicolor/256x256/apps/timeforge.png"),
+        Path(__file__).resolve().parent / "assets" / "timeforge-mark.png",
     ]
     meipass = getattr(sys, "_MEIPASS", None)
     if meipass:
         candidates.insert(
-            1, Path(meipass) / "timetrack" / "agent" / "assets" / "ess-mark.png"
+            1, Path(meipass) / "timetrack" / "agent" / "assets" / "timeforge-mark.png"
         )
     for p in candidates:
         if p is not None and p.is_file():
@@ -88,7 +88,7 @@ def _try_gtk_login(
     result = {"ok": False}
     server = _server_url(cfg)
 
-    win = Gtk.Window(title="esstracker — Sign in")
+    win = Gtk.Window(title="timeforge — Sign in")
     win.set_default_size(400, 480)
     win.set_resizable(False)
     win.set_position(Gtk.WindowPosition.CENTER)
@@ -108,8 +108,8 @@ def _try_gtk_login(
         except Exception:
             pass
 
-    title = Gtk.Label(label="esstracker")
-    title.set_markup('<span size="xx-large" weight="bold">esstracker</span>')
+    title = Gtk.Label(label="timeforge")
+    title.set_markup('<span size="xx-large" weight="bold">timeforge</span>')
     box.pack_start(title, False, False, 0)
     box.pack_start(Gtk.Label(label="Sign in with your work account"), False, False, 0)
 
@@ -165,13 +165,13 @@ def _tk_login(
     try:
         root = tk.Tk()
     except Exception as exc:
-        print(f"[esstracker] Tk login unavailable ({type(exc).__name__}: {exc})")
+        print(f"[timeforge] Tk login unavailable ({type(exc).__name__}: {exc})")
         return False
 
     result = {"ok": False}
     server = _server_url(cfg)
 
-    root.title("esstracker — Sign in")
+    root.title("timeforge — Sign in")
     root.resizable(False, False)
     root.configure(bg="#E8F3EC")
 
@@ -196,16 +196,16 @@ def _tk_login(
             lab.image = photo  # keep ref
             lab.pack(pady=(28, 8))
         except Exception:
-            tk.Label(card, text="ESS", font=("Sans", 18, "bold"), fg="#0B7A4B", bg="#FFFFFF").pack(
+            tk.Label(card, text="TF", font=("Sans", 18, "bold"), fg="#0B7A4B", bg="#FFFFFF").pack(
                 pady=(28, 8)
             )
     else:
-        tk.Label(card, text="ESS", font=("Sans", 18, "bold"), fg="#0B7A4B", bg="#FFFFFF").pack(
+        tk.Label(card, text="TF", font=("Sans", 18, "bold"), fg="#0B7A4B", bg="#FFFFFF").pack(
             pady=(28, 8)
         )
 
     tk.Label(
-        card, text="esstracker", font=("Sans", 20, "bold"), fg="#0F291C", bg="#FFFFFF"
+        card, text="timeforge", font=("Sans", 20, "bold"), fg="#0F291C", bg="#FFFFFF"
     ).pack()
     tk.Label(
         card,
@@ -302,14 +302,14 @@ def _tk_login(
     try:
         root.mainloop()
     except Exception as exc:
-        print(f"[esstracker] Tk login failed ({exc})")
+        print(f"[timeforge] Tk login failed ({exc})")
         return False
     return bool(result["ok"])
 
 
 def _cli_login(cfg: AgentConfig) -> bool:
     """Fallback when no GUI toolkit is available."""
-    print("esstracker — Sign in")
+    print("timeforge — Sign in")
     print("(GUI login unavailable — type credentials below)")
     try:
         username = input("Username: ").strip()

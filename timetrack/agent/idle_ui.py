@@ -27,16 +27,16 @@ def human_duration(seconds: float) -> str:
 
 
 def notify(title: str, body: str) -> None:
-    """Best-effort desktop notification (Linux notify-send) with ESS icon."""
+    """Best-effort desktop notification (Linux notify-send) with Timeforge icon."""
     icon = os.environ.get(
-        "ESSTRACKER_ICON",
-        "/usr/share/icons/hicolor/256x256/apps/esstracker.png",
+        "TIMEFORGE_ICON",
+        "/usr/share/icons/hicolor/256x256/apps/timeforge.png",
     )
-    cmd = ["notify-send", "-a", "esstracker", "-u", "normal"]
+    cmd = ["notify-send", "-a", "timeforge", "-u", "normal"]
     if icon and os.path.isfile(icon):
         cmd.extend(["-i", icon])
     else:
-        cmd.extend(["-i", "esstracker"])
+        cmd.extend(["-i", "timeforge"])
     cmd.extend([title, body])
     try:
         subprocess.Popen(
@@ -45,7 +45,7 @@ def notify(title: str, body: str) -> None:
             stderr=subprocess.DEVNULL,
         )
     except Exception:
-        print(f"[esstracker] {title}: {body}")
+        print(f"[timeforge] {title}: {body}")
 
 
 def show_going_offline_countdown(
@@ -66,7 +66,7 @@ def show_going_offline_countdown(
         if on_done:
             on_done()
 
-    threading.Thread(target=_run, daemon=True, name="esstracker-idle-countdown").start()
+    threading.Thread(target=_run, daemon=True, name="timeforge-idle-countdown").start()
 
 
 def _gtk_countdown(seconds: int, on_tick: Callable[[int], None] | None) -> bool:
@@ -182,7 +182,7 @@ def _gtk_countdown(seconds: int, on_tick: Callable[[int], None] | None) -> bool:
 def welcome_back(offline_seconds: float) -> None:
     dur = human_duration(offline_seconds)
     notify("Welcome again", f"Total offline time: {dur}")
-    print(f"[esstracker] Welcome again — offline for {dur}")
+    print(f"[timeforge] Welcome again — offline for {dur}")
 
 
 __all__ = [

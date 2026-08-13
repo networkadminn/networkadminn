@@ -1,0 +1,25 @@
+{% extends "base.html" %}
+{% block title %}Confirm your email · timeforge{% endblock %}
+{% block body %}
+<div class="login-page">
+  <section class="login-panel" style="margin:auto">
+    <div class="login-card">
+      <img class="login-mark" src="{{ url_for('static', filename='brand/timeforge-mark.png') }}" alt="" />
+      <p class="login-kicker">Email confirmation</p>
+      <h2>Check your inbox</h2>
+      <p class="login-sub">
+        Workspace
+        {% if org %}<strong>«{{ org.name }}»</strong> ({{ org.slug }}){% endif %}
+        is waiting for email confirmation before the {{ trial_days }}-day trial starts.
+      </p>
+      <p class="login-sub">Open the link we sent to your billing email, then sign in again.</p>
+      <form method="post" action="{{ url_for('saas.resend_confirm') }}" style="margin-top:16px">
+        <button class="btn primary" type="submit">Resend confirmation email</button>
+      </form>
+      <p class="login-forgot" style="margin-top:18px">
+        <a href="{{ url_for('auth.logout') }}">Sign out</a>
+      </p>
+    </div>
+  </section>
+</div>
+{% endblock %}

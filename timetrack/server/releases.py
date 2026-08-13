@@ -12,7 +12,7 @@ CLIENT_VERSION = "0.2.6"
 
 
 def releases_dir() -> Path:
-    env = os.environ.get("ESSTRACKER_RELEASES_DIR") or os.environ.get(
+    env = os.environ.get("TIMEFORGE_RELEASES_DIR") or os.environ.get(
         "TIMETRACK_RELEASES_DIR"
     )
     if env:
@@ -75,11 +75,20 @@ def scan_releases() -> dict:
         return None
 
     linux_deb = pick(
+        f"timeforge_{CLIENT_VERSION}_amd64.deb",
+        "timeforge_amd64.deb",
+        "timeforge.deb",
+        # legacy package name before Timeforge rebrand
         f"esstracker_{CLIENT_VERSION}_amd64.deb",
         "esstracker_amd64.deb",
         "esstracker.deb",
     )
-    # Any esstracker_*.deb
+    # Any timeforge_*.deb, then legacy esstracker_*.deb
+    if not linux_deb:
+        for p in sorted(base.glob("timeforge_*.deb"), reverse=True):
+            linux_deb = _file_info(p)
+            if linux_deb:
+                break
     if not linux_deb:
         for p in sorted(base.glob("esstracker_*.deb"), reverse=True):
             linux_deb = _file_info(p)
@@ -87,45 +96,58 @@ def scan_releases() -> dict:
                 break
 
     windows_exe = pick(
+        f"timeforge-Setup-{CLIENT_VERSION}.exe",
+        "timeforge-Setup.exe",
+        f"timeforge-Agent-{CLIENT_VERSION}.exe",
+        "timeforge-Agent.exe",
         f"esstracker-Setup-{CLIENT_VERSION}.exe",
         "esstracker-Setup.exe",
         f"esstracker-Agent-{CLIENT_VERSION}.exe",
         "esstracker-Agent.exe",
     )
     if not windows_exe:
-        for p in sorted(base.glob("esstracker*.exe"), reverse=True):
-            windows_exe = _file_info(p)
-            break
+        for pattern in ("timeforge*.exe", "esstracker*.exe"):
+            for p in sorted(base.glob(pattern), reverse=True):
+                windows_exe = _file_info(p)
+                break
+            if windows_exe:
+                break
 
     # Preferred public artifact: install kit zip (exe + install.ps1 + defaults)
     windows_zip = pick(
+        f"timeforge-{CLIENT_VERSION}-windows.zip",
+        "timeforge-windows.zip",
         f"esstracker-{CLIENT_VERSION}-windows.zip",
         "esstracker-windows.zip",
     )
     if not windows_zip:
-        for p in sorted(base.glob("esstracker*-windows.zip"), reverse=True):
-            windows_zip = _file_info(p)
-            break
-        if not windows_zip:
-            for p in sorted(base.glob("esstracker*windows*.zip"), reverse=True):
+        for pattern in (
+            "timeforge*-windows.zip",
+            "timeforge*windows*.zip",
+            "esstracker*-windows.zip",
+            "esstracker*windows*.zip",
+        ):
+            for p in sorted(base.glob(pattern), reverse=True):
                 windows_zip = _file_info(p)
+                break
+            if windows_zip:
                 break
 
     windows_file = windows_zip or windows_exe
     windows_kind = "zip" if windows_zip else ("exe" if windows_exe else None)
 
     mac_arm = pick(
-        f"esstracker-{CLIENT_VERSION}-arm64.dmg",
-        "esstracker-arm64.dmg",
-        "esstracker-apple-silicon.dmg",
+        f"timeforge-{CLIENT_VERSION}-arm64.dmg",
+        "timeforge-arm64.dmg",
+        "timeforge-apple-silicon.dmg",
     )
     mac_intel = pick(
-        f"esstracker-{CLIENT_VERSION}-x86_64.dmg",
-        "esstracker-intel.dmg",
-        "esstracker-x86_64.dmg",
+        f"timeforge-{CLIENT_VERSION}-x86_64.dmg",
+        "timeforge-intel.dmg",
+        "timeforge-x86_64.dmg",
     )
     if not mac_arm and not mac_intel:
-        for p in sorted(base.glob("esstracker*.dmg"), reverse=True):
+        for p in sorted(base.glob("timeforge*.dmg"), reverse=True):
             name = p.name.lower()
             info = _file_info(p)
             if "arm" in name or "silicon" in name or "aarch" in name:

@@ -236,19 +236,19 @@ target OS** (a Linux host produces `.deb`; a Windows host produces `.exe`).
 
 ```bash
 bash packaging/build_deb.sh
-# → dist/esstracker_0.1.0_<arch>.deb
+# → dist/timeforge_0.1.0_<arch>.deb
 
-sudo apt install ./dist/esstracker_0.1.0_amd64.deb   # adjust arch
+sudo apt install ./dist/timeforge_0.1.0_amd64.deb   # adjust arch
 ```
 
 After install you get a DeskTime-style desktop app:
 
-1. Open **Applications → esstracker** (or it starts at login)
+1. Open **Applications → timeforge** (or it starts at login)
 2. **Sign in** with your work username & password (same as the website)
 3. Tracking runs in the **notification tray** — no config files to edit
 
-- Server is pre-set to your company URL (`/etc/esstracker/defaults.toml`)
-- Login saves `~/.config/esstracker/agent.toml` automatically
+- Server is pre-set to your company URL (`/etc/timeforge/defaults.toml`)
+- Login saves `~/.config/timeforge/agent.toml` automatically
 - Tray: Private Time, Open My Day, Sync, Sign out, Quit
 - Autostart at login
 

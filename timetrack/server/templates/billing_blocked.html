@@ -1,0 +1,34 @@
+{% extends "base.html" %}
+{% block title %}Workspace locked · timeforge{% endblock %}
+{% block body %}
+<div class="login-page">
+  <section class="login-panel" style="margin:auto">
+    <div class="login-card">
+      <img class="login-mark" src="{{ url_for('static', filename='brand/timeforge-mark.png') }}" alt="" />
+      <p class="login-kicker">Access paused</p>
+      <h2>
+        {% if org and org.status == 'suspended' %}Workspace suspended
+        {% elif org and org.status == 'expired' %}Trial ended
+        {% else %}Workspace unavailable{% endif %}
+      </h2>
+      <p class="login-sub">
+        {% if org %}
+        <strong>«{{ org.name }}»</strong> ({{ org.slug }}) —
+        status <code>{{ org.status }}</code>, plan <code>{{ org.plan }}</code>.
+        {% endif %}
+      </p>
+      {% if org and org.status == 'expired' %}
+      <p class="login-sub">
+        Your {{ trial_days }}-day free trial has ended. Ask your platform admin to
+        activate a paid plan.
+      </p>
+      {% elif org and org.status == 'suspended' %}
+      <p class="login-sub">This workspace was suspended by the platform admin.</p>
+      {% endif %}
+      <p class="login-forgot" style="margin-top:18px">
+        <a href="{{ url_for('auth.logout') }}">Sign out</a>
+      </p>
+    </div>
+  </section>
+</div>
+{% endblock %}

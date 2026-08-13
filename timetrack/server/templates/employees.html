@@ -1,11 +1,11 @@
 {% extends "base.html" %}
-{% block title %}Employees · esstracker{% endblock %}
+{% block title %}Employees · timeforge{% endblock %}
 {% block content %}
 <div class="page-head">
   <div>
     <p class="page-kicker">Company</p>
     <h1>Employees</h1>
-    <p class="page-sub">esstracker-style people directory — accounts, online status, day view, screenshots, and reports.</p>
+    <p class="page-sub">timeforge-style people directory — accounts, online status, day view, screenshots, and reports.</p>
   </div>
   <form method="get" class="daynav" style="padding:6px 10px">
     <input type="search" name="q" value="{{ q }}" placeholder="Search name, username, email…" style="border:0;min-width:220px;font-weight:600" />
@@ -26,14 +26,16 @@
       <button class="btn primary inline" type="submit">Create employee</button>
     </form>
   </section>
-  <section class="panel tip-panel">
-    <div class="panel-head"><h2>Where things live</h2></div>
-    <ol class="steps">
-      <li><strong>Day view</strong> — arrival, productivity bar, apps (My Day).</li>
-      <li><strong>Screenshots</strong> — browse that person’s captures.</li>
-      <li><strong>Reports</strong> — 7-day productivity for one employee or the team.</li>
-      <li>Copy the <strong>API token</strong> into their agent.toml to start tracking.</li>
-    </ol>
+  <section class="panel">
+    <div class="panel-head"><h2>Invite by email</h2></div>
+    <form method="post" class="stack-form">
+      <input type="hidden" name="action" value="invite" />
+      <label>Work email <input name="email" type="email" required placeholder="alice@company.com" /></label>
+      <label>Display name <input name="name" placeholder="Alice" /></label>
+      <label class="check"><input type="checkbox" name="admin" value="1" /> Invite as admin</label>
+      <button class="btn primary inline" type="submit">Send invite</button>
+    </form>
+    <p class="muted small" style="margin-top:12px">They get a link to set a username &amp; password. Uses one seat when accepted.</p>
   </section>
 </div>
 

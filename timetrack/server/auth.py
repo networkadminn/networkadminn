@@ -123,14 +123,14 @@ def forgot_password():
             name = user.name or user.username
             text = (
                 f"Hi {name},\n\n"
-                f"Reset your esstracker password using this link "
+                f"Reset your timeforge password using this link "
                 f"(valid {_RESET_TTL_HOURS} hour):\n\n{reset_url}\n\n"
                 "If you did not request this, you can ignore this email.\n\n"
-                "— Euclidee Software Solutions\n"
+                "— Timeforge\n"
             )
             html = f"""
             <div style="font-family:Arial,sans-serif;max-width:520px;margin:0 auto;color:#0F291C">
-              <h2 style="color:#0B7A4B">Reset your esstracker password</h2>
+              <h2 style="color:#0B7A4B">Reset your timeforge password</h2>
               <p>Hi {name},</p>
               <p>We received a request to reset your password. This link expires in
               {_RESET_TTL_HOURS} hour.</p>
@@ -149,7 +149,7 @@ def forgot_password():
             cfg = current_app.config["TIMETRACK_SERVER_CONFIG"]
             ok, err = send_email(
                 to=user.email.strip(),
-                subject="Reset your esstracker password",
+                subject="Reset your timeforge password",
                 text_body=text,
                 html_body=html,
                 data_dir=cfg.data_dir,
@@ -209,6 +209,59 @@ def reset_password(token: str):
         return redirect(url_for("auth.login"))
 
     return render_template("reset_password.html", token=token)
+
+
+@auth_bp.route("/signup", methods=["GET", "POST"])
+def signup():
+    """SaaS org signup — creates tenant + first admin; email confirmation required."""
+    if current_user.is_authenticated:
+        return redirect(url_for("views.home"))
+
+    from .models import TRIAL_DAYS
+
+    if request.method == "POST":
+        from .saas import send_workspace_confirmation
+        from .tenancy import create_organization
+
+        org_name = (request.form.get("org_name") or "").strip()
+        slug = (request.form.get("slug") or "").strip().lower()
+        username = (request.form.get("username") or "").strip()
+        password = request.form.get("password") or ""
+        email = (request.form.get("email") or "").strip()
+        display_name = (request.form.get("display_name") or "").strip()
+        if not email or "@" not in email:
+            flash("Work email is required — we send a confirmation link.", "error")
+        elif len(password) < 6:
+            flash("Password must be at least 6 characters.", "error")
+        else:
+            try:
+                org, admin = create_organization(
+                    name=org_name,
+                    slug=slug,
+                    admin_username=username,
+                    admin_password=password,
+                    admin_email=email,
+                    admin_display_name=display_name,
+                    require_email_confirm=True,
+                )
+                ok, detail = send_workspace_confirmation(org, admin)
+                if ok:
+                    flash(
+                        f"Workspace «{org.name}» created. Check {email} to confirm "
+                        f"and start your {TRIAL_DAYS}-day trial.",
+                        "info",
+                    )
+                else:
+                    flash(
+                        f"Workspace created, but confirmation email failed ({detail}). "
+                        "Ask the platform admin to confirm your workspace, or check SMTP.",
+                        "error",
+                    )
+                return redirect(url_for("auth.login"))
+            except ValueError as exc:
+                flash(str(exc), "error")
+
+    return render_template("signup.html", trial_days=TRIAL_DAYS)
 
 
 __all__ = ["auth_bp", "admin_required"]

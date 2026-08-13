@@ -108,8 +108,10 @@ def _week_strip(user_id: int | None, day: datetime) -> list[dict]:
     for i in range(7):
         d = datetime.combine(monday + timedelta(days=i), datetime.min.time())
         if user_id is None:
-            # Team average for that day
-            users = db.session.execute(db.select(User)).scalars().all()
+            # Team average for that day (current org only)
+            from .tenancy import users_in_org_query
+
+            users = list(db.session.execute(users_in_org_query()).scalars())
             prods = []
             for u in users:
                 s = _summarize_user_day(u.id, d)
@@ -1068,18 +1070,21 @@ def admin():
     for a in team_apps:
         a["pct"] = round(100.0 * a["seconds"] / active_base, 1)
 
+    member_ids = {u.id for u in users}
+    flagged_q = (
+        db.select(Screenshot)
+        .filter(Screenshot.is_unproductive.is_(True))
+        .filter(Screenshot.ts >= start, Screenshot.ts < end)
+    )
+    if member_ids:
+        flagged_q = flagged_q.filter(Screenshot.user_id.in_(member_ids))
+    else:
+        flagged_q = flagged_q.filter(Screenshot.user_id == -1)
     flagged_shots = list(
         db.session.execute(
-            db.select(Screenshot)
-            .filter(Screenshot.is_unproductive.is_(True))
-            .filter(Screenshot.ts >= start, Screenshot.ts < end)
-            .order_by(Screenshot.ts.desc())
-            .limit(8)
+            flagged_q.order_by(Screenshot.ts.desc()).limit(8)
         ).scalars()
     )
-    if team_id:
-        member_ids = {u.id for u in users}
-        flagged_shots = [s for s in flagged_shots if s.user_id in member_ids]
 
     total_desktime = team["active"]
     total_idle = team["idle"]
@@ -1125,7 +1130,9 @@ def admin():
 @views_bp.route("/admin/user/<int:user_id>")
 @admin_required
 def admin_user(user_id: int):
-    user = db.session.get(User, user_id) or abort(404)
+    from .tenancy import get_org_user
+
+    user = get_org_user(user_id) or abort(404)
     day = _parse_day(request.args.get("day"))
     return render_template(
         "user.html", **_employee_day_context(user, day, is_self=False)
@@ -1152,12 +1159,19 @@ def _tracked_for_categories(days: int = 14, limit: int = 60) -> tuple[list[dict]
     from ..monitor import extract_domain, extract_url
 
     cutoff = datetime.now().timestamp() - days * 86400.0
+    from .tenancy import org_user_ids
+
+    uids = org_user_ids()
+    q = db.select(Activity).filter(
+        Activity.start_ts >= cutoff, Activity.idle.is_(False)
+    )
+    if uids:
+        q = q.filter(Activity.user_id.in_(uids))
+    else:
+        q = q.filter(Activity.user_id == -1)
     rows = list(
         db.session.execute(
-            db.select(Activity)
-            .filter(Activity.start_ts >= cutoff, Activity.idle.is_(False))
-            .order_by(Activity.start_ts.desc())
-            .limit(8000)
+            q.order_by(Activity.start_ts.desc()).limit(8000)
         ).scalars()
     )
     categorizer = RulesConfig(rules=merge_rules(_load_server_rules()))
@@ -1273,13 +1287,20 @@ def employees():
 
         action = request.form.get("action") or "create"
         if action == "create":
+            from .models import Organization
+            from .tenancy import can_add_seat
+
             username = (request.form.get("username") or "").strip()
             password = request.form.get("password") or ""
             name = (request.form.get("name") or "").strip()
             email = (request.form.get("email") or "").strip()
             role = ROLE_ADMIN if request.form.get("admin") else ROLE_EMPLOYEE
+            org = db.session.get(Organization, current_org_id())
+            ok_seat, seat_msg = can_add_seat(org)
             if not username or not password:
                 flash("Username and password are required.", "error")
+            elif not ok_seat:
+                flash(seat_msg, "error")
             elif db.session.execute(
                 db.select(User).filter_by(username=username)
             ).scalar_one_or_none():
@@ -1300,9 +1321,48 @@ def employees():
                     f"Created {user.role} {user.username}. API token: {user.api_token}",
                     "info",
                 )
+        elif action == "invite":
+            from datetime import datetime, timedelta, timezone
+
+            from .models import Invitation, Organization, generate_token
+            from .saas import send_employee_invite
+            from .tenancy import can_add_seat
+
+            email = (request.form.get("email") or "").strip().lower()
+            name = (request.form.get("name") or "").strip()
+            role = ROLE_ADMIN if request.form.get("admin") else ROLE_EMPLOYEE
+            org = db.session.get(Organization, current_org_id())
+            ok_seat, seat_msg = can_add_seat(org)
+            if not email or "@" not in email:
+                flash("A valid email is required to invite.", "error")
+            elif not ok_seat:
+                flash(seat_msg, "error")
+            else:
+                now = datetime.now(timezone.utc).replace(tzinfo=None)
+                inv = Invitation(
+                    organization_id=current_org_id(),
+                    email=email,
+                    display_name=name,
+                    role=role,
+                    token=generate_token(),
+                    invited_by_id=current_user.id,
+                    expires_at=now + timedelta(days=7),
+                )
+                db.session.add(inv)
+                db.session.commit()
+                ok, detail = send_employee_invite(inv, org, current_user)
+                if ok:
+                    flash(f"Invite sent to {email}.", "info")
+                else:
+                    flash(
+                        f"Invite created, but email failed ({detail}). "
+                        f"Share /invite/{inv.token} manually.",
+                        "error",
+                    )
         elif action == "toggle":
             uid = request.form.get("user_id", type=int)
-            user = db.session.get(User, uid) or abort(404)
+            from .tenancy import get_org_user
+            user = get_org_user(uid) or abort(404)
             if user.id == current_user.id:
                 flash("You cannot disable your own account.", "error")
             else:
@@ -1314,14 +1374,16 @@ def employees():
                 )
         elif action == "rotate":
             uid = request.form.get("user_id", type=int)
-            user = db.session.get(User, uid) or abort(404)
+            from .tenancy import get_org_user
+            user = get_org_user(uid) or abort(404)
             token = user.rotate_token()
             db.session.commit()
             flash(f"New API token for {user.username}: {token}", "info")
         elif action == "password":
             uid = request.form.get("user_id", type=int)
             password = request.form.get("password") or ""
-            user = db.session.get(User, uid) or abort(404)
+            from .tenancy import get_org_user
+            user = get_org_user(uid) or abort(404)
             if len(password) < 6:
                 flash("Password must be at least 6 characters.", "error")
             else:
@@ -1330,7 +1392,8 @@ def employees():
                 flash(f"Password updated for {user.username}.", "info")
         elif action == "private":
             uid = request.form.get("user_id", type=int)
-            user = db.session.get(User, uid) or abort(404)
+            from .tenancy import get_org_user
+            user = get_org_user(uid) or abort(404)
             user.private_time_allowed = not user.private_time_allowed
             db.session.commit()
             flash(
@@ -1342,7 +1405,8 @@ def employees():
 
             uid = request.form.get("user_id", type=int)
             tid = request.form.get("team_id", type=int)
-            user = db.session.get(User, uid) or abort(404)
+            from .tenancy import get_org_user
+            user = get_org_user(uid) or abort(404)
             if tid:
                 team = db.session.get(Team, tid)
                 if team is None:
@@ -1352,7 +1416,8 @@ def employees():
             flash(f"Team updated for {user.username}.", "info")
         elif action == "edit":
             uid = request.form.get("user_id", type=int)
-            user = db.session.get(User, uid) or abort(404)
+            from .tenancy import get_org_user
+            user = get_org_user(uid) or abort(404)
             name = (request.form.get("name") or "").strip()
             email = (request.form.get("email") or "").strip()
             user.display_name = name
@@ -1361,7 +1426,8 @@ def employees():
             flash(f"Profile updated for {user.username}.", "info")
         elif action == "role":
             uid = request.form.get("user_id", type=int)
-            user = db.session.get(User, uid) or abort(404)
+            from .tenancy import get_org_user
+            user = get_org_user(uid) or abort(404)
             if user.id == current_user.id:
                 flash("You cannot change your own role.", "error")
             else:
@@ -1372,7 +1438,8 @@ def employees():
                 flash(f"{user.username} is now {user.role}.", "info")
         elif action == "screenshots":
             uid = request.form.get("user_id", type=int)
-            user = db.session.get(User, uid) or abort(404)
+            from .tenancy import get_org_user
+            user = get_org_user(uid) or abort(404)
             mode = request.form.get("shot_mode") or "company"
             if mode == "company":
                 user.screenshots_enabled = None
@@ -1391,7 +1458,8 @@ def employees():
             from .users_util import delete_user_account
 
             uid = request.form.get("user_id", type=int)
-            user = db.session.get(User, uid) or abort(404)
+            from .tenancy import get_org_user
+            user = get_org_user(uid) or abort(404)
             if user.id == current_user.id:
                 flash("You cannot delete your own account.", "error")
             elif user.organization_id != current_org_id():
@@ -1434,7 +1502,8 @@ def employees():
             or q in (u.display_name or "").lower()
             or q in (u.email or "").lower()
         ]
-    teams = list(db.session.execute(db.select(Team).order_by(Team.name)).scalars())
+    from .tenancy import teams_in_org_query
+    teams = list(db.session.execute(teams_in_org_query().order_by(Team.name)).scalars())
     now_ts = datetime.now().timestamp()
     cfg = current_app.config["TIMETRACK_SERVER_CONFIG"]
     rows = []
@@ -1483,12 +1552,19 @@ def screenshots_browser():
         users = [current_user]
         user_id = current_user.id
 
+    from .tenancy import get_org_user, org_user_ids
+
     q = db.select(Screenshot).filter(Screenshot.ts >= start, Screenshot.ts < end)
     if user_id:
         if user_id != current_user.id and not current_user.is_admin:
             abort(403)
+        if current_user.is_admin and get_org_user(user_id) is None:
+            abort(404)
         q = q.filter(Screenshot.user_id == user_id)
-    elif not current_user.is_admin:
+    elif current_user.is_admin:
+        uids = org_user_ids()
+        q = q.filter(Screenshot.user_id.in_(uids or [-1]))
+    else:
         q = q.filter(Screenshot.user_id == current_user.id)
     if only_bad:
         q = q.filter(Screenshot.is_unproductive.is_(True))
@@ -1798,9 +1874,14 @@ def data_charts():
 
 
 def _serve_shot(shot_id: int, thumb: bool):
+    from .tenancy import get_org_user
+
     shot = db.session.get(Screenshot, shot_id) or abort(404)
     if shot.user_id != current_user.id and not current_user.is_admin:
         abort(403)
+    if current_user.is_admin and not current_user.is_superadmin:
+        if get_org_user(shot.user_id) is None:
+            abort(404)
     cfg = current_app.config["TIMETRACK_SERVER_CONFIG"]
     rel = shot.thumb_path if (thumb and shot.thumb_path) else shot.path
     # Normalize legacy Windows backslash paths stored in the DB.

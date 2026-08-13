@@ -1,5 +1,5 @@
 {% extends "base.html" %}
-{% block title %}Company settings · esstracker{% endblock %}
+{% block title %}Company settings · timeforge{% endblock %}
 {% block content %}
 <div class="page-head">
   <div>
@@ -11,7 +11,7 @@
 <section class="panel">
   <form method="post" class="stack-form">
     <label>Company name
-      <input name="company_name" value="{{ settings.company_name or 'Euclidee Software Solutions Private Limited' }}" maxlength="200" />
+      <input name="company_name" value="{{ settings.company_name or 'Timeforge' }}" maxlength="200" />
     </label>
 
     <fieldset class="settings-block">

@@ -162,7 +162,7 @@ def ensure_schema() -> None:
         ("company_settings", "screenshot_random", "BOOLEAN DEFAULT 1"),
         ("company_settings", "private_time_enabled", "BOOLEAN DEFAULT 1"),
         ("company_settings", "offline_requires_approval", "BOOLEAN DEFAULT 0"),
-        ("company_settings", "company_name", "VARCHAR(200) DEFAULT 'Euclidee Software Solutions Private Limited'"),
+        ("company_settings", "company_name", "VARCHAR(200) DEFAULT 'Timeforge'"),
         ("company_settings", "idle_threshold", "INTEGER DEFAULT 180"),
         ("company_settings", "office_start_hour", "FLOAT DEFAULT 9.5"),
         ("company_settings", "office_end_hour", "FLOAT DEFAULT 18.5"),

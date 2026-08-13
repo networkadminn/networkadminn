@@ -102,7 +102,7 @@ class ServerClient:
             data=body,
             headers={
                 "Content-Type": "application/json",
-                "User-Agent": "esstracker-Agent/0.1 (+https://tracker.euclideesolutions.com)",
+                "User-Agent": "timeforge-Agent/0.1 (+https://tracker.euclideesolutions.com)",
                 "Accept": "application/json, */*",
             },
             method="POST",
