@@ -3,50 +3,53 @@
 {% block content %}
 <div class="page-head">
   <div>
-    <p class="page-kicker">Company</p>
+    <p class="page-kicker">Workspace</p>
     <h1>Plan &amp; billing</h1>
-    <p class="page-sub">Workspace status, trial window, and seat usage for «{{ org.name if org else workspace_name }}».</p>
+    <p class="page-sub">Trial status, seats, and how to upgrade. Paid plans are activated by the platform admin.</p>
   </div>
 </div>
 
 <section class="panel">
+  <div class="panel-head"><h2>«{{ org.name }}»</h2>
+    <span class="pill">{{ org.status }}</span>
+  </div>
   <div class="billing-grid">
-    <div class="billing-card">
-      <p class="muted small">Status</p>
-      <strong class="billing-value">{{ org.status if org else '—' }}</strong>
-    </div>
-    <div class="billing-card">
+    <div>
       <p class="muted small">Plan</p>
-      <strong class="billing-value">{{ org.plan if org else '—' }}</strong>
+      <strong>{{ org.plan }}</strong>
     </div>
-    <div class="billing-card">
+    <div>
       <p class="muted small">Seats</p>
-      <strong class="billing-value">{{ seats }}{% if org and org.max_seats %} / {{ org.max_seats }}{% endif %}</strong>
+      <strong>{{ seats_used }}{% if org.max_seats %} / {{ org.max_seats }}{% endif %}</strong>
     </div>
-    <div class="billing-card">
+    <div>
       <p class="muted small">Days left</p>
-      <strong class="billing-value">{% if org and org.days_left is not none %}{{ org.days_left }}{% else %}—{% endif %}</strong>
+      <strong>{% if days_left is not none %}{{ days_left }}{% else %}—{% endif %}</strong>
+    </div>
+    <div>
+      <p class="muted small">Trial ends</p>
+      <strong><small>{{ org.trial_ends_at or '—' }}</small></strong>
+    </div>
+    <div>
+      <p class="muted small">Paid until</p>
+      <strong><small>{{ org.paid_until or '—' }}</small></strong>
+    </div>
+    <div>
+      <p class="muted small">Billing email</p>
+      <strong><small>{{ org.billing_email or '—' }}</small></strong>
     </div>
   </div>
-
-  <dl class="billing-meta">
-    <div><dt>Workspace</dt><dd><code>{{ org.slug if org else '—' }}</code> · {{ org.name if org else '—' }}</dd></div>
-    <div><dt>Billing email</dt><dd>{{ org.billing_email or '—' }}</dd></div>
-    <div><dt>Trial ends</dt><dd>{{ org.trial_ends_at or '—' }}</dd></div>
-    <div><dt>Paid until</dt><dd>{{ org.paid_until or '—' }}</dd></div>
-  </dl>
-
-  {% if org and org.status == 'trial' %}
-  <p class="muted">Your {{ trial_days }}-day trial is active. Ask the platform admin to mark this workspace as paid when you’re ready.</p>
-  {% elif org and org.status == 'expired' %}
-  <p class="flash error" style="margin:0">Trial ended. Contact platform support to activate a paid plan.</p>
-  {% elif org and org.status == 'active' %}
-  <p class="muted">Paid plan is active. Seat limit and renewals are managed by the platform admin.</p>
-  {% endif %}
-
-  <p style="margin-top:18px">
-    <a class="btn" href="{{ url_for('views.employees') }}">Invite employees</a>
-    <a class="btn ghost" href="{{ url_for('desk.company_settings') }}">Company settings</a>
+  {% if org.status == 'trial' %}
+  <p class="muted" style="margin-top:16px">
+    You’re on a {{ trial_days }}-day free trial.
+    {% if days_left is not none and days_left <= 5 %}
+    <strong>{{ days_left }} day{{ 's' if days_left != 1 else '' }} left</strong> — contact your platform admin to activate a paid plan.
+    {% endif %}
   </p>
+  {% elif org.status == 'active' %}
+  <p class="muted" style="margin-top:16px">Your workspace is on an active paid plan.</p>
+  {% elif org.status == 'expired' %}
+  <p class="flash error" style="margin-top:16px">Trial ended. Ask the platform admin to mark this workspace paid.</p>
+  {% endif %}
 </section>
 {% endblock %}
