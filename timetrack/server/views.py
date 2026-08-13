@@ -1333,10 +1333,18 @@ def employees():
             role = ROLE_ADMIN if request.form.get("admin") else ROLE_EMPLOYEE
             org = db.session.get(Organization, current_org_id())
             ok_seat, seat_msg = can_add_seat(org)
+            existing = db.session.execute(
+                db.select(User).filter(
+                    db.func.lower(User.email) == email,
+                    User.organization_id == current_org_id(),
+                )
+            ).scalar_one_or_none()
             if not email or "@" not in email:
                 flash("A valid email is required to invite.", "error")
             elif not ok_seat:
                 flash(seat_msg, "error")
+            elif existing:
+                flash("That email already belongs to someone in this workspace.", "error")
             else:
                 now = datetime.now(timezone.utc).replace(tzinfo=None)
                 inv = Invitation(
