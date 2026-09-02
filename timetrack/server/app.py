@@ -118,9 +118,18 @@ def create_app(config: ServerConfig | None = None, **overrides) -> Flask:
         pass
 
     with app.app_context():
+        from .models import ROLE_ADMIN, ROLE_SUPERADMIN, User
         from .settings_util import ensure_schema, get_settings
 
         ensure_schema()
+        # Legacy SaaS superadmin accounts → normal admin (self-hosted mode).
+        legacy = db.session.execute(
+            db.select(User).filter_by(role=ROLE_SUPERADMIN)
+        ).scalars().all()
+        if legacy:
+            for user in legacy:
+                user.role = ROLE_ADMIN
+            db.session.commit()
         get_settings()
 
     return app

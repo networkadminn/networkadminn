@@ -12,6 +12,8 @@ from .extensions import db
 
 ROLE_ADMIN = "admin"
 ROLE_EMPLOYEE = "employee"
+# Legacy SaaS role — still in some DBs; treated as admin.
+ROLE_SUPERADMIN = "superadmin"
 
 PLAN_BUSINESS = "business"
 ORG_ACTIVE = "active"
@@ -103,7 +105,7 @@ class User(UserMixin, db.Model):
 
     @property
     def is_admin(self) -> bool:
-        return self.role == ROLE_ADMIN
+        return self.role in (ROLE_ADMIN, ROLE_SUPERADMIN)
 
     @property
     def name(self) -> str:
@@ -329,6 +331,7 @@ __all__ = [
     "PasswordResetToken",
     "ROLE_ADMIN",
     "ROLE_EMPLOYEE",
+    "ROLE_SUPERADMIN",
     "PLAN_BUSINESS",
     "ORG_ACTIVE",
     "generate_token",
