@@ -250,14 +250,10 @@ def offline_fill():
 @desk_bp.route("/approvals", methods=["GET", "POST"])
 @admin_required
 def approvals():
-    from .tenancy import get_org_user, org_user_ids
-
     if request.method == "POST":
         rid = request.form.get("id", type=int)
         action = request.form.get("action")
         row = db.session.get(OfflineRequest, rid) or abort(404)
-        if get_org_user(row.user_id) is None:
-            abort(404)
         if action == "approve" and row.status == "pending":
             row.status = "approved"
             db.session.add(
@@ -279,25 +275,19 @@ def approvals():
         db.session.commit()
         return redirect(url_for("desk.approvals"))
 
-    uids = org_user_ids()
-    pending_q = db.select(OfflineRequest).filter_by(status="pending")
-    recent_q = db.select(OfflineRequest).filter(
-        OfflineRequest.status.in_(("approved", "rejected"))
-    )
-    if uids:
-        pending_q = pending_q.filter(OfflineRequest.user_id.in_(uids))
-        recent_q = recent_q.filter(OfflineRequest.user_id.in_(uids))
-    else:
-        pending_q = pending_q.filter(OfflineRequest.user_id == -1)
-        recent_q = recent_q.filter(OfflineRequest.user_id == -1)
     pending = list(
         db.session.execute(
-            pending_q.order_by(OfflineRequest.created_at.desc())
+            db.select(OfflineRequest)
+            .filter_by(status="pending")
+            .order_by(OfflineRequest.created_at.desc())
         ).scalars()
     )
     recent = list(
         db.session.execute(
-            recent_q.order_by(OfflineRequest.created_at.desc()).limit(30)
+            db.select(OfflineRequest)
+            .filter(OfflineRequest.status.in_(("approved", "rejected")))
+            .order_by(OfflineRequest.created_at.desc())
+            .limit(30)
         ).scalars()
     )
     return render_template(
@@ -518,13 +508,10 @@ def alerts():
     now_ts = datetime.now().timestamp()
     start, end = day_bounds(day)
 
-    from .tenancy import org_user_ids, users_in_org_query
-
     employees = list(
         db.session.execute(
-            users_in_org_query()
+            db.select(User)
             .filter(User.role != "admin")
-            .filter(User.role != "superadmin")
             .filter(User.enabled.is_(True))
             .order_by(User.username)
         ).scalars()
@@ -553,31 +540,22 @@ def alerts():
         if absent:
             absent_list.append(u)
 
-    uids = org_user_ids()
-    pending_q = db.select(OfflineRequest).filter_by(status="pending")
-    if uids:
-        pending_q = pending_q.filter(OfflineRequest.user_id.in_(uids))
-    else:
-        pending_q = pending_q.filter(OfflineRequest.user_id == -1)
     pending = list(
         db.session.execute(
-            pending_q.order_by(OfflineRequest.created_at.desc())
+            db.select(OfflineRequest)
+            .filter_by(status="pending")
+            .order_by(OfflineRequest.created_at.desc())
         ).scalars()
     )
     from .models import Screenshot as Shot
 
-    flagged_q = (
-        db.select(Shot)
-        .filter(Shot.is_unproductive.is_(True))
-        .filter(Shot.ts >= start, Shot.ts < end)
-    )
-    if uids:
-        flagged_q = flagged_q.filter(Shot.user_id.in_(uids))
-    else:
-        flagged_q = flagged_q.filter(Shot.user_id == -1)
     flagged_shots = list(
         db.session.execute(
-            flagged_q.order_by(Shot.ts.desc()).limit(24)
+            db.select(Shot)
+            .filter(Shot.is_unproductive.is_(True))
+            .filter(Shot.ts >= start, Shot.ts < end)
+            .order_by(Shot.ts.desc())
+            .limit(24)
         ).scalars()
     )
 

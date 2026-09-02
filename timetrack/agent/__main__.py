@@ -1,12 +1,12 @@
-"""CLI for the timeforge employee agent.
+"""CLI for the esstracker employee agent.
 
 Usage:
-    timeforge-agent              # DeskTime-style: login if needed, then tray
-    timeforge-agent run
-    timeforge-agent ping
-    timeforge-agent status
-    timeforge-agent flush
-    timeforge-agent logout
+    esstracker-agent              # DeskTime-style: login if needed, then tray
+    esstracker-agent run
+    esstracker-agent ping
+    esstracker-agent status
+    esstracker-agent flush
+    esstracker-agent logout
 """
 
 from __future__ import annotations
@@ -47,7 +47,7 @@ def _acquire_single_instance_windows() -> bool:
 
     kernel32 = ctypes.windll.kernel32  # type: ignore[attr-defined]
     kernel32.SetLastError(0)
-    handle = kernel32.CreateMutexW(None, False, "Local\\timeforge-agent-single-instance")
+    handle = kernel32.CreateMutexW(None, False, "Local\\esstracker-agent-single-instance")
     if not handle:
         return True
     ERROR_ALREADY_EXISTS = 183
@@ -113,20 +113,20 @@ def _ensure_signed_in(cfg, *, force_login: bool = False):
     if client.ping() is not None:
         return True
     # Token expired / wrong server → ask again
-    print("[timeforge] session expired — please sign in again")
+    print("[esstracker] session expired — please sign in again")
     cfg.api_token = ""
     return show_login(cfg)
 
 
 def _cmd_run(args: argparse.Namespace) -> int:
     if not _acquire_single_instance():
-        print("[timeforge] already running (tray). Open the Timeforge tray icon.")
+        print("[esstracker] already running (tray). Open the ESS tray icon.")
         return 0
 
     cfg = load_agent_config(args.config)
     if not args.no_login:
         if not _ensure_signed_in(cfg, force_login=bool(args.login)):
-            print("[timeforge] sign-in cancelled")
+            print("[esstracker] sign-in cancelled")
             return 1
         # Reload after save
         cfg = load_agent_config(args.config or cfg.config_path)
@@ -202,7 +202,7 @@ def _cmd_logout(args: argparse.Namespace) -> int:
 
 
 def build_parser() -> argparse.ArgumentParser:
-    p = argparse.ArgumentParser(prog="timeforge-agent", description=__doc__)
+    p = argparse.ArgumentParser(prog="esstracker-agent", description=__doc__)
     p.add_argument("-c", "--config", help="path to agent.toml")
     sub = p.add_subparsers(dest="command", required=True)
     run_p = sub.add_parser("run", help="start tracking (login window if needed)")

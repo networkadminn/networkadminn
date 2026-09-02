@@ -10,7 +10,7 @@ set -euo pipefail
 cd "$(dirname "$0")/.."
 ROOT="$(pwd)"
 
-IMAGE="${TIMEFORGE_BUILD_IMAGE:-ubuntu:20.04}"
+IMAGE="${ESSTRACKER_BUILD_IMAGE:-ubuntu:20.04}"
 
 if ! command -v docker >/dev/null 2>&1; then
   echo "Docker is required."
@@ -18,7 +18,7 @@ if ! command -v docker >/dev/null 2>&1; then
 fi
 
 echo "Building compatible .deb inside ${IMAGE} (CPython 3.11 shared, glibc 2.31)"
-echo "Output: dist/timeforge_*_amd64.deb and dist/releases/..."
+echo "Output: dist/esstracker_*_amd64.deb and dist/releases/..."
 
 docker run --rm \
   --dns 1.1.1.1 --dns 8.8.8.8 --dns 8.8.4.4 \
@@ -92,7 +92,7 @@ docker run --rm \
     echo "Compatible package ready under dist/"
   '
 
-DEB=$(ls -1t dist/timeforge_*_amd64.deb 2>/dev/null | head -1 || true)
+DEB=$(ls -1t dist/esstracker_*_amd64.deb 2>/dev/null | head -1 || true)
 if [ -n "${DEB}" ]; then
   echo ""
   echo "Smoke: run binary on Ubuntu 22.04 + 24.04 containers…"
@@ -108,4 +108,4 @@ fi
 
 echo ""
 echo "Install on employee PCs:"
-echo "  sudo apt install ./dist/timeforge_*_amd64.deb"
+echo "  sudo apt install ./dist/esstracker_*_amd64.deb"

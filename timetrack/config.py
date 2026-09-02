@@ -167,7 +167,7 @@ def default_config_paths() -> list[Path]:
 
     return [
         Path.cwd() / "config.toml",
-        config_dir("timeforge") / "config.toml",
+        config_dir("esstracker") / "config.toml",
         config_dir("timetrack") / "config.toml",
         Path(os.path.expanduser("~")) / ".config" / "timetrack" / "config.toml",
     ]

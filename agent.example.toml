@@ -1,8 +1,8 @@
-# timeforge agent configuration (copy to ~/.config/timeforge/agent.toml).
+# esstracker agent configuration (copy to ~/.config/esstracker/agent.toml).
 # Environment variables TIMETRACK_SERVER_URL / TIMETRACK_API_TOKEN override these.
 
 [agent]
-# URL of the central timeforge server.
+# URL of the central esstracker server.
 server_url = "https://tracker.euclideesolutions.com"
 
 # Per-employee API token (from admin → employees / create-user).

@@ -1,5 +1,5 @@
 /**
- * timeforge 3D product tour
+ * esstracker 3D product tour
  * Smooth motion: camera-controls (Sketchfab-style damping + inertia)
  * + interruptible scene transitions + frame-rate independent card focus.
  */

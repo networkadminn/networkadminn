@@ -10,15 +10,6 @@ from email.message import EmailMessage
 from pathlib import Path
 
 
-def _env(*names: str, default: str = "") -> str:
-    """First non-empty env among names (supports TIMEFORGE_ and legacy ESSTRACKER_)."""
-    for name in names:
-        val = os.environ.get(name)
-        if val not in (None, ""):
-            return val
-    return default
-
-
 @dataclass
 class SmtpConfig:
     host: str = "127.0.0.1"
@@ -28,42 +19,26 @@ class SmtpConfig:
     use_tls: bool = True  # STARTTLS on 587
     use_ssl: bool = False  # SMTPS on 465
     from_email: str = "no-reply@euclideesolutions.com"
-    from_name: str = "timeforge"
+    from_name: str = "esstracker"
 
 
 def load_smtp_config(data_dir: str | None = None) -> SmtpConfig:
     """Load SMTP from env, then optional ``data_dir/smtp.toml``."""
     cfg = SmtpConfig(
-        host=_env("TIMEFORGE_SMTP_HOST", "ESSTRACKER_SMTP_HOST", default="127.0.0.1"),
-        port=int(
-            _env("TIMEFORGE_SMTP_PORT", "ESSTRACKER_SMTP_PORT", default="587")
+        host=os.environ.get("ESSTRACKER_SMTP_HOST", "127.0.0.1"),
+        port=int(os.environ.get("ESSTRACKER_SMTP_PORT", "587")),
+        username=os.environ.get("ESSTRACKER_SMTP_USER", "no-reply@euclideesolutions.com"),
+        password=os.environ.get("ESSTRACKER_SMTP_PASSWORD", ""),
+        from_email=os.environ.get(
+            "ESSTRACKER_SMTP_FROM", "no-reply@euclideesolutions.com"
         ),
-        username=_env(
-            "TIMEFORGE_SMTP_USER",
-            "ESSTRACKER_SMTP_USER",
-            default="no-reply@euclideesolutions.com",
-        ),
-        password=_env(
-            "TIMEFORGE_SMTP_PASSWORD", "ESSTRACKER_SMTP_PASSWORD", default=""
-        ),
-        from_email=_env(
-            "TIMEFORGE_SMTP_FROM",
-            "ESSTRACKER_SMTP_FROM",
-            default="no-reply@euclideesolutions.com",
-        ),
-        from_name=_env(
-            "TIMEFORGE_SMTP_FROM_NAME",
-            "ESSTRACKER_SMTP_FROM_NAME",
-            default="timeforge",
-        ),
+        from_name=os.environ.get("ESSTRACKER_SMTP_FROM_NAME", "esstracker"),
     )
-    mode = _env(
-        "TIMEFORGE_SMTP_MODE", "ESSTRACKER_SMTP_MODE", default="starttls"
-    ).lower()
+    mode = (os.environ.get("ESSTRACKER_SMTP_MODE") or "starttls").lower()
     if mode in ("ssl", "smtps", "465"):
         cfg.use_ssl = True
         cfg.use_tls = False
-        if not _env("TIMEFORGE_SMTP_PORT", "ESSTRACKER_SMTP_PORT"):
+        if "ESSTRACKER_SMTP_PORT" not in os.environ:
             cfg.port = 465
     elif mode in ("plain", "none"):
         cfg.use_tls = False
@@ -72,10 +47,8 @@ def load_smtp_config(data_dir: str | None = None) -> SmtpConfig:
     toml_path = None
     if data_dir:
         toml_path = Path(data_dir) / "smtp.toml"
-    else:
-        toml_env = _env("TIMEFORGE_SMTP_TOML", "ESSTRACKER_SMTP_TOML")
-        if toml_env:
-            toml_path = Path(toml_env)
+    elif os.environ.get("ESSTRACKER_SMTP_TOML"):
+        toml_path = Path(os.environ["ESSTRACKER_SMTP_TOML"])
     if toml_path and toml_path.is_file():
         try:
             import tomllib

@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Build macOS timeforge CLIENT .app + .dmg (MUST run on a Mac)
+# Build macOS esstracker CLIENT .app + .dmg (MUST run on a Mac)
 # Usage:  bash packaging/build_mac.sh
 #
 # Accuracy notes (Apple + PyInstaller + DeskTime-class trackers):
@@ -30,4 +30,4 @@ python3 packaging/build.py dmg --arch "$TAG"
 
 echo ""
 echo "Copy the .dmg into dist/releases/ then upload to the server:"
-echo "  scp dist/releases/timeforge-*-${TAG}.dmg root@SERVER:/www/wwwroot/timetrack/data/releases/"
+echo "  scp dist/releases/esstracker-*-${TAG}.dmg root@SERVER:/www/wwwroot/timetrack/data/releases/"

@@ -52,23 +52,23 @@ def _lanczos():
     return getattr(getattr(Image, "Resampling", Image), "LANCZOS", Image.LANCZOS)
 
 
-_TF_MARK: object | None = None
+_ESS_MARK: object | None = None
 
 
-def _mark_path() -> Path | None:
-    env = os.environ.get("TIMEFORGE_ICON")
+def _ess_mark_path() -> Path | None:
+    env = os.environ.get("ESSTRACKER_ICON")
     candidates = [
         Path(env) if env else None,
-        Path("/usr/share/icons/hicolor/64x64/apps/timeforge.png"),
-        Path("/usr/share/icons/hicolor/48x48/apps/timeforge.png"),
-        Path("/usr/share/pixmaps/timeforge.png"),
-        Path(__file__).resolve().parent / "assets" / "timeforge-mark.png",
+        Path("/usr/share/icons/hicolor/64x64/apps/esstracker.png"),
+        Path("/usr/share/icons/hicolor/48x48/apps/esstracker.png"),
+        Path("/usr/share/pixmaps/esstracker.png"),
+        Path(__file__).resolve().parent / "assets" / "ess-mark.png",
     ]
     # PyInstaller onefile extracts to _MEIPASS
     meipass = getattr(sys, "_MEIPASS", None)
     if meipass:
         candidates.insert(
-            1, Path(meipass) / "timetrack" / "agent" / "assets" / "timeforge-mark.png"
+            1, Path(meipass) / "timetrack" / "agent" / "assets" / "ess-mark.png"
         )
     for p in candidates:
         if p is not None and p.is_file():
@@ -76,32 +76,32 @@ def _mark_path() -> Path | None:
     return None
 
 
-def _load_mark_base():
-    """Load Timeforge logo once (RGBA)."""
-    global _TF_MARK
-    if _TF_MARK is not None:
-        return _TF_MARK
+def _load_ess_base():
+    """Load ESS logo once (RGBA)."""
+    global _ESS_MARK
+    if _ESS_MARK is not None:
+        return _ESS_MARK
     from PIL import Image
 
-    path = _mark_path()
+    path = _ess_mark_path()
     if path is None:
-        _TF_MARK = False
+        _ESS_MARK = False
         return None
     try:
         img = Image.open(path).convert("RGBA")
         img = img.resize((64, 64), _lanczos())
-        _TF_MARK = img
+        _ESS_MARK = img
         return img
     except Exception:
-        _TF_MARK = False
+        _ESS_MARK = False
         return None
 
 
 def _make_icon(color: tuple[int, int, int], private: bool = False):
-    """Round Timeforge mark with colored status ring."""
+    """Round ESS mark with colored status ring."""
     from PIL import Image, ImageDraw
 
-    base = _load_mark_base()
+    base = _load_ess_base()
     size = 64
     if base is not None and base is not False:
         img = base.copy().resize((size, size), _lanczos())
@@ -117,7 +117,7 @@ def _make_icon(color: tuple[int, int, int], private: bool = False):
     draw = ImageDraw.Draw(img)
     draw.ellipse((2, 2, 61, 61), fill=color + (255,))
     draw.ellipse((12, 12, 51, 51), fill=(255, 255, 255, 235))
-    draw.text((18, 20), "TF", fill=color + (255,))
+    draw.text((18, 20), "ESS", fill=color + (255,))
     if private:
         draw.ellipse((40, 40, 58, 58), fill=(245, 158, 11, 255))
     return img
@@ -162,7 +162,7 @@ def _pick_backend() -> str | None:
             _ = pystray.Icon
             return preferred
         except Exception as exc:
-            print(f"[timeforge] tray backend {preferred!r} unavailable: {exc!r}")
+            print(f"[esstracker] tray backend {preferred!r} unavailable: {exc!r}")
             os.environ.pop("PYSTRAY_BACKEND", None)
             return None
 
@@ -193,7 +193,7 @@ def _pick_backend() -> str | None:
             _ = pystray.Icon
             return backend
         except Exception as exc:
-            print(f"[timeforge] tray backend {backend!r} unavailable: {exc!r}")
+            print(f"[esstracker] tray backend {backend!r} unavailable: {exc!r}")
             continue
     os.environ.pop("PYSTRAY_BACKEND", None)
     return None
@@ -206,15 +206,13 @@ class AgentTray:
         self.agent = agent
         self._icon = None
         self._backend = ""
-        self._ui_lock = threading.Lock()
-        self._tray_thread_id: int | None = None
 
     def _status_color(self) -> tuple[int, int, int]:
         if self.agent.user_offline or not self.agent.online:
             return (148, 163, 184)  # Offline grey
         if self.agent.private:
             return (245, 158, 11)
-        return (11, 122, 75)  # Timeforge green
+        return (11, 122, 75)  # ESS Tracker green
 
     def _title(self) -> str:
         a = self.agent
@@ -226,14 +224,12 @@ class AgentTray:
             state = "Online"
         else:
             state = "Offline"
-        name = a.display_name or a.username or "timeforge"
-        org = a.company_name or "Timeforge"
+        name = a.display_name or a.username or "esstracker"
+        org = a.company_name or "ESS Tracker"
         tip = ""
         if self._backend == "appindicator":
             tip = "\n(Left-click for menu)"
-        elif self._backend == "xorg":
-            tip = "\n(Menu unsupported on this tray backend)"
-        return f"timeforge · {state}\n{name}\n{org}{tip}"
+        return f"esstracker · {state}\n{name}\n{org}{tip}"
 
     @staticmethod
     def _noop(icon=None, item=None) -> None:
@@ -253,85 +249,54 @@ class AgentTray:
         else:
             state = "Offline"
         app, title = a._last_window if hasattr(a, "_last_window") else ("", "")
-        now_line = f"Now: {app}" + (f" - {title[:40]}" if title else "")
-        user = a.display_name or a.username or "-"
-        org = a.company_name or "-"
-        role = a.role or "-"
-        shots = ""
-        if a.online:
-            shots = f" · Shots {'ON' if a.shots_enabled else 'OFF'}"
-        # Put real actions first so AppIndicator always has a usable menu.
-        # Status rows are disabled labels (enabled=False) — clickable no-ops
-        # sometimes make GNOME show an empty popup.
-        use_default = self._backend in ("gtk", "xorg", "win32")
+        now_line = f"Now: {app}" + (f" — {title[:40]}" if title else "")
+        use_default = self._backend in ("gtk", "xorg")
         items = [
+            pystray.MenuItem(f"Status: {state}", self._noop),
+            pystray.MenuItem(f"User: {a.display_name or a.username or '—'}", self._noop),
+            pystray.MenuItem(f"Org: {a.company_name or '—'}", self._noop),
             pystray.MenuItem(
-                "Open My Day",
-                self._open_dashboard,
-                default=use_default,
+                f"Role: {a.role or '—'}"
+                + (f" · Shots {'ON' if a.shots_enabled else 'OFF'}" if a.online else ""),
+                self._noop,
             ),
-            pystray.MenuItem("Sync now", self._flush_now),
+            pystray.MenuItem(now_line[:70] if app else "Now: —", self._noop),
+            pystray.Menu.SEPARATOR,
             pystray.MenuItem(
                 "Private Time",
                 self._toggle_private,
                 checked=lambda _: self.agent.private,
                 enabled=lambda _: self.agent.private_allowed or self.agent.private,
             ),
-            pystray.Menu.SEPARATOR,
-            pystray.MenuItem(f"Status: {state}", self._noop, enabled=False),
-            pystray.MenuItem(f"User: {user}", self._noop, enabled=False),
-            pystray.MenuItem(f"Org: {org}", self._noop, enabled=False),
-            pystray.MenuItem(f"Role: {role}{shots}", self._noop, enabled=False),
             pystray.MenuItem(
-                (now_line[:70] if app else "Now: -"), self._noop, enabled=False
+                "Open My Day",
+                self._open_dashboard,
+                default=use_default,
             ),
+            pystray.MenuItem("Sync now", self._flush_now),
             pystray.Menu.SEPARATOR,
             pystray.MenuItem("Sign out", self._sign_out),
             pystray.MenuItem("Quit", self._quit),
         ]
         return pystray.Menu(*items)
 
-    def _apply_ui(self) -> bool:
-        """Apply icon/title/menu on the GTK/tray thread. Returns False for GLib."""
+    def refresh_ui(self) -> None:
         icon = self._icon
         if icon is None:
-            return False
-        with self._ui_lock:
-            try:
-                icon.icon = _make_icon(self._status_color(), private=self.agent.private)
-                icon.title = self._title()
-                icon.menu = self._rebuild_menu()
-                icon.update_menu()
-            except Exception as exc:
-                print(f"[timeforge] tray refresh failed: {exc!r}")
-        return False
-
-    def refresh_ui(self) -> None:
-        """Update tray from any thread (marshals onto GTK main loop when needed)."""
-        if self._icon is None:
             return
-        on_tray_thread = (
-            self._tray_thread_id is not None
-            and threading.get_ident() == self._tray_thread_id
-        )
-        if on_tray_thread:
-            self._apply_ui()
-            return
-        if self._backend in ("appindicator", "gtk"):
-            try:
-                from gi.repository import GLib
-
-                GLib.idle_add(self._apply_ui)
-                return
-            except Exception:
-                pass
-        self._apply_ui()
+        try:
+            icon.icon = _make_icon(self._status_color(), private=self.agent.private)
+            icon.title = self._title()
+            icon.menu = self._rebuild_menu()
+            icon.update_menu()
+        except Exception as exc:
+            print(f"[esstracker] tray refresh failed: {exc!r}")
 
     def _toggle_private(self, icon=None, item=None) -> None:
         want = not self.agent.private
         data = self.agent.client.set_private(want)
         if data is None:
-            print("[timeforge] could not toggle Private Time")
+            print("[esstracker] could not toggle Private Time")
             return
         self.agent.private = bool(data.get("active"))
         self.agent.refresh_server_policy()
@@ -343,7 +308,7 @@ class AgentTray:
 
     def _flush_now(self, icon=None, item=None) -> None:
         a, s = self.agent.flush()
-        print(f"[timeforge] tray sync: {a} activities, {s} screenshots")
+        print(f"[esstracker] tray sync: {a} activities, {s} screenshots")
         self.refresh_ui()
 
     def _sign_out(self, icon=None, item=None) -> None:
@@ -351,7 +316,7 @@ class AgentTray:
 
         clear_saved_token(self.agent.config)
         self.agent.config.api_token = ""
-        print("[timeforge] signed out — relaunch to sign in again")
+        print("[esstracker] signed out — relaunch to sign in again")
         self._quit()
 
     def _quit(self, icon=None, item=None) -> None:
@@ -378,22 +343,15 @@ class AgentTray:
                 "  sudo apt install libappindicator3-1 gir1.2-appindicator3-0.1"
             )
         self._backend = backend
-        self._tray_thread_id = threading.get_ident()
-        print(f"[timeforge] tray backend={backend}")
+        print(f"[esstracker] tray backend={backend}")
         if backend == "appindicator":
-            print("[timeforge] tip: left-click the Timeforge tray icon for the menu")
-        elif backend == "xorg":
-            print(
-                "[timeforge] warning: xorg tray backend has no popup menu on "
-                "this desktop — install AppIndicator packages for a working menu"
-            )
+            print("[esstracker] tip: left-click the ESS tray icon for the menu")
         self._icon = pystray.Icon(
-            name="timeforge",
-            icon=_make_icon(self._status_color()),
-            title=self._title(),
-            menu=self._rebuild_menu(),
+            "esstracker",
+            _make_icon(self._status_color()),
+            self._title(),
+            self._rebuild_menu(),
         )
-        self._icon.visible = True
         if on_ready:
             threading.Thread(target=on_ready, daemon=True).start()
         self._icon.run()

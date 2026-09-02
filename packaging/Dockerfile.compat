@@ -1,4 +1,4 @@
-# Build timeforge on glibc 2.31 (Ubuntu 20.04) so the frozen agent runs on 20.04 / 22.04 / 24.04.
+# Build esstracker on glibc 2.31 (Ubuntu 20.04) so the frozen agent runs on 20.04 / 22.04 / 24.04.
 # Deadsnakes no longer ships Python 3.11 for focal — compile CPython once in this image.
 FROM ubuntu:20.04
 

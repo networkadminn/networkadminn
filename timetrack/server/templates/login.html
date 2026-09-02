@@ -1,15 +1,15 @@
 {% extends "base.html" %}
-{% block title %}Sign in · timeforge{% endblock %}
+{% block title %}Sign in · esstracker{% endblock %}
 {% block body %}
 <div class="login-page">
-  <section class="login-hero" aria-label="timeforge">
+  <section class="login-hero" aria-label="esstracker">
     <div class="login-hero-inner">
       <div class="login-hero-brand">
-        <img class="login-logo" src="{{ url_for('static', filename='brand/timeforge-logo.png') }}" alt="Timeforge" />
+        <img class="login-logo" src="{{ url_for('static', filename='brand/euclidee-logo.png') }}" alt="ESS Tracker" />
       </div>
-      <p class="login-product">timeforge</p>
-      <h1>Employee time tracking for Timeforge.</h1>
-      <p>Apps, idle, screenshots, and productivity — built for Timeforge.</p>
+      <p class="login-product">esstracker</p>
+      <h1>Employee time tracking for your team.</h1>
+      <p>Apps, idle, screenshots, and productivity — built for ESS Tracker.</p>
       <div class="login-metrics" aria-hidden="true">
         <div class="login-metric">
           <strong>IST</strong>
@@ -29,9 +29,9 @@
 
   <section class="login-panel">
     <div class="login-card">
-      <img class="login-mark" src="{{ url_for('static', filename='brand/timeforge-mark.png') }}" alt="" />
-      <p class="login-kicker">Timeforge</p>
-      <h2>Sign in to timeforge</h2>
+      <img class="login-mark" src="{{ url_for('static', filename='brand/ess-mark.png') }}" alt="" />
+      <p class="login-kicker">ESS Tracker</p>
+      <h2>Sign in to esstracker</h2>
       <p class="login-sub">Use your company username and password.</p>
       <form method="post" class="login-form">
         <label>Username
@@ -42,8 +42,6 @@
         </label>
         <p class="login-forgot">
           <a href="{{ url_for('auth.forgot_password') }}">Forgot password?</a>
-          ·
-          <a href="{{ url_for('auth.signup') }}">Start free trial</a>
         </p>
         <button class="btn primary" type="submit">Sign in</button>
       </form>

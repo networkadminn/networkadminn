@@ -1,0 +1,33 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<component type="desktop-application">
+  <id>com.euclidee.esstracker</id>
+  <name>esstracker</name>
+  <summary>ESS employee time &amp; productivity tracker</summary>
+  <metadata_license>CC0-1.0</metadata_license>
+  <project_license>MIT</project_license>
+  <developer_name>Euclidee Software Solutions</developer_name>
+  <description>
+    <p>
+      esstracker (ESS) is the employee desktop client for Euclidee Software
+      Solutions. Install, sign in, and track time from the notification tray.
+    </p>
+  </description>
+  <launchable type="desktop-id">com.euclidee.esstracker.Agent.desktop</launchable>
+  <icon type="stock">esstracker</icon>
+  <categories>
+    <category>Office</category>
+    <category>Utility</category>
+  </categories>
+  <keywords>
+    <keyword>time tracking</keyword>
+    <keyword>productivity</keyword>
+    <keyword>ESS</keyword>
+    <keyword>Euclidee</keyword>
+  </keywords>
+  <url type="homepage">https://tracker.euclideesolutions.com/</url>
+  <provides>
+    <binary>esstracker-agent</binary>
+    <binary>esstracker</binary>
+  </provides>
+  <content_rating type="oars-1.1"/>
+</component>

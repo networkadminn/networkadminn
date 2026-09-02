@@ -43,18 +43,12 @@ def create_app(config: ServerConfig | None = None, **overrides) -> Flask:
     from .api import api_bp
     from .auth import auth_bp
     from .desk import desk_bp
-    from .saas import check_request_org_access, saas_bp
     from .views import views_bp
 
     app.register_blueprint(auth_bp)
     app.register_blueprint(api_bp)
     app.register_blueprint(views_bp)
     app.register_blueprint(desk_bp)
-    app.register_blueprint(saas_bp)
-
-    @app.before_request
-    def _saas_org_gate():
-        return check_request_org_access()
 
     @app.context_processor
     def inject_desk_flags():
@@ -65,20 +59,9 @@ def create_app(config: ServerConfig | None = None, **overrides) -> Flask:
             "timer_running": False,
             "alert_count": 0,
             "pending_approvals": 0,
-            "workspace_org": None,
-            "workspace_name": "Timeforge",
-            "trial_banner": None,
         }
         if current_user.is_authenticated:
-            from .models import (
-                ORG_TRIAL,
-                OfflineRequest,
-                Organization,
-                PrivatePeriod,
-                TimerSession,
-            )
-            from .settings_util import get_settings
-            from .tenancy import current_org_id, org_user_ids, seat_count
+            from .models import OfflineRequest, PrivatePeriod, TimerSession
 
             flags["private_active"] = (
                 db.session.execute(
@@ -96,35 +79,15 @@ def create_app(config: ServerConfig | None = None, **overrides) -> Flask:
                 ).scalar_one_or_none()
                 is not None
             )
-            org = db.session.get(Organization, current_org_id())
-            if org:
-                org.refresh_access_status()
-                flags["workspace_org"] = org
-                settings = get_settings(org.id)
-                flags["workspace_name"] = (
-                    (settings.company_name or "").strip() or org.name or "Timeforge"
-                )
-                if org.status == ORG_TRIAL and not current_user.is_superadmin:
-                    days = org.days_left
-                    flags["trial_banner"] = {
-                        "days_left": days,
-                        "plan": org.plan,
-                        "seats_used": seat_count(org.id),
-                        "max_seats": org.max_seats,
-                    }
             if current_user.is_admin:
-                uids = org_user_ids(current_org_id())
-                pending = 0
-                if uids:
-                    pending = (
-                        db.session.execute(
-                            db.select(db.func.count(OfflineRequest.id)).filter(
-                                OfflineRequest.status == "pending",
-                                OfflineRequest.user_id.in_(uids),
-                            )
-                        ).scalar_one()
-                        or 0
-                    )
+                pending = (
+                    db.session.execute(
+                        db.select(db.func.count(OfflineRequest.id)).filter_by(
+                            status="pending"
+                        )
+                    ).scalar_one()
+                    or 0
+                )
                 flags["pending_approvals"] = int(pending)
                 flags["alert_count"] = int(pending)
         return flags
@@ -145,11 +108,9 @@ def create_app(config: ServerConfig | None = None, **overrides) -> Flask:
         pass
 
     with app.app_context():
-        from .saas import ensure_platform_superadmin
         from .settings_util import ensure_schema, get_settings
 
         ensure_schema()
-        ensure_platform_superadmin()
         get_settings()
 
     return app

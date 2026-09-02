@@ -69,13 +69,12 @@ def _defaults_paths() -> list[Path]:
     if sys.platform == "win32":
         progdata = os.environ.get("PROGRAMDATA")
         if progdata:
-            paths.append(Path(progdata) / "timeforge" / "defaults.toml")
+            paths.append(Path(progdata) / "esstracker" / "defaults.toml")
         local = os.environ.get("LOCALAPPDATA")
         if local:
-            paths.append(Path(local) / "Programs" / "timeforge" / "defaults.toml")
+            paths.append(Path(local) / "Programs" / "esstracker" / "defaults.toml")
     else:
-        paths.append(Path("/etc/timeforge/defaults.toml"))
-        paths.append(Path("/etc/esstracker/defaults.toml"))  # legacy package
+        paths.append(Path("/etc/esstracker/defaults.toml"))
     return paths
 
 
@@ -84,10 +83,8 @@ def _candidate_paths() -> list[Path]:
         Path.cwd() / "agent.toml",
         Path.cwd() / "config.toml",
         config_dir() / "agent.toml",
-        Path(os.path.expanduser("~")) / ".config" / "timeforge" / "agent.toml",
         Path(os.path.expanduser("~")) / ".config" / "esstracker" / "agent.toml",
         Path(os.path.expanduser("~")) / ".config" / "timetrack" / "agent.toml",
-        Path("/etc/timeforge/agent.toml"),
         Path("/etc/esstracker/agent.toml"),
         Path("/etc/timetrack/agent.toml"),
     ]
@@ -163,7 +160,7 @@ def save_agent_config(cfg: AgentConfig, path: str | os.PathLike[str] | None = No
         return '"' + s.replace("\\", "\\\\").replace('"', '\\"') + '"'
 
     text = (
-        "# Auto-saved by timeforge — do not share this file\n"
+        "# Auto-saved by esstracker — do not share this file\n"
         "[agent]\n"
         f"server_url = {q(cfg.server_url)}\n"
         f"api_token = {q(cfg.api_token)}\n"
@@ -192,22 +189,14 @@ def clear_saved_token(cfg: AgentConfig | None = None) -> None:
 
 
 def _apply_env(cfg: AgentConfig) -> None:
-    for key in (
-        "TIMEFORGE_SERVER_URL",
-        "ESSTRACKER_SERVER_URL",
-        "TIMETRACK_SERVER_URL",
-    ):
-        if os.environ.get(key):
-            cfg.server_url = os.environ[key]
-            break
-    for key in (
-        "TIMEFORGE_API_TOKEN",
-        "ESSTRACKER_API_TOKEN",
-        "TIMETRACK_API_TOKEN",
-    ):
-        if os.environ.get(key):
-            cfg.api_token = os.environ[key]
-            break
+    if os.environ.get("ESSTRACKER_SERVER_URL"):
+        cfg.server_url = os.environ["ESSTRACKER_SERVER_URL"]
+    if os.environ.get("TIMETRACK_SERVER_URL"):
+        cfg.server_url = os.environ["TIMETRACK_SERVER_URL"]
+    if os.environ.get("ESSTRACKER_API_TOKEN"):
+        cfg.api_token = os.environ["ESSTRACKER_API_TOKEN"]
+    if os.environ.get("TIMETRACK_API_TOKEN"):
+        cfg.api_token = os.environ["TIMETRACK_API_TOKEN"]
 
 
 __all__ = [

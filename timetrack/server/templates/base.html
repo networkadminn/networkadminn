@@ -3,21 +3,21 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>{% block title %}timeforge{% endblock %}</title>
+  <title>{% block title %}esstracker{% endblock %}</title>
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-  <link rel="icon" type="image/png" href="{{ url_for('static', filename='brand/timeforge-mark.png') }}" />
-  <link rel="stylesheet" href="{{ url_for('static', filename='server.css') }}?v=49" />
+  <link rel="icon" type="image/png" href="{{ url_for('static', filename='brand/ess-mark.png') }}" />
+  <link rel="stylesheet" href="{{ url_for('static', filename='server.css') }}?v=47" />
   {% block head %}{% endblock %}
 </head>
 <body class="{% if current_user.is_authenticated %}app-shell{% else %}auth-shell{% endif %}">
   {% if current_user.is_authenticated %}
   <aside class="sidebar" aria-label="Main">
     <a class="brand" href="{{ url_for('views.home') }}">
-      <img class="brand-logo" src="{{ url_for('static', filename='brand/timeforge-mark.png') }}" alt="" />
+      <img class="brand-logo" src="{{ url_for('static', filename='brand/ess-mark.png') }}" alt="" />
       <span class="brand-text">
-        <strong>timeforge</strong>
-        <small>{{ workspace_name }}</small>
+        <strong>esstracker</strong>
+        <small>ESS Tracker</small>
       </span>
     </a>
 
@@ -80,16 +80,6 @@
         <svg class="nav-ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9c.3.6.9 1 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z"/></svg>
         Settings
       </a>
-      <a href="{{ url_for('saas.billing') }}" class="{% if request.endpoint == 'saas.billing' %}is-active{% endif %}">
-        <svg class="nav-ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><rect x="2" y="5" width="20" height="14" rx="2"/><path d="M2 10h20"/></svg>
-        Plan &amp; billing
-      </a>
-      {% if current_user.is_superadmin %}
-      <a href="{{ url_for('saas.superadmin_console') }}" class="{% if request.endpoint == 'saas.superadmin_console' %}is-active{% endif %}">
-        <svg class="nav-ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path d="M12 2l3 7h7l-5.5 4.5L18 21l-6-4-6 4 1.5-7.5L2 9h7z"/></svg>
-        Super admin
-      </a>
-      {% endif %}
       {% else %}
       <a href="{{ url_for('views.me') }}" class="{% if request.endpoint == 'views.me' %}is-active{% endif %}">
         <svg class="nav-ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg>
@@ -123,20 +113,6 @@
   </aside>
 
   <div class="content">
-    {% if trial_banner %}
-    <div class="saas-trial-banner" role="status">
-      <div>
-        <strong>Free trial</strong>
-        {% if trial_banner.days_left is not none %}
-        — {{ trial_banner.days_left }} day{{ 's' if trial_banner.days_left != 1 else '' }} left
-        {% endif %}
-        <span class="muted">· {{ trial_banner.seats_used }}/{{ trial_banner.max_seats }} seats</span>
-      </div>
-      {% if current_user.is_admin %}
-      <a class="btn tiny" href="{{ url_for('saas.billing') }}">Plan &amp; billing</a>
-      {% endif %}
-    </div>
-    {% endif %}
     <header class="content-top">
       <div class="content-top-left">
         {% if timer_running %}
@@ -153,7 +129,7 @@
         <div class="top-who">
           <span class="top-who-meta">
             <strong>{{ current_user.name }}</strong>
-            <small>{% if current_user.is_superadmin %}Platform superadmin{% elif current_user.is_admin %}Company admin{% else %}Employee{% endif %}</small>
+            <small>{% if current_user.is_admin %}Company admin{% else %}Employee{% endif %}</small>
           </span>
           <span class="who-avatar" aria-hidden="true">{{ current_user.name[0]|upper }}</span>
         </div>

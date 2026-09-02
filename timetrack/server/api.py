@@ -49,14 +49,6 @@ def token_required(view):
         ).scalar_one_or_none()
         if user is None or not user.enabled:
             return jsonify({"error": "invalid token"}), 401
-        if not getattr(user, "is_superadmin", False):
-            from .models import Organization
-            from .tenancy import org_access_ok
-
-            org = db.session.get(Organization, user.organization_id or 1)
-            ok, msg = org_access_ok(org)
-            if not ok:
-                return jsonify({"error": msg, "code": "org_access_denied"}), 402
         g.agent_user = user
         return view(*args, **kwargs)
 
@@ -81,15 +73,6 @@ def agent_login():
     if user is None or not user.enabled or not user.check_password(password):
         return jsonify({"error": "invalid username or password"}), 401
 
-    if not getattr(user, "is_superadmin", False):
-        from .models import Organization
-        from .tenancy import org_access_ok
-
-        org = db.session.get(Organization, user.organization_id or 1)
-        ok, msg = org_access_ok(org)
-        if not ok:
-            return jsonify({"error": msg, "code": "org_access_denied"}), 402
-
     # Ensure a token always exists
     if not user.api_token:
         user.rotate_token()
@@ -104,7 +87,7 @@ def agent_login():
             "name": user.name,
             "role": user.role,
             "organization_id": user.organization_id or 1,
-            "company": settings.company_name or "Timeforge",
+            "company": settings.company_name or "ESS Tracker",
         }
     )
 
@@ -141,7 +124,7 @@ def ping():
             "user": u.username,
             "role": u.role,
             "name": u.name,
-            "company": settings.company_name or "Timeforge",
+            "company": settings.company_name or "ESS Tracker",
             "private_active": bool(private),
             "private_allowed": bool(u.private_time_allowed and settings.private_time_enabled),
             "screenshots": {

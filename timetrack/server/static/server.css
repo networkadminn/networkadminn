@@ -1,5 +1,5 @@
 /* ==========================================================================
-   timeforge — Timeforge
+   esstracker — ESS Tracker
    Professional green design system
    ========================================================================== */
 @import url("https://fonts.googleapis.com/css2?family=DM+Sans:wght@500;600;700;800&family=Source+Sans+3:wght@400;500;600;700&display=swap");
@@ -3335,33 +3335,3 @@ hr.soft { border: 0; border-top: 1px solid var(--line); margin: 18px 0; }
   .pb7-axis { margin-left: 0; font-size: 0.6rem; }
   .pb7-stats { grid-template-columns: repeat(2, 1fr); }
 }
-
-/* SaaS trial banner + billing */
-.saas-trial-banner {
-  display: flex; align-items: center; justify-content: space-between; gap: 12px;
-  margin: 14px 22px 0; padding: 10px 14px; border-radius: 12px;
-  background: linear-gradient(90deg, #ECFDF5, #FEF3C7);
-  border: 1px solid rgba(11, 122, 75, 0.18); color: #14532D; font-size: 0.92rem;
-}
-.saas-trial-banner .muted { color: #3F6212; margin-left: 6px; }
-.billing-grid {
-  display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 12px; margin-bottom: 18px;
-}
-@media (max-width: 900px) {
-  .billing-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
-  .saas-trial-banner { flex-direction: column; align-items: flex-start; }
-}
-.billing-card {
-  padding: 14px 16px; border-radius: 12px; background: #F8FAF9;
-  border: 1px solid rgba(15, 41, 28, 0.08);
-}
-.billing-value { font-size: 1.25rem; display: block; margin-top: 4px; }
-.billing-meta { display: grid; gap: 10px; margin: 0 0 12px; }
-.billing-meta div { display: grid; grid-template-columns: 140px 1fr; gap: 8px; }
-.billing-meta dt { color: var(--muted); font-size: 0.85rem; }
-.billing-meta dd { margin: 0; }
-.signup-perks {
-  margin: 18px 0 0; padding: 0; list-style: none; display: grid; gap: 8px;
-  color: rgba(243, 255, 251, 0.92); font-size: 0.95rem;
-}
-.signup-perks li::before { content: "✓ "; color: #A7F3D0; font-weight: 700; }

@@ -1,11 +1,11 @@
 {% extends "base.html" %}
-{% block title %}Screenshots · timeforge{% endblock %}
+{% block title %}Screenshots · esstracker{% endblock %}
 {% block content %}
 <div class="page-head">
   <div>
     <p class="page-kicker">Time tracking</p>
     <h1>Screenshots</h1>
-    <p class="page-sub">timeforge-style gallery — filter by day, employee, and unproductive flags.</p>
+    <p class="page-sub">esstracker-style gallery — filter by day, employee, and unproductive flags.</p>
   </div>
   <nav class="daynav" aria-label="Filters">
     <a class="btn" href="?day={{ prev_day }}{% if selected_user %}&user_id={{ selected_user }}{% endif %}{% if flagged %}&flagged=1{% endif %}">&larr;</a>
