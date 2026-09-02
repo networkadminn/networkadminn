@@ -556,6 +556,72 @@ def top_sites(
     return ranked
 
 
+def bar_view_hours(
+    *,
+    office_start_h: float,
+    office_end_h: float,
+    day_start_ts: float,
+    arrival_ts: float | None,
+    last_seen_ts: float | None,
+    manual_ranges: list[tuple[float, float]] | None = None,
+    is_today: bool = False,
+    is_online: bool = False,
+    now_ts: float | None = None,
+    bar_mode: str = "work",
+    office_pad_h: float = 1.5,
+    activity_pad_h: float = 0.5,
+    min_span_h: float = 4.0,
+) -> tuple[float, float]:
+    """Pick productivity-bar X-axis hours for one user-day.
+
+    Default window: office hours ± ``office_pad_h`` (e.g. 9:30–6:30 → ~8:00–8:00).
+    Expands to include the user's real first/last activity (split shifts, night work).
+    """
+    if bar_mode == "day":
+        return 0.0, 24.0
+
+    base_start_h = max(0.0, office_start_h - office_pad_h)
+    base_end_h = min(24.0, office_end_h + office_pad_h)
+
+    activity_start_ts = arrival_ts
+    activity_end_ts = last_seen_ts
+    for start_ts, end_ts in manual_ranges or []:
+        if activity_start_ts is None or start_ts < activity_start_ts:
+            activity_start_ts = start_ts
+        if activity_end_ts is None or end_ts > activity_end_ts:
+            activity_end_ts = end_ts
+
+    if activity_start_ts is None:
+        view_start_h, view_end_h = base_start_h, base_end_h
+    else:
+        first_h = (activity_start_ts - day_start_ts) / 3600.0
+        last_h = (
+            (activity_end_ts - day_start_ts) / 3600.0
+            if activity_end_ts is not None
+            else first_h
+        )
+        if is_today and is_online and now_ts is not None:
+            last_h = max(last_h, (now_ts - day_start_ts) / 3600.0)
+
+        act_start_h = max(0.0, first_h - activity_pad_h)
+        act_end_h = min(24.0, last_h + activity_pad_h)
+
+        # Night / split shift entirely outside the office band → zoom to activity.
+        outside_office = last_h < base_start_h - 0.25 or first_h > base_end_h + 0.25
+        if outside_office:
+            view_start_h, view_end_h = act_start_h, act_end_h
+        else:
+            view_start_h = min(base_start_h, act_start_h)
+            view_end_h = max(base_end_h, act_end_h)
+
+    if view_end_h - view_start_h < min_span_h:
+        mid = (view_start_h + view_end_h) / 2.0
+        view_start_h = max(0.0, mid - min_span_h / 2.0)
+        view_end_h = min(24.0, mid + min_span_h / 2.0)
+
+    return view_start_h, view_end_h
+
+
 __all__ = [
     "Summary",
     "AppSummary",
@@ -566,6 +632,7 @@ __all__ = [
     "humanize",
     "format_clock",
     "apps_with_share",
+    "bar_view_hours",
     "productivity_bar_segments",
     "annotate_idle_gaps",
     "idle_gap_list",

@@ -31,6 +31,7 @@ from ..analytics import (
     idle_gap_list,
     merge_bar_segments,
     productivity_bar_segments,
+    bar_view_hours,
     summarize,
     suppress_covered_gaps,
     timeline_buckets,
@@ -753,18 +754,24 @@ def _employee_day_context(user: User, day: datetime, *, is_self: bool) -> dict:
     gaps = idle_gap_list(bar_raw, tz_name=_tz())
     bar = merge_bar_segments(bar_raw)
 
-    # Employees default to work-hours window so 5-min columns stay readable;
-    # ?bar=day shows the full calendar day.
+    # Auto-fit bar: office band (~8 AM–8 PM for 9:30–6:30 settings) plus user activity.
+    # ?bar=day shows midnight to midnight.
     bar_mode = (request.args.get("bar") or ("work" if is_self else "day")).strip().lower()
     if bar_mode not in ("work", "day"):
         bar_mode = "work" if is_self else "day"
-    if bar_mode == "work":
-        pad_h = 0.5
-        view_start_h = max(0.0, office_start - pad_h)
-        view_end_h = min(24.0, max(office_end + pad_h, view_start_h + 4.0))
-    else:
-        view_start_h = 0.0
-        view_end_h = 24.0
+    manual_ranges = [(float(m.start_ts), float(m.end_ts)) for m in manual]
+    view_start_h, view_end_h = bar_view_hours(
+        office_start_h=office_start,
+        office_end_h=office_end,
+        day_start_ts=start,
+        arrival_ts=summary.arrival_ts,
+        last_seen_ts=summary.last_seen_ts,
+        manual_ranges=manual_ranges,
+        is_today=is_today,
+        is_online=is_online,
+        now_ts=now_tz(_tz()).timestamp() if is_today else None,
+        bar_mode=bar_mode,
+    )
     view_start = start + view_start_h * 3600.0
     view_end = start + view_end_h * 3600.0
     view_span = max(1.0, view_end - view_start)

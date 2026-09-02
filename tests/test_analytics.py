@@ -165,3 +165,51 @@ def test_productivity_bar_no_future_fillable_gaps():
     gaps = idle_gap_list(bar)
     assert gaps
     assert gaps[0]["end"] <= 1800.0
+
+
+def test_bar_view_hours_office_baseline():
+    from timetrack.analytics import bar_view_hours
+
+    # Office 9:30–6:30 → default band ~8:00–8:00 PM
+    start, end = bar_view_hours(
+        office_start_h=9.5,
+        office_end_h=18.5,
+        day_start_ts=0.0,
+        arrival_ts=None,
+        last_seen_ts=None,
+        bar_mode="work",
+    )
+    assert start == 8.0
+    assert end == 20.0
+
+
+def test_bar_view_hours_extends_for_evening_session():
+    from timetrack.analytics import bar_view_hours
+
+    day0 = 0.0
+    # Work 9:30–6:30 then again 8 PM–10 PM
+    start, end = bar_view_hours(
+        office_start_h=9.5,
+        office_end_h=18.5,
+        day_start_ts=day0,
+        arrival_ts=9.5 * 3600,
+        last_seen_ts=22.0 * 3600,
+        bar_mode="work",
+    )
+    assert start == 8.0
+    assert end == 22.5  # last activity + 30 min pad
+
+
+def test_bar_view_hours_night_shift_zoom():
+    from timetrack.analytics import bar_view_hours
+
+    start, end = bar_view_hours(
+        office_start_h=9.5,
+        office_end_h=18.5,
+        day_start_ts=0.0,
+        arrival_ts=1.0 * 3600,
+        last_seen_ts=3.0 * 3600,
+        bar_mode="work",
+    )
+    assert start == 0.0  # min 4h span centered on 1–3 AM block
+    assert end == 4.0
