@@ -3060,7 +3060,14 @@ hr.soft { border: 0; border-top: 1px solid var(--line); margin: 18px 0; }
   overflow: hidden;
   max-width: 100%;
 }
-.pb7-chart { width: 100%; max-width: 100%; min-width: 0; box-sizing: border-box; }
+.pb7-chart {
+  width: 100%;
+  max-width: 100%;
+  min-width: 0;
+  box-sizing: border-box;
+  /* Room for first/last hour labels (8 AM / 8 PM) without clipping */
+  padding: 0 40px 0 12px;
+}
 
 .pb7-plot {
   position: relative;
@@ -3197,7 +3204,7 @@ hr.soft { border: 0; border-top: 1px solid var(--line); margin: 18px 0; }
   width: 100%;
   max-width: 100%;
   box-sizing: border-box;
-  overflow: hidden;
+  overflow: visible;
 }
 .pb7-tracks {
   display: grid;
@@ -3269,13 +3276,13 @@ hr.soft { border: 0; border-top: 1px solid var(--line); margin: 18px 0; }
   max-width: 100%;
   height: 26px;
   margin: 4px 0 0;
-  padding: 0 4px;
+  padding: 0;
   box-sizing: border-box;
   font-size: 0.72rem;
   font-weight: 700;
   color: #78909C;
   font-variant-numeric: tabular-nums;
-  overflow: hidden;
+  overflow: visible;
 }
 .pb7-axis span {
   position: absolute;
@@ -3285,8 +3292,14 @@ hr.soft { border: 0; border-top: 1px solid var(--line); margin: 18px 0; }
   padding: 2px 0;
 }
 .pb7-axis span.is-major { color: #546E7A; font-weight: 800; }
-.pb7-axis span.is-start { transform: translateX(0); }
-.pb7-axis span.is-end { transform: translateX(-100%); }
+.pb7-axis span.is-start {
+  left: 0 !important;
+  transform: translateX(0);
+}
+.pb7-axis span.is-end {
+  left: 100% !important;
+  transform: translateX(-100%);
+}
 
 .pb7-tip {
   position: absolute; z-index: 40; pointer-events: none;
