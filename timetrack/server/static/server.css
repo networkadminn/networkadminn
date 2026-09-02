@@ -2903,7 +2903,7 @@ hr.soft { border: 0; border-top: 1px solid var(--line); margin: 18px 0; }
   background: transparent;
   box-shadow: none;
   padding: 0;
-  overflow: visible;
+  overflow: hidden;
   min-width: 0;
   max-width: 100%;
 }
@@ -3037,7 +3037,7 @@ hr.soft { border: 0; border-top: 1px solid var(--line); margin: 18px 0; }
   box-shadow: var(--shadow);
   min-width: 0;
   max-width: 100%;
-  overflow: visible;
+  overflow: hidden;
 }
 .pb7-yaxis {
   width: 42px;
@@ -3055,21 +3055,18 @@ hr.soft { border: 0; border-top: 1px solid var(--line); margin: 18px 0; }
 }
 .prod-bar-v7.is-compact .pb7-yaxis { padding-bottom: 28px; }
 
-.pb7-main { flex: 1; min-width: 0; max-width: 100%; }
+.pb7-main { flex: 1; min-width: 0; max-width: 100%; overflow: hidden; }
 .pb7-scroll {
-  overflow-x: auto;
-  overflow-y: visible;
+  overflow: hidden;
   max-width: 100%;
-  scrollbar-width: thin;
 }
-.pb7-chart { min-width: 100%; width: 100%; }
-.prod-bar-v7[data-bar-mode="day"] .pb7-chart {
-  min-width: max(100%, 1100px);
-}
+.pb7-chart { width: 100%; max-width: 100%; min-width: 0; box-sizing: border-box; }
 
 .pb7-plot {
   position: relative;
-  min-width: 100%;
+  width: 100%;
+  max-width: 100%;
+  min-width: 0;
   height: 300px;
   background:
     linear-gradient(180deg, #FBFCFD 0%, #F4F7F5 100%);
@@ -3197,14 +3194,17 @@ hr.soft { border: 0; border-top: 1px solid var(--line); margin: 18px 0; }
   border-radius: 0 0 10px 10px;
   background: #fff;
   padding: 8px 0 6px;
-  /* Keep rails + axis the same full width as the plot (fixes 10 PM–12 AM looking cut off) */
-  overflow: visible;
+  width: 100%;
+  max-width: 100%;
+  box-sizing: border-box;
+  overflow: hidden;
 }
 .pb7-tracks {
   display: grid;
   gap: 7px;
-  padding: 2px 0 8px;
+  padding: 2px 0 8px 72px;
   position: relative;
+  box-sizing: border-box;
 }
 .pb7-track {
   position: relative;
@@ -3213,10 +3213,10 @@ hr.soft { border: 0; border-top: 1px solid var(--line); margin: 18px 0; }
 }
 .pb7-track-label {
   position: absolute;
-  right: calc(100% + 8px);
+  left: -68px;
   top: 50%;
   transform: translateY(-50%);
-  width: 64px;
+  width: 60px;
   display: inline-flex;
   align-items: center;
   justify-content: flex-end;
@@ -3266,13 +3266,16 @@ hr.soft { border: 0; border-top: 1px solid var(--line); margin: 18px 0; }
 .pb7-axis {
   position: relative;
   width: 100%;
+  max-width: 100%;
   height: 26px;
   margin: 4px 0 0;
+  padding: 0 4px;
+  box-sizing: border-box;
   font-size: 0.72rem;
   font-weight: 700;
   color: #78909C;
   font-variant-numeric: tabular-nums;
-  overflow: visible;
+  overflow: hidden;
 }
 .pb7-axis span {
   position: absolute;
