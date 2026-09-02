@@ -51,6 +51,16 @@ def create_app(config: ServerConfig | None = None, **overrides) -> Flask:
     app.register_blueprint(desk_bp)
 
     @app.context_processor
+    def inject_public_url():
+        return {
+            "public_url": (
+                os.environ.get("ESSTRACKER_PUBLIC_URL")
+                or os.environ.get("TIMETRACK_PUBLIC_URL")
+                or "https://tracker.euclideesolutions.com"
+            ).rstrip("/")
+        }
+
+    @app.context_processor
     def inject_desk_flags():
         from flask_login import current_user
 

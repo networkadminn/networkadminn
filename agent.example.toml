@@ -2,7 +2,7 @@
 # Environment variables TIMETRACK_SERVER_URL / TIMETRACK_API_TOKEN override these.
 
 [agent]
-# URL of the central esstracker server.
+# Production server (canonical):
 server_url = "https://tracker.euclideesolutions.com"
 
 # Per-employee API token (from admin → employees / create-user).
