@@ -213,3 +213,22 @@ def test_bar_view_hours_night_shift_zoom():
     )
     assert start == 0.0  # min 4h span centered on 1–3 AM block
     assert end == 4.0
+
+
+def test_bar_view_hours_expands_for_morning_gap():
+    from timetrack.analytics import bar_view_hours
+
+    # Absent user: fillable gap from midnight to 10:40 AM
+    start, end = bar_view_hours(
+        office_start_h=9.5,
+        office_end_h=18.5,
+        day_start_ts=0.0,
+        arrival_ts=None,
+        last_seen_ts=None,
+        gap_ranges=[(0.0, 10.67 * 3600)],
+        is_today=True,
+        now_ts=10.67 * 3600,
+        bar_mode="work",
+    )
+    assert start == 0.0
+    assert end == 20.0

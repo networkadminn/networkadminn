@@ -564,6 +564,7 @@ def bar_view_hours(
     arrival_ts: float | None,
     last_seen_ts: float | None,
     manual_ranges: list[tuple[float, float]] | None = None,
+    gap_ranges: list[tuple[float, float]] | None = None,
     is_today: bool = False,
     is_online: bool = False,
     now_ts: float | None = None,
@@ -575,7 +576,8 @@ def bar_view_hours(
     """Pick productivity-bar X-axis hours for one user-day.
 
     Default window: office hours ± ``office_pad_h`` (e.g. 9:30–6:30 → ~8:00–8:00).
-    Expands to include the user's real first/last activity (split shifts, night work).
+    Expands to include the user's real first/last activity (split shifts, night work)
+    and any fillable idle/offline gaps (e.g. absent morning before office hours).
     """
     if bar_mode == "day":
         return 0.0, 24.0
@@ -590,6 +592,15 @@ def bar_view_hours(
             activity_start_ts = start_ts
         if activity_end_ts is None or end_ts > activity_end_ts:
             activity_end_ts = end_ts
+    for start_ts, end_ts in gap_ranges or []:
+        if activity_start_ts is None or start_ts < activity_start_ts:
+            activity_start_ts = start_ts
+        if activity_end_ts is None or end_ts > activity_end_ts:
+            activity_end_ts = end_ts
+
+    if is_today and now_ts is not None:
+        if activity_end_ts is None or now_ts > activity_end_ts:
+            activity_end_ts = now_ts
 
     if activity_start_ts is None:
         view_start_h, view_end_h = base_start_h, base_end_h

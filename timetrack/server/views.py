@@ -760,6 +760,7 @@ def _employee_day_context(user: User, day: datetime, *, is_self: bool) -> dict:
     if bar_mode not in ("work", "day"):
         bar_mode = "work" if is_self else "day"
     manual_ranges = [(float(m.start_ts), float(m.end_ts)) for m in manual]
+    gap_ranges = [(float(g["start"]), float(g["end"])) for g in gaps]
     view_start_h, view_end_h = bar_view_hours(
         office_start_h=office_start,
         office_end_h=office_end,
@@ -767,6 +768,7 @@ def _employee_day_context(user: User, day: datetime, *, is_self: bool) -> dict:
         arrival_ts=summary.arrival_ts,
         last_seen_ts=summary.last_seen_ts,
         manual_ranges=manual_ranges,
+        gap_ranges=gap_ranges,
         is_today=is_today,
         is_online=is_online,
         now_ts=now_tz(_tz()).timestamp() if is_today else None,
