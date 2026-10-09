@@ -395,10 +395,15 @@ fi
 echo ""
 echo "  esstracker (ESS) client installed."
 echo "  Open Applications → esstracker → Sign in"
-echo "  Supported: Ubuntu 20.04 / 22.04 / 24.04 (amd64)"
+echo "  Supported: @SUPPORTED@ (amd64)"
 echo "  Tip: X11 session gives the best window-title + tray support."
 echo ""
 """
+    supported = {
+        "ubuntu22.04": "Ubuntu 22.04 / 24.04",
+        "ubuntu24.04": "Ubuntu 24.04 and newer",
+    }.get(os.environ.get("ESSTRACKER_DEB_TAG", "").strip(), "Ubuntu 20.04 / 22.04 / 24.04")
+    postinst = postinst.replace("@SUPPORTED@", supported)
     (debiandir / "postinst").write_text(postinst, encoding="utf-8")
     os.chmod(debiandir / "postinst", 0o755)
 
@@ -415,7 +420,10 @@ fi
     os.chmod(debiandir / "postrm", 0o755)
 
     DIST.mkdir(parents=True, exist_ok=True)
-    deb_path = DIST / f"{PKG_NAME}_{VERSION}_{deb_arch}.deb"
+    # e.g. ESSTRACKER_DEB_TAG=ubuntu22.04 → esstracker_0.3.2_ubuntu22.04_amd64.deb
+    deb_tag = os.environ.get("ESSTRACKER_DEB_TAG", "").strip()
+    deb_name = f"{PKG_NAME}_{VERSION}_{deb_tag}_{deb_arch}.deb" if deb_tag else f"{PKG_NAME}_{VERSION}_{deb_arch}.deb"
+    deb_path = DIST / deb_name
     if deb_path.exists():
         deb_path.unlink()
 

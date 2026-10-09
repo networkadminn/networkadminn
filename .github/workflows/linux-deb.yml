@@ -1,0 +1,52 @@
+name: Linux deb
+
+on:
+  workflow_dispatch:
+  push:
+    tags: ["v*"]
+
+jobs:
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        ubuntu: ["22.04", "24.04"]
+    # The frozen agent needs glibc >= the build host's, so each Ubuntu gets its own build.
+    runs-on: ubuntu-${{ matrix.ubuntu }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: System packages
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq \
+            libgirepository1.0-dev libcairo2-dev pkg-config gir1.2-gtk-3.0 \
+            libayatana-appindicator3-1 gir1.2-ayatanaappindicator3-0.1 \
+            libnotify-bin python3-tk tk-dev dpkg-dev fakeroot xvfb
+
+      - name: Python packages
+        run: |
+          python -m pip install -q -U pip wheel
+          python -m pip install -q -r requirements.txt "pyinstaller>=6.0" Pillow "PyGObject<3.51" pycairo
+
+      - name: Build .deb
+        env:
+          ESSTRACKER_DEB_TAG: ubuntu${{ matrix.ubuntu }}
+        run: python packaging/build.py deb
+
+      - name: Check package and glibc requirement
+        run: |
+          ls -la dist/*.deb
+          dpkg-deb -I dist/esstracker_*_ubuntu${{ matrix.ubuntu }}_amd64.deb | head -20
+          xvfb-run -a dist/linux/timetrack-agent --help >/dev/null
+          echo "binary starts OK"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: esstracker-ubuntu${{ matrix.ubuntu }}
+          path: dist/esstracker_*_ubuntu${{ matrix.ubuntu }}_amd64.deb
+          if-no-files-found: error
