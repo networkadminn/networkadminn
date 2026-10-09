@@ -7,6 +7,7 @@ from sqlalchemy import delete
 from .extensions import db
 from .models import (
     Activity,
+    DayAiReport,
     ManualEntry,
     OfflineRequest,
     PasswordResetToken,
@@ -26,6 +27,7 @@ def delete_user_account(user: User) -> None:
         TimerSession,
         ManualEntry,
         PrivatePeriod,
+        DayAiReport,
         Activity,
         Screenshot,
     ):

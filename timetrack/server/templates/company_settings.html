@@ -11,7 +11,7 @@
 <section class="panel">
   <form method="post" class="stack-form">
     <label>Company name
-      <input name="company_name" value="{{ settings.company_name or 'Euclidee Software Solutions Private Limited' }}" maxlength="200" />
+      <input name="company_name" value="{{ settings.company_name or 'ESS Tracker' }}" maxlength="200" />
     </label>
 
     <fieldset class="settings-block">
@@ -67,6 +67,33 @@
     </label>
     <label class="check"><input type="checkbox" name="private_time_enabled" value="1" {% if settings.private_time_enabled %}checked{% endif %} /> Allow Private Time</label>
     <label class="check"><input type="checkbox" name="offline_requires_approval" value="1" {% if settings.offline_requires_approval %}checked{% endif %} /> Offline time requires admin approval</label>
+
+    <fieldset class="settings-block">
+      <legend>Employee tray (desktop app)</legend>
+      <label class="check"><input type="checkbox" name="tray_logout_allowed" value="1" {% if settings.tray_logout_allowed %}checked{% endif %} /> Allow <strong>Log out</strong> in tray menu</label>
+      <label class="check"><input type="checkbox" name="tray_quit_allowed" value="1" {% if settings.tray_quit_allowed %}checked{% endif %} /> Allow <strong>Quit</strong> in tray menu</label>
+      <p class="muted small">When unchecked, that item is greyed out in the employee notification menu (policy applies within ~30s).</p>
+    </fieldset>
+
+    <fieldset class="settings-block">
+      <legend>Tracker stop alerts</legend>
+      <label class="check"><input type="checkbox" name="alert_on_tracker_stop" value="1" {% if settings.alert_on_tracker_stop %}checked{% endif %} /> Email admins when an employee tracker stops</label>
+      <label>Alert email(s)
+        <input name="tracker_alert_emails" type="text" value="{{ settings.tracker_alert_emails or '' }}" placeholder="admin@company.com, boss@company.com" />
+      </label>
+      <p class="muted small">Leave blank to email all admin accounts with an address on file. Sent immediately on Quit/Sign out, or ~90s after an unexpected stop.</p>
+    </fieldset>
+
+    <fieldset class="settings-block">
+      <legend>AI day reports (Gemini)</legend>
+      <label class="check"><input type="checkbox" name="email_ai_report_on_logout" value="1" {% if settings.email_ai_report_on_logout %}checked{% endif %} /> Email AI day report to admins when employee logs out</label>
+      <label class="check"><input type="checkbox" name="ai_report_after_office_only" value="1" {% if settings.ai_report_after_office_only %}checked{% endif %} /> Only after office end (e.g. 6:30 PM)</label>
+      <label>AI report email(s)
+        <input name="ai_report_emails" type="text" value="{{ settings.ai_report_emails or '' }}" placeholder="Leave blank to use alert emails above" />
+      </label>
+      <p class="muted small">Uses Google Gemini to summarize the employee's day (apps, sites, screenshots). Triggered on tray Sign out / Quit and web Sign out. Set <code>GEMINI_API_KEY</code> or <code>data/gemini.toml</code> on the server.</p>
+    </fieldset>
+
     <label>Expected workday hours
       <input type="number" step="0.5" min="1" name="expected_hours" value="{{ settings.expected_hours }}" />
     </label>

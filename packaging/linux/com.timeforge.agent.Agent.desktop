@@ -1,0 +1,14 @@
+[Desktop Entry]
+Type=Application
+Version=1.0
+Name=timeforge
+GenericName=Employee Time Tracker
+Comment=Timeforge time tracking — track work, productivity, and stay in sync
+Exec=timeforge-agent run
+Icon=timeforge
+Terminal=false
+Categories=Office;Utility;
+Keywords=time;tracker;productivity;Timeforge;DeskTime;
+StartupNotify=false
+StartupWMClass=timeforge
+X-GNOME-UsesNotifications=true

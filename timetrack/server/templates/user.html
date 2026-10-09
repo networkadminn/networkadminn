@@ -46,6 +46,30 @@
   {% set extra_hint = none %}
   {% include "_productivity_bar.html" %}
 
+  <section class="panel dash-panel ai-report-panel">
+    <div class="panel-head">
+      <h2>AI day report</h2>
+      <span id="ai-report-chip" class="ai-report-chip status-{{ ai_report.status if ai_report else 'none' }}">
+        {% if ai_report and ai_report.status == 'ready' %}Report ready
+        {% elif ai_report and ai_report.status == 'generating' %}Generating…
+        {% elif ai_report and ai_report.status == 'failed' %}Failed
+        {% else %}No report{% endif %}
+      </span>
+    </div>
+    {% if not gemini_configured %}
+    <p class="empty">Gemini API key not configured on the server. Set <code>GEMINI_API_KEY</code> or <code>data/gemini.toml</code>.</p>
+    {% else %}
+    <p class="muted ai-report-hint">Opens in a side panel — no page refresh. Uses activity data + Gemini.</p>
+    <div class="ai-report-actions">
+      <button type="button" class="btn primary inline" id="ai-report-generate-btn">
+        {% if ai_report and ai_report.status == 'failed' %}Retry AI report{% else %}Generate AI report{% endif %}
+      </button>
+      <button type="button" class="btn ghost inline" id="ai-report-view-btn" {% if not ai_report or ai_report.status != 'ready' %}hidden{% endif %}>View report</button>
+      <button type="button" class="btn ghost inline" id="ai-report-email-btn" {% if not ai_report or ai_report.status != 'ready' %}hidden{% endif %}>Email to admins</button>
+    </div>
+    {% endif %}
+  </section>
+
   {% set cat_total = (summary.productive_seconds + summary.neutral_seconds + summary.unproductive_seconds + summary.idle_seconds) or 1 %}
   <section class="panel dash-panel emp-cat-panel admin-day-mix">
     <div class="panel-head">
@@ -235,8 +259,48 @@
 </div>
 {% endblock %}
 
+{% block overlays %}
+{% if gemini_configured %}
+<div id="ai-report-drawer" class="ai-drawer" aria-hidden="true">
+  <div class="ai-drawer-busy" hidden>
+    <div class="ai-drawer-busy-card">
+      <div class="ai-drawer-spinner" aria-hidden="true"></div>
+      <p class="ai-drawer-busy-title">Generating AI report</p>
+      <p class="ai-drawer-busy-sub">Analyzing apps, sites &amp; timeline with Gemini…</p>
+      <div class="ai-drawer-busy-bar"><i></i></div>
+    </div>
+  </div>
+  <div class="ai-drawer-backdrop" tabindex="-1" hidden></div>
+  <aside class="ai-drawer-panel" role="dialog" aria-labelledby="ai-drawer-title" hidden>
+    <header class="ai-drawer-head">
+      <div>
+        <p class="dash-kicker">Gemini</p>
+        <h2 id="ai-drawer-title">AI day report · {{ subject.name }}</h2>
+        <p class="ai-drawer-meta muted small"></p>
+      </div>
+      <button type="button" class="ai-drawer-close" aria-label="Close">&times;</button>
+    </header>
+    <div class="ai-drawer-body">
+      <div class="ai-drawer-error flash error" hidden></div>
+      <div class="ai-drawer-content ai-report-body" hidden></div>
+    </div>
+  </aside>
+</div>
+{% endif %}
+{% endblock %}
+
 {% block scripts %}
-<script src="{{ url_for('static', filename='prod-bar.js') }}?v=18"></script>
+{% if gemini_configured %}
+<script>
+  window.AI_REPORT_CFG = {
+    userId: {{ subject.id }},
+    day: {{ day|tojson }},
+    geminiConfigured: true
+  };
+</script>
+<script src="{{ url_for('static', filename='ai-report-drawer.js') }}?v=2"></script>
+{% endif %}
+<script src="{{ url_for('static', filename='prod-bar.js') }}?v=19"></script>
 <script>
   const DATA = {{ charts|tojson }};
   const grid = "rgba(15, 41, 28, 0.07)";

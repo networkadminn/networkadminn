@@ -7,7 +7,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link rel="icon" type="image/png" href="{{ url_for('static', filename='brand/ess-mark.png') }}" />
-  <link rel="stylesheet" href="{{ url_for('static', filename='server.css') }}?v=47" />
+  <link rel="stylesheet" href="{{ url_for('static', filename='server.css') }}?v=57" />
   {% block head %}{% endblock %}
 </head>
 <body class="{% if current_user.is_authenticated %}app-shell{% else %}auth-shell{% endif %}">
@@ -17,7 +17,7 @@
       <img class="brand-logo" src="{{ url_for('static', filename='brand/ess-mark.png') }}" alt="" />
       <span class="brand-text">
         <strong>esstracker</strong>
-        <small>Euclidee</small>
+        <small>ESS Tracker</small>
       </span>
     </a>
 
@@ -156,6 +156,7 @@
   {% if current_user.is_authenticated %}
   </div>
   {% endif %}
+  {% block overlays %}{% endblock %}
   {% block scripts %}{% endblock %}
 </body>
 </html>

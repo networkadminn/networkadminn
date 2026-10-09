@@ -24,7 +24,7 @@ DIST = ROOT / "dist"
 BUILD = ROOT / "build"
 PACKAGING = ROOT / "packaging"
 LINUX = PACKAGING / "linux"
-VERSION = "0.2.6"
+VERSION = "0.3.0"
 APP_ID = "com.euclidee.esstracker"
 PKG_NAME = "esstracker"
 
@@ -345,12 +345,12 @@ def build_deb() -> Path:
     if (ROOT / "TIMETRACK.md").exists():
         shutil.copy2(ROOT / "TIMETRACK.md", readme)
     else:
-        readme.write_text("esstracker — Euclidee Software Solutions\n", encoding="utf-8")
+        readme.write_text("esstracker — ESS Tracker\n", encoding="utf-8")
     (docdir / "copyright").write_text(
         "Format: https://www.debian.org/doc/packaging-manuals/copyright-format/1.0/\n"
         f"Upstream-Name: {PKG_NAME}\n"
         "Source: https://tracker.euclideesolutions.com/\n\n"
-        "Files: *\nCopyright: Euclidee Software Solutions\nLicense: MIT\n",
+        "Files: *\nCopyright: ESS Tracker\nLicense: MIT\n",
         encoding="utf-8",
     )
 
@@ -359,7 +359,7 @@ Version: {VERSION}
 Section: utils
 Priority: optional
 Architecture: {deb_arch}
-Maintainer: Euclidee Software Solutions <noreply@euclideesolutions.com>
+Maintainer: ESS Tracker <noreply@euclideesolutions.com>
 Depends: libc6 (>= 2.31), libgtk-3-0t64 | libgtk-3-0, libnotify-bin, libayatana-appindicator3-1 | libappindicator3-1, gir1.2-gtk-3.0, gir1.2-ayatanaappindicator3-0.1 | gir1.2-appindicator3-0.1, python3-gi, libx11-6
 Recommends: xdotool, x11-utils, xprintidle, gnome-shell-extension-appindicator | gnome-shell-extension-ubuntu-appindicators
 Provides: timetrack

@@ -78,7 +78,16 @@ def login():
 @auth_bp.route("/logout")
 @login_required
 def logout():
+    from .models import ROLE_EMPLOYEE, User
+
+    user = None
+    if current_user.is_authenticated and current_user.role == ROLE_EMPLOYEE:
+        user = db.session.get(User, current_user.id)
     logout_user()
+    if user is not None:
+        from .ai_report import maybe_send_ai_report_on_logout
+
+        maybe_send_ai_report_on_logout(user)
     flash("You have been signed out.", "info")
     return redirect(url_for("auth.login"))
 
@@ -126,7 +135,7 @@ def forgot_password():
                 f"Reset your esstracker password using this link "
                 f"(valid {_RESET_TTL_HOURS} hour):\n\n{reset_url}\n\n"
                 "If you did not request this, you can ignore this email.\n\n"
-                "— Euclidee Software Solutions\n"
+                "— ESS Tracker\n"
             )
             html = f"""
             <div style="font-family:Arial,sans-serif;max-width:520px;margin:0 auto;color:#0F291C">

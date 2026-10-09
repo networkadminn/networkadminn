@@ -1,0 +1,42 @@
+name: Windows installer
+
+on:
+  workflow_dispatch:
+  push:
+    tags: ["v*"]
+
+jobs:
+  build:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install Inno Setup
+        shell: pwsh
+        run: |
+          if (-not (Test-Path "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe")) {
+            choco install innosetup -y --no-progress
+          }
+
+      - name: Build client + installer
+        shell: pwsh
+        run: powershell -ExecutionPolicy Bypass -File packaging\build_windows.ps1
+
+      - name: Check installer exists
+        shell: pwsh
+        run: |
+          $f = Get-ChildItem dist\releases\esstracker-Setup-*.exe
+          if (-not $f) { throw "installer missing" }
+          $f | Format-Table Name, Length
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: esstracker-windows
+          path: |
+            dist/releases/esstracker-Setup-*.exe
+            dist/releases/esstracker-*-windows.zip
+          if-no-files-found: error

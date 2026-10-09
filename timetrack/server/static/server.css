@@ -1,5 +1,5 @@
 /* ==========================================================================
-   esstracker — Euclidee Software Solutions
+   esstracker — ESS Tracker
    Professional green design system
    ========================================================================== */
 @import url("https://fonts.googleapis.com/css2?family=DM+Sans:wght@500;600;700;800&family=Source+Sans+3:wght@400;500;600;700&display=swap");
@@ -67,7 +67,7 @@ button, input, textarea, select { font: inherit; }
 }
 
 /* ==========================================================================
-   App shell & dark DeskTime sidebar
+   App shell & dark sidebar
    ========================================================================== */
 .app-shell {
   display: grid;
@@ -1586,7 +1586,7 @@ hr.soft { border: 0; border-top: 1px solid var(--line); margin: 18px 0; }
 }
 
 /* ==========================================================================
-   DeskTime dashboard (dt-*)
+   Admin dashboard (dt-*)
    ========================================================================== */
 .dt-dash { display: grid; gap: 16px; }
 .dt-toolbar {
@@ -1793,7 +1793,7 @@ hr.soft { border: 0; border-top: 1px solid var(--line); margin: 18px 0; }
 .scroll-x { overflow-x: auto; }
 
 /* ==========================================================================
-   My DeskTime (DeskTime day view)
+   My Day (employee day view)
    ========================================================================== */
 .dt-my { display: grid; gap: 16px; }
 .dt-my-toolbar {
@@ -2165,6 +2165,113 @@ hr.soft { border: 0; border-top: 1px solid var(--line); margin: 18px 0; }
 
 .dash-panel { margin-top: 0; border-radius: 14px; min-width: 0; max-width: 100%; overflow: hidden; }
 .dash-panel .grid-wrap { max-width: 100%; }
+
+.ai-report-panel .ai-report-actions {
+  display: flex; flex-wrap: wrap; gap: 10px; align-items: center; margin-bottom: 4px;
+}
+.ai-report-hint { margin: 0 0 12px; font-size: 0.88rem; }
+.ai-report-chip {
+  font-size: 0.78rem; font-weight: 700; padding: 4px 10px; border-radius: 999px;
+  background: rgba(15, 41, 28, 0.06); color: var(--muted);
+}
+.ai-report-chip.status-ready { background: rgba(11, 122, 75, 0.12); color: #0B7A4B; }
+.ai-report-chip.status-generating { background: rgba(220, 104, 3, 0.12); color: #B45309; }
+.ai-report-chip.status-failed { background: rgba(192, 57, 43, 0.12); color: #C0392B; }
+
+body.ai-drawer-open { overflow: hidden; }
+
+/* Full-viewport overlay (attached at body — covers sidebar + content) */
+.ai-drawer {
+  position: fixed; inset: 0; z-index: 9999;
+  pointer-events: none; visibility: hidden;
+}
+.ai-drawer.is-open { pointer-events: auto; visibility: visible; }
+
+.ai-drawer-busy {
+  position: fixed; inset: 0; z-index: 2;
+  display: flex; align-items: center; justify-content: center;
+  background: rgba(7, 30, 20, 0.82);
+  backdrop-filter: blur(4px);
+}
+.ai-drawer-busy[hidden] { display: none !important; }
+.ai-drawer-busy-card {
+  width: min(320px, calc(100vw - 48px));
+  padding: 28px 24px 24px; border-radius: 16px; text-align: center;
+  background: linear-gradient(165deg, #0a4a32 0%, #073b28 100%);
+  color: #e8f5ee; box-shadow: 0 24px 48px rgba(0, 0, 0, 0.35);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+}
+.ai-drawer-busy-title {
+  margin: 14px 0 6px; font-family: var(--font-ui); font-size: 1.05rem; font-weight: 700;
+}
+.ai-drawer-busy-sub {
+  margin: 0 0 18px; font-size: 0.88rem; color: #a8d4bc; line-height: 1.45;
+}
+.ai-drawer-busy-bar {
+  height: 4px; border-radius: 999px; background: rgba(255, 255, 255, 0.12); overflow: hidden;
+}
+.ai-drawer-busy-bar i {
+  display: block; height: 100%; width: 40%; border-radius: inherit;
+  background: linear-gradient(90deg, #34d399, #0B7A4B);
+  animation: ai-busy-slide 1.4s ease-in-out infinite;
+}
+@keyframes ai-busy-slide {
+  0% { transform: translateX(-120%); }
+  100% { transform: translateX(320%); }
+}
+
+.ai-drawer-backdrop {
+  position: fixed; inset: 0; z-index: 1;
+  background: rgba(7, 30, 20, 0.5);
+  opacity: 0; transition: opacity 0.25s ease;
+}
+.ai-drawer-backdrop[hidden] { display: none !important; }
+.ai-drawer.is-result .ai-drawer-backdrop { opacity: 1; }
+
+.ai-drawer-panel {
+  position: fixed; top: 0; right: 0; z-index: 3;
+  height: 100%; width: min(440px, 100vw);
+  background: #fff; box-shadow: -8px 0 32px rgba(7, 30, 20, 0.22);
+  transform: translateX(100%); transition: transform 0.28s ease;
+  display: flex; flex-direction: column; min-width: 0;
+}
+.ai-drawer-panel[hidden] { display: none !important; }
+.ai-drawer.is-result .ai-drawer-panel { transform: translateX(0); }
+
+.ai-drawer-head {
+  display: flex; align-items: flex-start; justify-content: space-between; gap: 12px;
+  padding: 18px 18px 12px; border-bottom: 1px solid rgba(15, 41, 28, 0.08);
+}
+.ai-drawer-head h2 { margin: 4px 0 0; font-size: 1.15rem; }
+.ai-drawer-close {
+  border: none; background: transparent; font-size: 1.6rem; line-height: 1;
+  cursor: pointer; color: var(--muted); padding: 4px 8px; border-radius: 8px;
+}
+.ai-drawer-close:hover { background: rgba(15, 41, 28, 0.06); color: var(--ink); }
+.ai-drawer-body {
+  flex: 1; overflow: auto; padding: 16px 18px 24px; min-height: 0;
+}
+.ai-drawer-spinner {
+  width: 48px; height: 48px; margin: 0 auto; border-radius: 50%;
+  border: 3px solid rgba(255, 255, 255, 0.2);
+  border-top-color: #6ee7a8;
+  animation: ai-spin 0.85s linear infinite;
+}
+@keyframes ai-spin { to { transform: rotate(360deg); } }
+.ai-drawer-error { margin: 0; }
+.ai-drawer-content { margin-top: 4px; }
+
+.ai-report-body {
+  white-space: pre-wrap; line-height: 1.55; font-size: 0.95rem;
+  padding: 14px 16px; background: var(--surface-2, #f6faf7);
+  border-radius: 10px; border: 1px solid rgba(15, 41, 28, 0.08);
+}
+.ai-report-meta { margin-bottom: 8px; }
+.ai-report-pending {
+  padding: 12px 14px; border-radius: 10px;
+  background: rgba(11, 122, 75, 0.08); color: var(--ink-soft, #3d4f63);
+  font-weight: 600;
+}
 
 @media (max-width: 900px) {
   .dash-metrics-rings { grid-template-columns: 1fr; }
@@ -2903,7 +3010,7 @@ hr.soft { border: 0; border-top: 1px solid var(--line); margin: 18px 0; }
   background: transparent;
   box-shadow: none;
   padding: 0;
-  overflow: visible;
+  overflow: hidden;
   min-width: 0;
   max-width: 100%;
 }
@@ -3037,7 +3144,7 @@ hr.soft { border: 0; border-top: 1px solid var(--line); margin: 18px 0; }
   box-shadow: var(--shadow);
   min-width: 0;
   max-width: 100%;
-  overflow: visible;
+  overflow: hidden;
 }
 .pb7-yaxis {
   width: 42px;
@@ -3055,21 +3162,25 @@ hr.soft { border: 0; border-top: 1px solid var(--line); margin: 18px 0; }
 }
 .prod-bar-v7.is-compact .pb7-yaxis { padding-bottom: 28px; }
 
-.pb7-main { flex: 1; min-width: 0; max-width: 100%; }
+.pb7-main { flex: 1; min-width: 0; max-width: 100%; overflow: hidden; }
 .pb7-scroll {
-  overflow-x: auto;
-  overflow-y: visible;
+  overflow: hidden;
   max-width: 100%;
-  scrollbar-width: thin;
 }
-.pb7-chart { min-width: 100%; width: 100%; }
-.prod-bar-v7[data-bar-mode="day"] .pb7-chart {
-  min-width: max(100%, 1100px);
+.pb7-chart {
+  width: 100%;
+  max-width: 100%;
+  min-width: 0;
+  box-sizing: border-box;
+  /* Room for first/last hour labels (8 AM / 8 PM) without clipping */
+  padding: 0 40px 0 12px;
 }
 
 .pb7-plot {
   position: relative;
-  min-width: 100%;
+  width: 100%;
+  max-width: 100%;
+  min-width: 0;
   height: 300px;
   background:
     linear-gradient(180deg, #FBFCFD 0%, #F4F7F5 100%);
@@ -3197,14 +3308,17 @@ hr.soft { border: 0; border-top: 1px solid var(--line); margin: 18px 0; }
   border-radius: 0 0 10px 10px;
   background: #fff;
   padding: 8px 0 6px;
-  /* Keep rails + axis the same full width as the plot (fixes 10 PM–12 AM looking cut off) */
+  width: 100%;
+  max-width: 100%;
+  box-sizing: border-box;
   overflow: visible;
 }
 .pb7-tracks {
   display: grid;
   gap: 7px;
-  padding: 2px 0 8px;
+  padding: 2px 0 8px 72px;
   position: relative;
+  box-sizing: border-box;
 }
 .pb7-track {
   position: relative;
@@ -3213,10 +3327,10 @@ hr.soft { border: 0; border-top: 1px solid var(--line); margin: 18px 0; }
 }
 .pb7-track-label {
   position: absolute;
-  right: calc(100% + 8px);
+  left: -68px;
   top: 50%;
   transform: translateY(-50%);
-  width: 64px;
+  width: 60px;
   display: inline-flex;
   align-items: center;
   justify-content: flex-end;
@@ -3266,8 +3380,11 @@ hr.soft { border: 0; border-top: 1px solid var(--line); margin: 18px 0; }
 .pb7-axis {
   position: relative;
   width: 100%;
+  max-width: 100%;
   height: 26px;
   margin: 4px 0 0;
+  padding: 0;
+  box-sizing: border-box;
   font-size: 0.72rem;
   font-weight: 700;
   color: #78909C;
@@ -3282,8 +3399,14 @@ hr.soft { border: 0; border-top: 1px solid var(--line); margin: 18px 0; }
   padding: 2px 0;
 }
 .pb7-axis span.is-major { color: #546E7A; font-weight: 800; }
-.pb7-axis span.is-start { transform: translateX(0); }
-.pb7-axis span.is-end { transform: translateX(-100%); }
+.pb7-axis span.is-start {
+  left: 0 !important;
+  transform: translateX(0);
+}
+.pb7-axis span.is-end {
+  left: 100% !important;
+  transform: translateX(-100%);
+}
 
 .pb7-tip {
   position: absolute; z-index: 40; pointer-events: none;

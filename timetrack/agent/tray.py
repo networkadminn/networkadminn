@@ -212,7 +212,7 @@ class AgentTray:
             return (148, 163, 184)  # Offline grey
         if self.agent.private:
             return (245, 158, 11)
-        return (11, 122, 75)  # Euclidee green
+        return (11, 122, 75)  # ESS Tracker green
 
     def _title(self) -> str:
         a = self.agent
@@ -225,7 +225,7 @@ class AgentTray:
         else:
             state = "Offline"
         name = a.display_name or a.username or "esstracker"
-        org = a.company_name or "Euclidee Software Solutions"
+        org = a.company_name or "ESS Tracker"
         tip = ""
         if self._backend == "appindicator":
             tip = "\n(Left-click for menu)"
@@ -317,10 +317,10 @@ class AgentTray:
         clear_saved_token(self.agent.config)
         self.agent.config.api_token = ""
         print("[esstracker] signed out — relaunch to sign in again")
-        self._quit()
+        self._quit(reason="logout")
 
-    def _quit(self, icon=None, item=None) -> None:
-        self.agent.stop()
+    def _quit(self, icon=None, item=None, *, reason: str = "quit") -> None:
+        self.agent.request_stop(reason)
         if self._icon is not None:
             self._icon.stop()
 
@@ -352,9 +352,15 @@ class AgentTray:
             self._title(),
             self._rebuild_menu(),
         )
+        loop = None
         if on_ready:
-            threading.Thread(target=on_ready, daemon=True).start()
+            loop = threading.Thread(target=on_ready, daemon=True)
+            loop.start()
         self._icon.run()
+        if loop is not None:
+            # Let the loop finish its final sync + stop notice before the process exits.
+            self.agent.request_stop(self.agent._stop_reason)
+            loop.join(timeout=20)
 
 
 __all__ = ["AgentTray", "tray_available"]

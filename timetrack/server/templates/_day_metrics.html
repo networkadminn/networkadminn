@@ -1,4 +1,4 @@
-{# Shared day metrics — DeskTime-style 8 KPI cards #}
+{# Shared day metrics — 8 KPI cards #}
 {% set spark_line = spark_line|default('0,38 20,38 40,38 60,38 80,38 100,38 120,38') %}
 {% set spark_area = spark_area|default('0,40 0,38 20,38 40,38 60,38 80,38 100,38 120,38 120,40') %}
 {% macro sparkline(tone='ok') -%}
@@ -36,7 +36,7 @@
 
     <article class="dt-kpi">
       <header>
-        <span>Desktime time</span>
+        <span>Desk time</span>
       </header>
       <strong class="ok">{{ humanize(desktime_seconds) }}</strong>
       {{ sparkline('ok') }}

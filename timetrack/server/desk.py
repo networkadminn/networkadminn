@@ -38,6 +38,14 @@ from .views import _activities_for, _parse_day
 desk_bp = Blueprint("desk", __name__)
 
 
+def _day_arrival_ts(user_id: int, day: datetime) -> float | None:
+    from .settings_util import company_tz_name
+
+    acts = _activities_for(user_id, day)
+    start, end = day_bounds(day, tz_name=company_tz_name())
+    return summarize(acts, start, end).arrival_ts
+
+
 @desk_bp.route("/timer", methods=["GET", "POST"])
 @login_required
 def timer_page():
@@ -156,6 +164,16 @@ def offline_fill():
     elif "T" in raw_start and "T" in raw_end:
         prefill_start, prefill_end = raw_start, raw_end
 
+    arrival_ts = _day_arrival_ts(current_user.id, day)
+    if arrival_ts is not None and raw_start.replace(".", "", 1).isdigit():
+        try:
+            if float(raw_start) < arrival_ts:
+                flash("Cannot fill time before you started your day.", "error")
+                prefill_start = ""
+                prefill_end = ""
+        except ValueError:
+            pass
+
     if request.method == "POST":
         try:
             start = datetime.strptime(request.form.get("start") or "", "%Y-%m-%dT%H:%M")
@@ -170,6 +188,10 @@ def offline_fill():
         start_ts, end_ts = start.timestamp(), end.timestamp()
         if end_ts <= start_ts:
             flash("End must be after start.", "error")
+            return redirect(url_for("desk.offline_fill", day=day.strftime("%Y-%m-%d")))
+        arrival_ts = _day_arrival_ts(current_user.id, day)
+        if arrival_ts is not None and start_ts < arrival_ts:
+            flash("Cannot fill time before you started your day.", "error")
             return redirect(url_for("desk.offline_fill", day=day.strftime("%Y-%m-%d")))
         now_ts = time.time()
         if start_ts > now_ts + 60:
@@ -500,7 +522,7 @@ def alerts():
 
     from flask import current_app
 
-    from .views import _activities_for, _is_late, _last_seen, _parse_day
+    from .views import _activities_for, _is_late, _is_online, _last_seen, _parse_day
     from ..analytics import day_bounds, format_clock, summarize
 
     day = _parse_day(request.args.get("day"))
@@ -522,7 +544,7 @@ def alerts():
     absent_list = []
     for u in employees:
         last = _last_seen(u.id)
-        online = last is not None and (now_ts - last) <= cfg.online_window
+        online = _is_online(u, last, now_ts, cfg.online_window)
         acts = _activities_for(u.id, day)
         s = summarize(acts, *day_bounds(day))
         absent = s.total_seconds <= 0
@@ -593,6 +615,19 @@ def company_settings():
         settings.private_time_enabled = bool(request.form.get("private_time_enabled"))
         settings.offline_requires_approval = bool(
             request.form.get("offline_requires_approval")
+        )
+        settings.tray_logout_allowed = bool(request.form.get("tray_logout_allowed"))
+        settings.tray_quit_allowed = bool(request.form.get("tray_quit_allowed"))
+        settings.alert_on_tracker_stop = bool(request.form.get("alert_on_tracker_stop"))
+        settings.tracker_alert_emails = (
+            (request.form.get("tracker_alert_emails") or "").strip()[:500]
+        )
+        settings.email_ai_report_on_logout = bool(request.form.get("email_ai_report_on_logout"))
+        settings.ai_report_after_office_only = bool(
+            request.form.get("ai_report_after_office_only")
+        )
+        settings.ai_report_emails = (
+            (request.form.get("ai_report_emails") or "").strip()[:500]
         )
         settings.expected_hours = float(request.form.get("expected_hours") or 8)
         settings.company_name = (request.form.get("company_name") or "TimeTrack").strip()[

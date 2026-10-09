@@ -50,8 +50,23 @@ def get_settings(org_id: int | None = None) -> CompanySettings:
     if row.office_end_hour is None:
         row.office_end_hour = 18.5
         changed = True
-    if not (row.work_days or "").strip():
+    if row.work_days is None or not str(row.work_days).strip():
         row.work_days = "0,1,2,3,4"
+        changed = True
+    if getattr(row, "tray_logout_allowed", None) is None:
+        row.tray_logout_allowed = True
+        changed = True
+    if getattr(row, "tray_quit_allowed", None) is None:
+        row.tray_quit_allowed = True
+        changed = True
+    if getattr(row, "alert_on_tracker_stop", None) is None:
+        row.alert_on_tracker_stop = True
+        changed = True
+    if getattr(row, "email_ai_report_on_logout", None) is None:
+        row.email_ai_report_on_logout = False
+        changed = True
+    if getattr(row, "ai_report_after_office_only", None) is None:
+        row.ai_report_after_office_only = True
         changed = True
     if changed:
         db.session.commit()
@@ -162,12 +177,24 @@ def ensure_schema() -> None:
         ("company_settings", "screenshot_random", "BOOLEAN DEFAULT 1"),
         ("company_settings", "private_time_enabled", "BOOLEAN DEFAULT 1"),
         ("company_settings", "offline_requires_approval", "BOOLEAN DEFAULT 0"),
-        ("company_settings", "company_name", "VARCHAR(200) DEFAULT 'Euclidee Software Solutions Private Limited'"),
+        ("company_settings", "company_name", "VARCHAR(200) DEFAULT 'ESS Tracker'"),
         ("company_settings", "idle_threshold", "INTEGER DEFAULT 180"),
         ("company_settings", "office_start_hour", "FLOAT DEFAULT 9.5"),
         ("company_settings", "office_end_hour", "FLOAT DEFAULT 18.5"),
         ("company_settings", "work_days", "VARCHAR(32) DEFAULT '0,1,2,3,4'"),
         ("company_settings", "timezone", "VARCHAR(64) DEFAULT 'Asia/Kolkata'"),
+        ("company_settings", "tray_logout_allowed", "BOOLEAN DEFAULT 1"),
+        ("company_settings", "tray_quit_allowed", "BOOLEAN DEFAULT 1"),
+        ("company_settings", "alert_on_tracker_stop", "BOOLEAN DEFAULT 1"),
+        ("company_settings", "tracker_alert_emails", "VARCHAR(500) DEFAULT ''"),
+        ("company_settings", "email_ai_report_on_logout", "BOOLEAN DEFAULT 0"),
+        ("company_settings", "ai_report_after_office_only", "BOOLEAN DEFAULT 1"),
+        ("company_settings", "ai_report_emails", "VARCHAR(500) DEFAULT ''"),
+        ("day_ai_reports", "status", "VARCHAR(20) DEFAULT 'ready'"),
+        ("day_ai_reports", "error_message", "TEXT DEFAULT ''"),
+        ("users", "last_agent_ping", "REAL"),
+        ("users", "tracker_stop_alerted_at", "REAL"),
+        ("users", "agent_stopped_at", "REAL"),
         ("company_settings", "organization_id", "INTEGER DEFAULT 1"),
         ("users", "organization_id", "INTEGER DEFAULT 1"),
         ("teams", "organization_id", "INTEGER DEFAULT 1"),

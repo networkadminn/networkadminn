@@ -70,6 +70,21 @@ class ServerClient:
         except (urllib.error.URLError, OSError):
             return False
 
+    def notify_stop(self, reason: str = "quit", timeout: float = 5.0) -> bool:
+        """Tell the server the tracker is stopping so dashboards go offline at once."""
+        body = json.dumps({"reason": reason}).encode("utf-8")
+        req = urllib.request.Request(
+            self._url("/api/v1/agent/stop"),
+            data=body,
+            headers=self._headers({"Content-Type": "application/json"}),
+            method="POST",
+        )
+        try:
+            with urllib.request.urlopen(req, timeout=timeout) as resp:
+                return 200 <= resp.status < 300
+        except (urllib.error.URLError, OSError):
+            return False
+
     def set_private(self, active: bool) -> dict | None:
         body = json.dumps({"active": active}).encode("utf-8")
         req = urllib.request.Request(

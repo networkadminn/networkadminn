@@ -87,7 +87,7 @@ def agent_login():
             "name": user.name,
             "role": user.role,
             "organization_id": user.organization_id or 1,
-            "company": settings.company_name or "Euclidee Software Solutions",
+            "company": settings.company_name or "ESS Tracker",
         }
     )
 
@@ -97,6 +97,14 @@ def agent_login():
 def ping():
     u: User = g.agent_user
     settings = get_settings(u.organization_id or 1)
+    from .tracker_alerts import check_stale_trackers, touch_agent_ping
+
+    touch_agent_ping(u)
+    if u.tracker_stop_alerted_at:
+        u.tracker_stop_alerted_at = None
+    u.agent_stopped_at = None
+    db.session.commit()
+    check_stale_trackers(u.organization_id or 1)
     private = db.session.execute(
         db.select(PrivatePeriod)
         .filter_by(user_id=u.id, active=True)
@@ -124,7 +132,7 @@ def ping():
             "user": u.username,
             "role": u.role,
             "name": u.name,
-            "company": settings.company_name or "Euclidee Software Solutions",
+            "company": settings.company_name or "ESS Tracker",
             "private_active": bool(private),
             "private_allowed": bool(u.private_time_allowed and settings.private_time_enabled),
             "screenshots": {
@@ -148,6 +156,8 @@ def ping():
                 today_tz(settings.timezone or "Asia/Kolkata"),
                 settings.work_days,
             ),
+            "tray_logout_allowed": bool(getattr(settings, "tray_logout_allowed", True)),
+            "tray_quit_allowed": bool(getattr(settings, "tray_quit_allowed", True)),
             "rules": rules,
             "timer": None
             if timer is None
@@ -160,6 +170,30 @@ def ping():
             },
         }
     )
+
+
+@api_bp.route("/agent/stop", methods=["POST"])
+@token_required
+def agent_stop():
+    """Agent calls this when quitting — triggers immediate admin email."""
+    u: User = g.agent_user
+    payload = request.get_json(silent=True) or {}
+    reason = str(payload.get("reason") or "stopped")[:32]
+    import time
+
+    from .tracker_alerts import send_tracker_stop_alert
+    from .views import _last_seen
+
+    # max() guards against agent clocks running ahead of the server.
+    u.agent_stopped_at = max(time.time(), _last_seen(u.id) or 0.0)
+    db.session.commit()
+
+    send_tracker_stop_alert(u, reason=reason)
+    if reason in ("logout", "quit"):
+        from .ai_report import maybe_send_ai_report_on_logout
+
+        maybe_send_ai_report_on_logout(u)
+    return jsonify({"ok": True})
 
 
 @api_bp.route("/private", methods=["GET", "POST"])
@@ -303,6 +337,13 @@ def list_projects():
 @token_required
 def ingest_activities():
     u: User = g.agent_user
+    from .tracker_alerts import check_stale_trackers, touch_agent_ping
+
+    touch_agent_ping(u)
+    if u.tracker_stop_alerted_at:
+        u.tracker_stop_alerted_at = None
+    u.agent_stopped_at = None
+    check_stale_trackers(u.organization_id or 1)
     # Reject (not 2xx) while private so the agent keeps buffered rows for retry.
     private = db.session.execute(
         db.select(PrivatePeriod).filter_by(user_id=u.id, active=True)

@@ -31,6 +31,7 @@ from ..analytics import (
     idle_gap_list,
     merge_bar_segments,
     productivity_bar_segments,
+    bar_view_hours,
     summarize,
     suppress_covered_gaps,
     timeline_buckets,
@@ -194,6 +195,14 @@ def _last_seen(user_id: int) -> float | None:
         db.select(db.func.max(Activity.end_ts)).filter(Activity.user_id == user_id)
     ).scalar_one_or_none()
     return float(row) if row else None
+
+
+def _is_online(user: User, last: float | None, now_ts: float, window: float) -> bool:
+    """Recent activity, and the agent has not reported Quit / Sign out since."""
+    if last is None or (now_ts - last) > window:
+        return False
+    stopped = getattr(user, "agent_stopped_at", None)
+    return not (stopped and stopped >= last)
 
 
 def _latest_activity(user_id: int) -> Activity | None:
@@ -440,12 +449,16 @@ def _presence_tracks(segments: list[dict], view_start: float, view_end: float) -
     span = max(1.0, view_end - view_start)
     tracks: list[dict] = []
     i, n = 0, len(segments)
+
+    def _tracked(seg: dict) -> bool:
+        return seg.get("kind") in ("productive", "neutral", "unproductive", "idle")
+
     while i < n:
-        if segments[i].get("kind") == "empty" and not segments[i].get("fillable"):
+        if not _tracked(segments[i]):
             i += 1
             continue
         j = i
-        while j < n and not (segments[j].get("kind") == "empty" and not segments[j].get("fillable")):
+        while j < n and _tracked(segments[j]):
             j += 1
         s = float(segments[i]["start"])
         e = float(segments[j - 1].get("end") or segments[j - 1]["start"])
@@ -703,7 +716,7 @@ def _employee_day_context(user: User, day: datetime, *, is_self: bool) -> dict:
     settings = get_settings()
     last = _last_seen(user.id)
     now_ts = datetime.now().timestamp()
-    is_online = last is not None and (now_ts - last) <= cfg.online_window
+    is_online = _is_online(user, last, now_ts, cfg.online_window)
     is_today = day.date() == today_tz(_tz())
     off_day = _is_off_day(day)
     left_clock = format_clock(summary.last_seen_ts, tz_name=_tz())
@@ -727,6 +740,7 @@ def _employee_day_context(user: User, day: datetime, *, is_self: bool) -> dict:
         gap_now_ts = now_tz(_tz()).timestamp()
     else:
         gap_now_ts = None  # past day — all empty ranges may be filled
+    fill_from_ts = summary.arrival_ts if summary.arrival_ts is not None else float("inf")
     bar_raw = productivity_bar_segments(
         acts,
         start,
@@ -734,6 +748,7 @@ def _employee_day_context(user: User, day: datetime, *, is_self: bool) -> dict:
         bucket_seconds=300.0,
         tz_name=_tz(),
         now_ts=gap_now_ts,
+        earliest_fill_ts=fill_from_ts,
     )
 
     day_start, day_end = start, end
@@ -750,21 +765,26 @@ def _employee_day_context(user: User, day: datetime, *, is_self: bool) -> dict:
     )
     covered_ranges = [(float(r.start_ts), float(r.end_ts)) for r in covered_reqs]
     bar_raw = suppress_covered_gaps(bar_raw, covered_ranges)
-    gaps = idle_gap_list(bar_raw, tz_name=_tz())
     bar = merge_bar_segments(bar_raw)
 
-    # Employees default to work-hours window so 5-min columns stay readable;
-    # ?bar=day shows the full calendar day.
+    # Auto-fit bar: office band (~8 AM–8 PM for 9:30–6:30 settings) plus user activity.
+    # ?bar=day shows midnight to midnight.
     bar_mode = (request.args.get("bar") or ("work" if is_self else "day")).strip().lower()
     if bar_mode not in ("work", "day"):
         bar_mode = "work" if is_self else "day"
-    if bar_mode == "work":
-        pad_h = 0.5
-        view_start_h = max(0.0, office_start - pad_h)
-        view_end_h = min(24.0, max(office_end + pad_h, view_start_h + 4.0))
-    else:
-        view_start_h = 0.0
-        view_end_h = 24.0
+    manual_ranges = [(float(m.start_ts), float(m.end_ts)) for m in manual]
+    view_start_h, view_end_h = bar_view_hours(
+        office_start_h=office_start,
+        office_end_h=office_end,
+        day_start_ts=start,
+        arrival_ts=summary.arrival_ts,
+        last_seen_ts=summary.last_seen_ts,
+        manual_ranges=manual_ranges,
+        is_today=is_today,
+        is_online=is_online,
+        now_ts=now_tz(_tz()).timestamp() if is_today else None,
+        bar_mode=bar_mode,
+    )
     view_start = start + view_start_h * 3600.0
     view_end = start + view_end_h * 3600.0
     view_span = max(1.0, view_end - view_start)
@@ -776,8 +796,11 @@ def _employee_day_context(user: User, day: datetime, *, is_self: bool) -> dict:
         bucket_seconds=bucket_seconds,
         tz_name=_tz(),
         now_ts=gap_now_ts,
+        earliest_fill_ts=fill_from_ts,
     )
     bar_display = suppress_covered_gaps(bar_display, covered_ranges)
+    gaps = idle_gap_list(bar_display, tz_name=_tz())
+    gap_seconds = sum(g["duration"] for g in gaps)
     bar_columns = _bar_stack_columns(
         bar_display, bucket_seconds=bucket_seconds, view_start=view_start, view_end=view_end
     )
@@ -813,7 +836,6 @@ def _employee_day_context(user: User, day: datetime, *, is_self: bool) -> dict:
         office_width=office_width,
     )
 
-    gap_seconds = sum(g["duration"] for g in gaps)
     my_requests = list(
         db.session.execute(
             db.select(OfflineRequest)
@@ -825,6 +847,15 @@ def _employee_day_context(user: User, day: datetime, *, is_self: bool) -> dict:
             .order_by(OfflineRequest.created_at.desc())
         ).scalars()
     )
+    ai_report = None
+    gemini_configured = False
+    if not is_self:
+        from .ai_report import get_day_report, load_gemini_api_key
+
+        cfg = current_app.config.get("TIMETRACK_SERVER_CONFIG")
+        data_dir = getattr(cfg, "data_dir", None) if cfg else None
+        gemini_configured = bool(load_gemini_api_key(data_dir))
+        ai_report = get_day_report(user.id, day.strftime("%Y-%m-%d"))
     return {
         "subject": user,
         "is_self": is_self,
@@ -887,6 +918,8 @@ def _employee_day_context(user: User, day: datetime, *, is_self: bool) -> dict:
                 .order_by(Project.name)
             ).scalars()
         ),
+        "ai_report": ai_report,
+        "gemini_configured": gemini_configured,
     }
 
 
@@ -986,10 +1019,12 @@ def admin():
         manual_seconds = sum(m.duration for m in manual)
         desktime_seconds = s.desktime_seconds(manual_seconds)
         last = _last_seen(u.id)
-        online = last is not None and (now_ts - last) <= cfg.online_window
+        online = _is_online(u, last, now_ts, cfg.online_window)
         late = _is_late(s.arrival_ts, day)
         absent = (not off_day) and s.total_seconds <= 0 and manual_seconds <= 0
         live = _live_snapshot(u.id, now_ts=now_ts, online_window=cfg.online_window)
+        if not online and isinstance(live, dict):
+            live["fresh"] = False
         row = {
             "user": u,
             "summary": s,
@@ -1130,6 +1165,82 @@ def admin_user(user_id: int):
     return render_template(
         "user.html", **_employee_day_context(user, day, is_self=False)
     )
+
+
+@views_bp.route("/admin/user/<int:user_id>/ai-report/status")
+@admin_required
+def admin_user_ai_report_status(user_id: int):
+    from .ai_report import get_day_report, report_to_dict, reset_stale_generating
+
+    user = db.session.get(User, user_id) or abort(404)
+    day_s = _parse_day(request.args.get("day")).strftime("%Y-%m-%d")
+    reset_stale_generating(user.id, day_s)
+    return jsonify(report_to_dict(get_day_report(user.id, day_s)))
+
+
+@views_bp.route("/admin/user/<int:user_id>/ai-report", methods=["POST"])
+@admin_required
+def admin_user_ai_report(user_id: int):
+    from .ai_report import (
+        email_ai_report,
+        get_day_report,
+        load_gemini_api_key,
+        queue_ai_report_generation,
+        report_to_dict,
+    )
+
+    user = db.session.get(User, user_id) or abort(404)
+    day = _parse_day(request.form.get("day") or request.args.get("day"))
+    day_s = day.strftime("%Y-%m-%d")
+    wants_json = (
+        request.headers.get("X-Requested-With") == "fetch"
+        or request.accept_mimetypes.best_match(["application/json", "text/html"]) == "application/json"
+    )
+    payload = request.get_json(silent=True) or {}
+    action = (
+        request.form.get("action") or payload.get("action") or request.args.get("action") or "generate"
+    ).strip().lower()
+    redirect_url = url_for("views.admin_user", user_id=user_id, day=day_s)
+
+    if not load_gemini_api_key(
+        getattr(current_app.config.get("TIMETRACK_SERVER_CONFIG"), "data_dir", None)
+    ):
+        msg = "Gemini API key not set. Add GEMINI_API_KEY or data/gemini.toml on the server."
+        if wants_json:
+            return jsonify({"ok": False, "error": msg}), 400
+        flash(msg, "error")
+        return redirect(redirect_url)
+
+    if action == "email":
+        report = get_day_report(user.id, day_s)
+        if report is None or not (report.summary or "").strip():
+            if wants_json:
+                return jsonify({"ok": False, "error": "Generate an AI report first."}), 400
+            flash("Generate an AI report first.", "error")
+            return redirect(redirect_url)
+        ok, err = email_ai_report(report, user, force=True)
+        if wants_json:
+            if ok:
+                return jsonify({"ok": True, **report_to_dict(get_day_report(user.id, day_s))})
+            return jsonify({"ok": False, "error": err}), 500
+        if ok:
+            flash("AI report emailed to admins.", "info")
+        else:
+            flash(f"Could not email AI report: {err}", "error")
+        return redirect(redirect_url)
+
+    ok, msg = queue_ai_report_generation(user, day)
+    if wants_json:
+        status = 200 if ok else 400
+        return jsonify(
+            {
+                "ok": ok,
+                "message": msg,
+                **report_to_dict(get_day_report(user.id, day_s)),
+            }
+        ), status
+    flash(msg, "info" if ok else "error")
+    return redirect(redirect_url)
 
 
 @views_bp.route("/team")
@@ -1443,7 +1554,7 @@ def employees():
         rows.append(
             {
                 "user": u,
-                "online": last is not None and (now_ts - last) <= cfg.online_window,
+                "online": _is_online(u, last, now_ts, cfg.online_window),
                 "last_seen": last,
             }
         )

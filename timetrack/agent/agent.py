@@ -31,6 +31,7 @@ class Agent:
         self.buffer = AgentBuffer(self.config.buffer_path)
         self.client = ServerClient(self.config.server_url, self.config.api_token)
         self._running = False
+        self._stop_reason = "quit"
         self._last_window = ("unknown", "")
         self._private = False
         self._private_allowed = True
@@ -42,7 +43,7 @@ class Agent:
         self.username = ""
         self.display_name = ""
         self.role = ""
-        self.company_name = "Euclidee Software Solutions"
+        self.company_name = "ESS Tracker"
         self._tray = None
         self._loop_thread: threading.Thread | None = None
         self._was_idle = False
@@ -306,10 +307,16 @@ class Agent:
                     next_flush = mono + cfg.flush_interval
         finally:
             self._safe(self.flush)
+            if self.client.token:
+                self._safe(self.client.notify_stop, self._stop_reason)
             self.buffer.close()
             print("[timetrack-agent] stopped.")
 
     def stop(self, *_: object) -> None:
+        self._running = False
+
+    def request_stop(self, reason: str = "quit") -> None:
+        self._stop_reason = reason
         self._running = False
 
     @staticmethod

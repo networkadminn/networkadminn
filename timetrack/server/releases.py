@@ -8,7 +8,7 @@ from pathlib import Path
 from flask import current_app
 
 # Semantic version shown on the download page (keep in sync with packaging/build.py)
-CLIENT_VERSION = "0.2.6"
+CLIENT_VERSION = "0.3.0"
 
 
 def releases_dir() -> Path:
@@ -86,9 +86,16 @@ def scan_releases() -> dict:
             if linux_deb:
                 break
 
-    windows_exe = pick(
+    windows_setup = pick(
         f"esstracker-Setup-{CLIENT_VERSION}.exe",
         "esstracker-Setup.exe",
+    )
+    if not windows_setup:
+        for p in sorted(base.glob("esstracker-Setup-*.exe"), reverse=True):
+            windows_setup = _file_info(p)
+            break
+
+    windows_exe = pick(
         f"esstracker-Agent-{CLIENT_VERSION}.exe",
         "esstracker-Agent.exe",
     )
@@ -111,8 +118,13 @@ def scan_releases() -> dict:
                 windows_zip = _file_info(p)
                 break
 
-    windows_file = windows_zip or windows_exe
-    windows_kind = "zip" if windows_zip else ("exe" if windows_exe else None)
+    windows_file = windows_setup or windows_zip or windows_exe
+    if windows_setup:
+        windows_kind = "setup"
+    elif windows_zip:
+        windows_kind = "zip"
+    else:
+        windows_kind = "exe" if windows_exe else None
 
     mac_arm = pick(
         f"esstracker-{CLIENT_VERSION}-arm64.dmg",
@@ -143,6 +155,7 @@ def scan_releases() -> dict:
             "ready": linux_deb is not None,
         },
         "windows": {
+            "setup": windows_setup,
             "exe": windows_exe,
             "zip": windows_zip,
             "file": windows_file,

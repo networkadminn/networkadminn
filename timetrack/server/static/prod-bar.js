@@ -145,18 +145,7 @@
       { passive: true }
     );
 
-    // Scroll work-hours chart toward "Now" (or first activity)
-    if (scroll && scroll.scrollWidth > scroll.clientWidth + 8) {
-      const nowPct = parseFloat(panel.dataset.nowPct || "");
-      let target = 0;
-      if (!Number.isNaN(nowPct) && nowPct > 0) {
-        target = (nowPct / 100) * scroll.scrollWidth - scroll.clientWidth * 0.55;
-      } else {
-        const first = plot.querySelector(`${colSel}:not(.fillable)`);
-        if (first) target = first.offsetLeft - 40;
-      }
-      scroll.scrollLeft = Math.max(0, target);
-    }
+    // Chart fits the panel width — no horizontal scroll.
   }
 
   if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", boot);
