@@ -114,6 +114,15 @@ def scan_releases() -> dict:
             if linux_deb:
                 break
 
+    # Per-Ubuntu builds: esstracker_<ver>_ubuntu22.04_amd64.deb (newest Ubuntu first).
+    ubuntu_debs = []
+    for ubuntu in ("24.04", "22.04"):
+        info = _file_info(base / f"esstracker_{CLIENT_VERSION}_ubuntu{ubuntu}_amd64.deb")
+        if info:
+            ubuntu_debs.append({"ubuntu": ubuntu, "label": f"Ubuntu {ubuntu}", **info})
+    if ubuntu_debs:
+        linux_deb = ubuntu_debs[-1]
+
     windows_setup = pick(
         f"esstracker-Setup-{CLIENT_VERSION}.exe",
         "esstracker-Setup.exe",
@@ -180,6 +189,7 @@ def scan_releases() -> dict:
         "dir": str(base),
         "linux": {
             "deb": linux_deb,
+            "ubuntu": ubuntu_debs,
             "ready": linux_deb is not None,
         },
         "windows": {

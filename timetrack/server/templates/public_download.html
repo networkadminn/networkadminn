@@ -133,11 +133,33 @@
             </span>
             <div>
               <h2>Linux</h2>
-              <p>Ubuntu 20.04–24.04 · Debian · amd64</p>
+              <p>Ubuntu 22.04 · 24.04 · amd64</p>
             </div>
             <span class="dl-badge">Ready</span>
           </header>
-          {% if releases.linux.ready and releases.linux.deb %}
+          {% if releases.linux.ubuntu %}
+          <label for="ubuntuVersion" style="display:block;font-size:13px;font-weight:600;margin:4px 0 6px">Your Ubuntu version</label>
+          <select id="ubuntuVersion" style="width:100%;padding:9px 10px;border:1px solid #cbd5e1;border-radius:8px;font:inherit;margin-bottom:10px;background:#fff">
+            {% for d in releases.linux.ubuntu %}
+            <option value="{{ url_for('views.download_file', platform='linux', filename=d.name) }}" data-size="{{ d.size_label }}"{% if loop.last %} selected{% endif %}>{{ d.label }}</option>
+            {% endfor %}
+          </select>
+          <a class="pub-btn dl-primary" id="linuxDownload" href="{{ url_for('views.download_file', platform='linux', filename=releases.linux.ubuntu[-1].name) }}">
+            Download .deb
+            <small id="linuxSize">{{ releases.linux.ubuntu[-1].size_label }}</small>
+          </a>
+          <p style="font-size:12px;color:#64748b;margin:8px 0 0">Not sure? Run <code>lsb_release -rs</code> in a terminal. The 22.04 build also works on 24.04.</p>
+          <script>
+            (function () {
+              var sel = document.getElementById("ubuntuVersion");
+              sel.addEventListener("change", function () {
+                var opt = sel.options[sel.selectedIndex];
+                document.getElementById("linuxDownload").href = opt.value;
+                document.getElementById("linuxSize").textContent = opt.dataset.size;
+              });
+            })();
+          </script>
+          {% elif releases.linux.ready and releases.linux.deb %}
           <a class="pub-btn dl-primary" id="linuxDownload" href="{{ url_for('views.download_file', platform='linux', filename=releases.linux.deb.name) }}">
             Download .deb
             <small>{{ releases.linux.deb.size_label }}</small>
