@@ -195,6 +195,8 @@ def ensure_schema() -> None:
         ("users", "last_agent_ping", "REAL"),
         ("users", "tracker_stop_alerted_at", "REAL"),
         ("users", "agent_stopped_at", "REAL"),
+        ("users", "agent_version", "VARCHAR(32)"),
+        ("users", "agent_platform", "VARCHAR(16)"),
         ("company_settings", "organization_id", "INTEGER DEFAULT 1"),
         ("users", "organization_id", "INTEGER DEFAULT 1"),
         ("teams", "organization_id", "INTEGER DEFAULT 1"),

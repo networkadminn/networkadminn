@@ -33,7 +33,7 @@ $VenvPy = Join-Path $Root ".venv\Scripts\python.exe"
 if ($LASTEXITCODE -ne 0) { throw "PyInstaller build failed" }
 
 # Wrap the client in a normal Windows installer (Inno Setup 6: https://jrsoftware.org/isdl.php)
-$Version = (Select-String -Path "packaging\build.py" -Pattern '^VERSION = "(.+)"').Matches[0].Groups[1].Value
+$Version = (Select-String -Path "timetrack\__init__.py" -Pattern '^__version__ = "(.+)"').Matches[0].Groups[1].Value
 $Iscc = @(
     (Get-Command iscc -ErrorAction SilentlyContinue).Source,
     "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe",

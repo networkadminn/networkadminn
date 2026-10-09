@@ -13,8 +13,19 @@ from .settings_util import get_settings
 
 
 def touch_agent_ping(user: User) -> None:
-    """Record latest agent heartbeat (ping or activity sync)."""
+    """Record latest agent heartbeat (ping or activity sync) and client version."""
     user.last_agent_ping = time.time()
+    try:
+        from flask import request
+
+        version = (request.headers.get("X-Agent-Version") or "").strip()[:32]
+        plat = (request.headers.get("X-Agent-Platform") or "").strip().lower()[:16]
+    except RuntimeError:
+        return
+    if version:
+        user.agent_version = version
+    if plat in ("windows", "linux", "mac"):
+        user.agent_platform = plat
 
 
 def _alert_recipients(org_id: int, settings) -> list[str]:

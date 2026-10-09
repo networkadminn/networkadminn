@@ -94,6 +94,9 @@ class User(UserMixin, db.Model):
     tracker_stop_alerted_at = db.Column(db.Float, nullable=True)
     # Set when the agent reports Quit / Sign out; cleared on its next ping or sync.
     agent_stopped_at = db.Column(db.Float, nullable=True)
+    # Reported by the agent on every ping/sync (NULL = client older than 0.3.2).
+    agent_version = db.Column(db.String(32), nullable=True)
+    agent_platform = db.Column(db.String(16), nullable=True)
 
     activities = db.relationship(
         "Activity", backref="user", lazy="dynamic", cascade="all, delete-orphan"

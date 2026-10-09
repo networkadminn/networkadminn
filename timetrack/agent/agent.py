@@ -87,6 +87,14 @@ class Agent:
         self.role = str(ping.get("role") or self.role)
         if ping.get("company"):
             self.company_name = str(ping["company"])
+        if ping.get("client_update"):
+            from .update_ui import maybe_prompt_update
+
+            maybe_prompt_update(
+                ping["client_update"],
+                server_url=self.config.server_url,
+                state_dir=os.path.dirname(os.path.abspath(self.config.buffer_path)),
+            )
         shots = ping.get("screenshots") or {}
         if "enabled" in shots:
             self._shots_enabled = bool(shots["enabled"]) and self.config.screenshots_enabled

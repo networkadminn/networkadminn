@@ -4,9 +4,20 @@ from __future__ import annotations
 
 import json
 import mimetypes
+import sys
 import urllib.error
 import urllib.request
 import uuid
+
+from .. import __version__
+
+
+def agent_platform() -> str:
+    if sys.platform == "win32":
+        return "windows"
+    if sys.platform == "darwin":
+        return "mac"
+    return "linux"
 
 
 class ServerClient:
@@ -22,8 +33,10 @@ class ServerClient:
         headers = {
             "Authorization": f"Bearer {self.token}",
             # Cloudflare / reverse proxies often block the default Python-urllib UA.
-            "User-Agent": "TimeTrack-Agent/0.1 (+https://tracker.euclideesolutions.com)",
+            "User-Agent": f"esstracker-Agent/{__version__} (+https://tracker.euclideesolutions.com)",
             "Accept": "application/json, */*",
+            "X-Agent-Version": __version__,
+            "X-Agent-Platform": agent_platform(),
         }
         if extra:
             headers.update(extra)
@@ -117,8 +130,10 @@ class ServerClient:
             data=body,
             headers={
                 "Content-Type": "application/json",
-                "User-Agent": "esstracker-Agent/0.1 (+https://tracker.euclideesolutions.com)",
+                "User-Agent": f"esstracker-Agent/{__version__} (+https://tracker.euclideesolutions.com)",
                 "Accept": "application/json, */*",
+                "X-Agent-Version": __version__,
+                "X-Agent-Platform": agent_platform(),
             },
             method="POST",
         )
@@ -162,4 +177,4 @@ def _encode_multipart(boundary: str, fields: dict, image_bytes: bytes) -> bytes:
     return b"\r\n".join(lines)
 
 
-__all__ = ["ServerClient"]
+__all__ = ["ServerClient", "agent_platform"]

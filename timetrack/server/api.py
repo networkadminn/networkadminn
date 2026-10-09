@@ -92,6 +92,31 @@ def agent_login():
     )
 
 
+def _client_update(u: User) -> dict | None:
+    """Tell an outdated agent which installer to fetch (None when up to date).
+
+    Paths are relative: behind aaPanel's proxy the app sees Host 127.0.0.1, so the
+    agent joins them with its own configured server_url.
+    """
+    from flask import url_for
+
+    from .releases import is_outdated, latest_download
+
+    if not u.agent_version or not is_outdated(u.agent_version):
+        return None
+    latest = latest_download(u.agent_platform)
+    if latest is None:
+        return None
+    return {
+        "latest": latest["version"],
+        "current": u.agent_version,
+        "url": url_for(
+            "views.download_file", platform=latest["platform"], filename=latest["filename"]
+        ),
+        "page": url_for("views.download_page"),
+    }
+
+
 @api_bp.route("/ping")
 @token_required
 def ping():
@@ -159,6 +184,7 @@ def ping():
             "tray_logout_allowed": bool(getattr(settings, "tray_logout_allowed", True)),
             "tray_quit_allowed": bool(getattr(settings, "tray_quit_allowed", True)),
             "rules": rules,
+            "client_update": _client_update(u),
             "timer": None
             if timer is None
             else {

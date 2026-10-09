@@ -13,6 +13,7 @@ from __future__ import annotations
 import argparse
 import os
 import platform
+import re
 import shutil
 import subprocess
 import sys
@@ -24,7 +25,9 @@ DIST = ROOT / "dist"
 BUILD = ROOT / "build"
 PACKAGING = ROOT / "packaging"
 LINUX = PACKAGING / "linux"
-VERSION = "0.3.1"
+VERSION = re.search(
+    r'^__version__ = "(.+)"', (ROOT / "timetrack" / "__init__.py").read_text(), re.M
+).group(1)
 APP_ID = "com.euclidee.esstracker"
 PKG_NAME = "esstracker"
 

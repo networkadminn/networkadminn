@@ -149,6 +149,12 @@
 
   {% block body %}
   <main class="wrap">
+    {% if client_update_banner %}
+    <div class="flash info" style="display:flex;justify-content:space-between;align-items:center;gap:12px;margin-bottom:14px">
+      <span>A new esstracker version <b>{{ client_update_banner.latest }}</b> is available (you have {{ client_update_banner.current }}). Install it to keep tracking working correctly.</span>
+      <a class="btn" href="{{ url_for('views.download_page') }}">Download update</a>
+    </div>
+    {% endif %}
     {% block content %}{% endblock %}
   </main>
   {% endblock %}

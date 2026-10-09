@@ -61,6 +61,25 @@ def create_app(config: ServerConfig | None = None, **overrides) -> Flask:
         }
 
     @app.context_processor
+    def inject_client_update():
+        from flask_login import current_user
+
+        if not current_user.is_authenticated or not current_user.last_agent_ping:
+            return {"client_update_banner": None}
+        from .releases import CLIENT_VERSION, is_outdated, latest_download
+
+        if not is_outdated(current_user.agent_version) or not latest_download(
+            current_user.agent_platform or "windows"
+        ):
+            return {"client_update_banner": None}
+        return {
+            "client_update_banner": {
+                "latest": CLIENT_VERSION,
+                "current": current_user.agent_version or "older",
+            }
+        }
+
+    @app.context_processor
     def inject_desk_flags():
         from flask_login import current_user
 
