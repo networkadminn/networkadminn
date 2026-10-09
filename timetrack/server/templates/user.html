@@ -126,7 +126,11 @@
     <section class="panel dash-panel">
       <div class="panel-head">
         <h2>Websites &amp; domains</h2>
-        <span class="muted">from window titles</span>
+        <span class="muted">
+          <a href="{{ url_for('views.admin_user_websites', user_id=subject.id, day=day) }}">All URLs</a>
+          · <a href="{{ url_for('views.admin_user_websites', user_id=subject.id, day=day, range=7) }}">7 days</a>
+          · <a href="{{ url_for('views.admin_user_websites', user_id=subject.id, day=day, range=30) }}">30 days</a>
+        </span>
       </div>
       {% if sites %}
       <table class="apps">
@@ -203,7 +207,7 @@
             <td class="num">{{ t.start_ts|clock }}–{{ t.end_ts|clock }}</td>
             <td class="app-name">{{ t.app }}</td>
             <td class="title-cell" title="{{ t.title }}">{{ t.title or '—' }}</td>
-            <td>{% if t.domain %}<span class="site-chip">{{ t.domain }}</span>{% else %}—{% endif %}</td>
+            <td>{% if t.domain and t.url.lower().startswith(('http://', 'https://')) %}<a class="site-chip" href="{{ t.url }}" target="_blank" rel="noopener noreferrer" title="{{ t.url }}">{{ t.domain }}</a>{% elif t.domain %}<span class="site-chip">{{ t.domain }}</span>{% else %}—{% endif %}</td>
             <td><span class="tag {{ t.category }}">{{ t.category }}</span></td>
             <td class="num">{{ humanize(t.seconds) }}</td>
           </tr>

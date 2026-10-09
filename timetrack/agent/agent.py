@@ -17,7 +17,7 @@ import uuid
 from types import FrameType
 
 from .. import platform as pf
-from ..monitor import extract_url
+from ..monitor import clean_url, extract_url, is_browser
 from ..platform.screenshot import capture_jpeg
 from .buffer import AgentBuffer
 from .client import ServerClient
@@ -162,7 +162,11 @@ class Agent:
         else:
             app, title = window.app, window.title
         self._last_window = (app, title)
-        url = "" if is_idle else extract_url(app, title)
+        url = ""
+        if not is_idle:
+            if is_browser(app):
+                url = clean_url(pf.get_browser_url(window))
+            url = url or extract_url(app, title)
 
         category = "neutral" if is_idle else self.config.categorize(app, title, url=url)
         self.buffer.add_activity(app, title, category, is_idle, elapsed, now, url=url)

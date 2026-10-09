@@ -24,7 +24,7 @@ DIST = ROOT / "dist"
 BUILD = ROOT / "build"
 PACKAGING = ROOT / "packaging"
 LINUX = PACKAGING / "linux"
-VERSION = "0.3.0"
+VERSION = "0.3.1"
 APP_ID = "com.euclidee.esstracker"
 PKG_NAME = "esstracker"
 
@@ -159,6 +159,8 @@ def build_binaries(*, onefile: bool, apps: tuple[tuple[str, str], ...] | None = 
             if win_icon is not None:
                 cmd.extend(["--icon", str(win_icon)])
             cmd.extend(["--collect-all", "tkinter", "--collect-all", "pystray"])
+            # Browser address-bar URLs (UI Automation); comtypes builds COM wrappers at runtime.
+            cmd.extend(["--collect-all", "uiautomation", "--collect-all", "comtypes"])
         for src, dest in DATAS:
             if Path(src).exists():
                 cmd.extend(["--add-data", f"{src}{sep}{dest}"])

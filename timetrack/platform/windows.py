@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import ctypes
 import os
+import threading
 from ctypes import wintypes
 
 from .common import ActiveWindow
@@ -84,6 +85,77 @@ def get_idle_seconds() -> float:
         return max(0.0, millis / 1000.0)
     except Exception:
         return 0.0
+
+
+_uia_ready = threading.local()
+_address_bars: dict[int, object] = {}
+_last_urls: dict[int, str] = {}
+
+
+def get_browser_url(window: ActiveWindow | None) -> str:
+    """Address-bar text of the foreground browser via UI Automation ('' if unknown).
+
+    Chromium (Chrome / Edge / Brave / Opera / Vivaldi) and Firefox expose the
+    address bar as an Edit control. The control is cached per window so a
+    normal sample is a single property read.
+    """
+    if window is None:
+        return ""
+    try:
+        import uiautomation as auto  # type: ignore
+    except Exception:
+        return ""
+    try:
+        hwnd = int(ctypes.windll.user32.GetForegroundWindow())  # type: ignore[attr-defined]
+        if not hwnd:
+            return ""
+        if not getattr(_uia_ready, "done", False):
+            auto.InitializeUIAutomationInCurrentThread()
+            auto.SetGlobalSearchTimeout(1.0)
+            _uia_ready.done = True
+
+        if len(_address_bars) > 64:
+            _address_bars.clear()
+            _last_urls.clear()
+
+        edit = _address_bars.get(hwnd)
+        value = _read_value(edit) if edit is not None else None
+        if value is None:
+            edit = _find_address_bar(auto, hwnd, window.app)
+            if edit is None:
+                return _last_urls.get(hwnd, "")
+            _address_bars[hwnd] = edit
+            value = _read_value(edit)
+        if value:
+            _last_urls[hwnd] = value
+        return _last_urls.get(hwnd, "")
+    except Exception:
+        return ""
+
+
+def _find_address_bar(auto, hwnd: int, app: str):
+    root = auto.ControlFromHandle(hwnd)
+    if root is None:
+        return None
+    candidates = []
+    if "firefox" in (app or "").lower():
+        candidates.append(root.EditControl(searchDepth=16, AutomationId="urlbar-input"))
+    candidates.append(root.EditControl(searchDepth=16, foundIndex=1))
+    for edit in candidates:
+        try:
+            if edit.Exists(0.5, 0.1):
+                return edit
+        except Exception:
+            continue
+    return None
+
+
+def _read_value(edit) -> str | None:
+    """Current address-bar text; None when the cached control is gone."""
+    try:
+        return edit.GetValuePattern().Value or ""
+    except Exception:
+        return None
 
 
 # Silence "imported but unused" for os on some linters; kept for parity.

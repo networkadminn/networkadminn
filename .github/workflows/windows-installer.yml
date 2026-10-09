@@ -26,6 +26,10 @@ jobs:
         shell: pwsh
         run: powershell -ExecutionPolicy Bypass -File packaging\build_windows.ps1
 
+      - name: Probe browser URL capture (Edge)
+        shell: pwsh
+        run: .venv\Scripts\python.exe packaging\windows\probe_url.py https://example.com/esstracker-probe
+
       - name: Check installer exists
         shell: pwsh
         run: |

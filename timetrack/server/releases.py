@@ -8,7 +8,7 @@ from pathlib import Path
 from flask import current_app
 
 # Semantic version shown on the download page (keep in sync with packaging/build.py)
-CLIENT_VERSION = "0.3.0"
+CLIENT_VERSION = "0.3.1"
 
 
 def releases_dir() -> Path:

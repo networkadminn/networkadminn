@@ -545,7 +545,7 @@ def top_sites(
     limit: int = 12,
 ) -> list[dict]:
     """Aggregate inferred websites/domains by active time."""
-    from .monitor import extract_domain, extract_url
+    from .monitor import extract_domain, extract_url, is_browser
 
     totals: dict[str, dict] = {}
     for a in prepare_activities(activities):
@@ -554,6 +554,8 @@ def top_sites(
         url = getattr(a, "url", "") or extract_url(a.app, a.title)
         domain = extract_domain(url)
         if not domain:
+            continue
+        if not (is_browser(a.app) or url.lower().startswith(("http://", "https://"))):
             continue
         slot = totals.setdefault(
             domain,
@@ -567,6 +569,106 @@ def top_sites(
     for r in ranked:
         r["pct"] = round(100.0 * r["seconds"] / base, 1)
     return ranked
+
+
+def website_report(
+    activities: list[Activity],
+    window_start: float | None = None,
+    window_end: float | None = None,
+    *,
+    site_limit: int = 60,
+    page_limit: int = 15,
+    visit_limit: int = 400,
+) -> dict:
+    """Per-site / per-page browsing breakdown plus a chronological visit log.
+
+    A *visit* is a continuous stretch on one site (gaps of up to 5 s are merged).
+    Pages use the recorded URL path when the agent captured one, else the tab title.
+    """
+    from .monitor import extract_domain, extract_url, is_browser, strip_browser_suffix
+
+    sites: dict[str, dict] = {}
+    visits: list[dict] = []
+    for a in prepare_activities(activities, window_start, window_end):
+        if a.idle:
+            continue
+        url = a.url or extract_url(a.app, a.title)
+        domain = extract_domain(url)
+        exact = url.lower().startswith(("http://", "https://"))
+        browser = is_browser(a.app)
+        if not domain or not (browser or exact):
+            continue
+        title = strip_browser_suffix(a.title) if browser else (a.title or "")
+        page_key = url if exact else (title or domain)
+
+        site = sites.setdefault(
+            domain,
+            {
+                "domain": domain,
+                "seconds": 0.0,
+                "visits": 0,
+                "category": a.category,
+                "first_ts": a.start_ts,
+                "last_ts": a.end_ts,
+                "exact": False,
+                "pages": {},
+            },
+        )
+        site["seconds"] += a.duration
+        site["last_ts"] = max(site["last_ts"], a.end_ts)
+        site["exact"] = site["exact"] or exact
+        if site["category"] == NEUTRAL and a.category != NEUTRAL:
+            site["category"] = a.category
+        page = site["pages"].setdefault(
+            page_key,
+            {"url": url if exact else "", "title": title, "seconds": 0.0, "last_ts": a.end_ts},
+        )
+        page["seconds"] += a.duration
+        page["last_ts"] = max(page["last_ts"], a.end_ts)
+        if title and not page["title"]:
+            page["title"] = title
+
+        prev = visits[-1] if visits else None
+        if prev and prev["domain"] == domain and a.start_ts - prev["end_ts"] <= 5.0:
+            prev["end_ts"] = a.end_ts
+            prev["seconds"] += a.duration
+            if exact and not prev["url"]:
+                prev["url"] = url
+        else:
+            site["visits"] += 1
+            visits.append(
+                {
+                    "domain": domain,
+                    "url": url if exact else "",
+                    "title": title,
+                    "app": a.app,
+                    "category": a.category,
+                    "start_ts": a.start_ts,
+                    "end_ts": a.end_ts,
+                    "seconds": a.duration,
+                }
+            )
+
+    ranked = sorted(sites.values(), key=lambda s: s["seconds"], reverse=True)
+    total = sum(s["seconds"] for s in ranked) or 1.0
+    for s in ranked:
+        s["pct"] = round(100.0 * s["seconds"] / total, 1)
+        s["pages"] = sorted(s["pages"].values(), key=lambda p: p["seconds"], reverse=True)[
+            :page_limit
+        ]
+    visits.sort(key=lambda v: v["start_ts"], reverse=True)
+    return {
+        "sites": ranked[:site_limit],
+        "visits": visits[:visit_limit],
+        "total_seconds": sum(s["seconds"] for s in ranked),
+        "site_count": len(ranked),
+        "visit_count": sum(s["visits"] for s in ranked),
+        "exact_share": round(
+            100.0 * sum(s["seconds"] for s in ranked if s["exact"]) / total, 1
+        )
+        if ranked
+        else 0.0,
+    }
 
 
 def bar_view_hours(
@@ -660,4 +762,5 @@ __all__ = [
     "prepare_activities",
     "activity_timeline",
     "top_sites",
+    "website_report",
 ]

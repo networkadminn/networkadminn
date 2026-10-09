@@ -36,6 +36,7 @@ from ..analytics import (
     suppress_covered_gaps,
     timeline_buckets,
     top_sites,
+    website_report,
 )
 from ..config import (
     PRODUCTIVE,
@@ -1157,10 +1158,68 @@ def admin():
     )
 
 
+def _org_user_or_404(user_id: int) -> User:
+    """Employee lookup restricted to the signed-in admin's organization."""
+    from .models import ROLE_SUPERADMIN
+    from .tenancy import assert_same_org
+
+    user = db.session.get(User, user_id) or abort(404)
+    if current_user.role != ROLE_SUPERADMIN and not assert_same_org(user):
+        abort(404)
+    return user
+
+
+@views_bp.route("/admin/user/<int:user_id>/websites")
+@admin_required
+def admin_user_websites(user_id: int):
+    """Websites & URLs one employee used over 1 / 7 / 30 days."""
+    user = _org_user_or_404(user_id)
+    day = _parse_day(request.args.get("day"))
+    range_days = request.args.get("range", type=int) or 1
+    if range_days not in (1, 7, 30):
+        range_days = 1
+    tz = _tz()
+    first_day = day - timedelta(days=range_days - 1)
+    start, _ = day_bounds(first_day, tz_name=tz)
+    _, end = day_bounds(day, tz_name=tz)
+    acts = list(
+        db.session.execute(
+            db.select(Activity)
+            .filter(Activity.user_id == user.id)
+            .filter(Activity.end_ts >= start, Activity.start_ts < end)
+            .order_by(Activity.start_ts.asc())
+        ).scalars()
+    )
+    report = website_report(acts, start, end)
+    site_filter = (request.args.get("site") or "").strip().lower()
+    visits = report["visits"]
+    if site_filter:
+        visits = [v for v in visits if v["domain"] == site_filter]
+    if range_days == 1:
+        range_label = day.strftime("%a, %B %d, %Y").replace(" 0", " ")
+    else:
+        range_label = (
+            f"{first_day.strftime('%b %d').replace(' 0', ' ')} – "
+            f"{day.strftime('%b %d, %Y').replace(' 0', ' ')}"
+        )
+    return render_template(
+        "user_websites.html",
+        subject=user,
+        report=report,
+        visits=visits,
+        site_filter=site_filter,
+        range_days=range_days,
+        range_label=range_label,
+        multi_day=range_days > 1,
+        humanize=humanize,
+        **_day_nav(day),
+    )
+
+
 @views_bp.route("/admin/user/<int:user_id>")
 @admin_required
 def admin_user(user_id: int):
-    user = db.session.get(User, user_id) or abort(404)
+    user = _org_user_or_404(user_id)
     day = _parse_day(request.args.get("day"))
     return render_template(
         "user.html", **_employee_day_context(user, day, is_self=False)
@@ -1935,6 +1994,20 @@ def thumb(shot_id: int):
 @views_bp.app_template_filter("clock")
 def _clock(ts: float | None) -> str:
     return format_clock(ts, tz_name=_tz())
+
+
+@views_bp.app_template_filter("dayclock")
+def _dayclock(ts: float | None) -> str:
+    if not ts:
+        return "—"
+    from zoneinfo import ZoneInfo
+
+    try:
+        tz = ZoneInfo(_tz())
+    except Exception:
+        tz = None
+    day = datetime.fromtimestamp(ts, tz).strftime("%b %d").replace(" 0", " ")
+    return f"{day}, {format_clock(ts, tz_name=_tz())}"
 
 
 @views_bp.app_template_filter("ago")
