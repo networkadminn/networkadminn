@@ -32,6 +32,21 @@ _DIST_PATHS = (
 )
 
 
+def _patch_frozen_pystray_menu() -> None:
+    """PyInstaller: pystray.Menu.items mis-detects MenuItem as a dynamic factory."""
+    if not getattr(sys, "frozen", False):
+        return
+    try:
+        from pystray import _base
+
+        def _items(self):
+            return self._items
+
+        _base.Menu.items = property(_items)
+    except Exception:
+        pass
+
+
 def _ensure_system_gi() -> None:
     """Make system PyGObject (gi) importable from a *venv* matching system Python.
 
@@ -173,10 +188,7 @@ def _pick_backend() -> str | None:
     preferred = os.environ.get("PYSTRAY_BACKEND")
     if preferred:
         order.append(preferred)
-    if os.environ.get("GDK_BACKEND", "").lower() == "x11":
-        # Gtk StatusIcon: left-click runs default action (flyout) on X11.
-        order.extend(["gtk", "appindicator", "xorg"])
-    elif "gnome" in desktop or session == "wayland":
+    if "gnome" in desktop or session == "wayland":
         order.extend(["appindicator", "gtk", "xorg"])
     else:
         # Xfce / MATE / Cinnamon / plain X11 — xorg is most portable across Ubuntu releases
@@ -231,7 +243,7 @@ class AgentTray:
         org = a.company_name or "ESS Tracker"
         tip = ""
         if self._backend == "appindicator":
-            tip = "\n(Left-click for panel)"
+            tip = "\n(Left-click for menu)"
         return f"esstracker · {state}\n{name}\n{org}{tip}"
 
     @staticmethod
@@ -239,22 +251,42 @@ class AgentTray:
         """No-op so label rows stay in the menu on backends that drop action=None."""
         return None
 
-    def _open_flyout(self, icon=None, item=None) -> None:
-        from .tray_flyout_ui import open_tray_flyout
-
-        open_tray_flyout(self)
-
     def _rebuild_menu(self):
         import pystray
 
-        use_default = self._backend in ("gtk", "xorg", "win32")
-        more = pystray.Menu(
-            pystray.MenuItem("Open My Day", self._open_dashboard),
+        a = self.agent
+        if a.user_offline:
+            state = "Offline (idle)"
+        elif a.private:
+            state = "Private Time ON"
+        elif a.online:
+            state = "Tracking"
+        else:
+            state = "Offline"
+        app, title = a._last_window if hasattr(a, "_last_window") else ("", "")
+        now_line = f"Now: {app}" + (f" — {title[:40]}" if title else "")
+        use_default = self._backend in ("gtk", "xorg")
+        items = [
+            pystray.MenuItem(f"Status: {state}", self._noop),
+            pystray.MenuItem(f"User: {a.display_name or a.username or '—'}", self._noop),
+            pystray.MenuItem(f"Org: {a.company_name or '—'}", self._noop),
+            pystray.MenuItem(
+                f"Role: {a.role or '—'}"
+                + (f" · Shots {'ON' if a.shots_enabled else 'OFF'}" if a.online else ""),
+                self._noop,
+            ),
+            pystray.MenuItem(now_line[:70] if app else "Now: —", self._noop),
+            pystray.Menu.SEPARATOR,
             pystray.MenuItem(
                 "Private Time",
                 self._toggle_private,
                 checked=lambda _: self.agent.private,
                 enabled=lambda _: self.agent.private_allowed or self.agent.private,
+            ),
+            pystray.MenuItem(
+                "Open My Day",
+                self._open_dashboard,
+                default=use_default,
             ),
             pystray.MenuItem("Sync now", self._flush_now),
             pystray.MenuItem("Preferences…", self._open_preferences),
@@ -265,57 +297,8 @@ class AgentTray:
             pystray.MenuItem(
                 "Quit", self._menu_quit, enabled=lambda _: self.agent.tray_quit_allowed
             ),
-        )
-        return pystray.Menu(
-            pystray.MenuItem("esstracker", self._open_flyout, default=use_default),
-            pystray.MenuItem("More…", more),
-        )
-
-    def _wire_tray_clicks(self, icon) -> None:
-        """GNOME AppIndicator: intercept menu popup → show clay panel at the icon."""
-        if self._backend != "appindicator":
-            return
-        try:
-            from gi.repository import GLib
-        except Exception:
-            return
-
-        tray = self
-        menu_hooked = {"id": None}
-
-        def open_from_tray() -> None:
-            tray._open_flyout()
-
-        def on_menu_show(menu, *_args) -> None:
-            def work() -> bool:
-                try:
-                    menu.popdown()
-                except Exception:
-                    try:
-                        menu.hide()
-                    except Exception:
-                        pass
-                open_from_tray()
-                return False
-
-            GLib.idle_add(work)
-
-        original_update = icon._update_menu
-
-        def wrapped_update_menu() -> None:
-            original_update()
-            handle = getattr(icon, "_menu_handle", None)
-            if handle is None:
-                return
-            if menu_hooked["id"] is not None:
-                try:
-                    handle.disconnect(menu_hooked["id"])
-                except Exception:
-                    pass
-            menu_hooked["id"] = handle.connect("show", on_menu_show)
-
-        icon._update_menu = wrapped_update_menu
-        wrapped_update_menu()
+        ]
+        return pystray.Menu(*items)
 
     def refresh_ui(self) -> None:
         icon = self._icon
@@ -378,6 +361,7 @@ class AgentTray:
     def run(self, on_ready: Callable[[], None] | None = None) -> None:
         import pystray
 
+        _patch_frozen_pystray_menu()
         backend = _pick_backend()
         if backend is None:
             if sys.platform == "win32":
@@ -396,14 +380,15 @@ class AgentTray:
         self._backend = backend
         print(f"[esstracker] tray backend={backend}")
         if backend == "appindicator":
-            print("[esstracker] tip: left-click the tray icon for your day panel")
-        elif backend in ("gtk", "xorg"):
-            print("[esstracker] tip: left-click the tray icon for your day panel (right-click for More)")
-
-        def setup(icon) -> None:
-            icon.visible = True
-            self._wire_tray_clicks(icon)
-
+            print(
+                "[esstracker] tip: left-click the ESS tray icon for the menu "
+                "(right-click does nothing on GNOME)"
+            )
+        elif backend == "xorg":
+            print(
+                "[esstracker] tip: left-click the tray icon for actions "
+                "(the X11 tray backend has no right-click menu)"
+            )
         self._icon = pystray.Icon(
             "esstracker",
             _make_icon(self._status_color()),
@@ -414,7 +399,7 @@ class AgentTray:
         if on_ready:
             loop = threading.Thread(target=on_ready, daemon=True)
             loop.start()
-        self._icon.run(setup=setup)
+        self._icon.run()
         if loop is not None:
             # Let the loop finish its final sync + stop notice before the process exits.
             self.agent.request_stop(self.agent._stop_reason)

@@ -248,27 +248,65 @@ def _install_icons(deb_root: Path) -> None:
         shutil.copy2(master, pix / "esstracker.png")
 
 
+def _install_agent_venv(optdir: Path) -> None:
+    """Venv + source tree so tray uses system python3-gi (AppIndicator menu)."""
+    venv = optdir / "venv"
+    app = optdir / "app"
+    if venv.exists():
+        shutil.rmtree(venv)
+    if app.exists():
+        shutil.rmtree(app)
+    subprocess.run(
+        [sys.executable, "-m", "venv", "--system-site-packages", str(venv)],
+        check=True,
+    )
+    pip = venv / "bin" / "pip"
+    subprocess.run(
+        [
+            str(pip),
+            "install",
+            "-q",
+            "psutil>=5.9",
+            "mss>=9",
+            "Pillow>=10",
+            "pystray>=0.19",
+            "tzdata>=2024",
+        ],
+        check=True,
+    )
+    shutil.copytree(ROOT / "timetrack", app / "timetrack")
+
+
 def _write_wrapper(path: Path, target: str, *, default_args: str = "") -> None:
     path.write_text(
         "#!/bin/sh\n"
         "# esstracker launcher — Ubuntu 20.04 / 22.04 / 24.04 compatible\n"
         'export ESSTRACKER_ICON="${ESSTRACKER_ICON:-/usr/share/icons/hicolor/256x256/apps/esstracker.png}"\n'
-        # Prefer X11 for active-window, idle, and tray backends across Ubuntu releases
         'if [ -z "${ESSTRACKER_FORCE_WAYLAND:-}" ]; then\n'
         '  export GDK_BACKEND="${GDK_BACKEND:-x11}"\n'
         "fi\n"
-        # Help AppIndicator / notifications on GNOME
         'export XDG_CURRENT_DESKTOP="${XDG_CURRENT_DESKTOP:-$XDG_SESSION_DESKTOP}"\n'
+        'PYTHON_VENV="/opt/esstracker/venv/bin/python"\n'
+        'PYTHON_APP="/opt/esstracker/app"\n'
         f'BIN="/opt/esstracker/{target}"\n'
-        'if [ ! -x "$BIN" ]; then echo "missing $BIN" >&2; exit 127; fi\n'
-        + (
-            'if [ "$#" -eq 0 ]; then\n'
-            f'  exec "$BIN" {default_args}\n'
-            "fi\n"
-            if default_args
-            else ""
-        )
-        + 'exec "$BIN" "$@"\n',
+        'run_agent() {\n'
+        '  if [ -x "$PYTHON_VENV" ] && [ -d "$PYTHON_APP/timetrack" ]; then\n'
+        '    export PYTHONPATH="$PYTHON_APP${PYTHONPATH:+:$PYTHONPATH}"\n'
+        '    if [ "$#" -eq 0 ]; then\n'
+        f'      exec "$PYTHON_VENV" -m timetrack.agent {default_args}\n'
+        "    fi\n"
+        '    exec "$PYTHON_VENV" -m timetrack.agent "$@"\n'
+        "  fi\n"
+        '  if [ ! -x "$BIN" ]; then echo "missing $BIN" >&2; exit 127; fi\n'
+        '  if [ "$#" -eq 0 ]; then\n'
+        f'    exec "$BIN" {default_args}\n'
+        "  fi\n"
+        '  exec "$BIN" "$@"\n'
+        "}\n"
+        'if [ "$#" -eq 0 ]; then\n'
+        "  run_agent\n"
+        "fi\n"
+        'run_agent "$@"\n',
         encoding="utf-8",
     )
     os.chmod(path, 0o755)
@@ -309,6 +347,9 @@ def build_deb() -> Path:
         dst = optdir / name
         shutil.copy2(src, dst)
         os.chmod(dst, 0o755)
+
+    print("Installing agent venv (tray menu via system AppIndicator)…")
+    _install_agent_venv(optdir)
 
     # Client wrappers only
     _write_wrapper(bindir / "esstracker-agent", "timetrack-agent", default_args="run")

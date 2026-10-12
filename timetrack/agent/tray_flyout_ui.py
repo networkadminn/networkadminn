@@ -215,14 +215,9 @@ def _build(tray: AgentTray):
     )
     widgets["pill"].pack()
 
-    # --- scrollable menu ---
-    canvas = tk.Canvas(body, bg=BG, highlightthickness=0, width=PANEL_W - 4)
-    scroll = tk.Frame(body, bg=BG)
-    menu = tk.Frame(canvas, bg=BG, padx=12, pady=8)
-    menu.bind("<Configure>", lambda e: canvas.configure(scrollregion=canvas.bbox("all")))
-    canvas.create_window((0, 0), window=menu, anchor="nw", width=PANEL_W - 28)
-    canvas.pack(side="left", fill="both", expand=True)
-    scroll.pack()
+    # --- menu (no canvas: canvas clipped height and hid actions + footer) ---
+    menu = tk.Frame(body, bg=BG, padx=12, pady=8)
+    menu.pack(fill="both", expand=True)
 
     def row(
         parent,
@@ -381,9 +376,9 @@ def _build(tray: AgentTray):
     if agent.tray_quit_allowed:
         row(menu, "⏹", "Quit", command=tray._menu_quit)
 
-    # --- footer brand ---
+    # --- footer brand (always visible below menu) ---
     foot = tk.Frame(body, bg=FOOTER_BG, pady=14, padx=12)
-    foot.pack(fill="x", side="bottom")
+    foot.pack(fill="x")
     if euc_photo:
         tk.Label(foot, image=euc_photo, bg=FOOTER_BG).pack()
         root._euc_photo = euc_photo
@@ -444,7 +439,9 @@ def _build(tray: AgentTray):
     threading.Thread(target=fetch_async, daemon=True).start()
 
     root.update_idletasks()
-    root.geometry(f"{PANEL_W}x{min(root.winfo_reqheight(), 720)}")
+    total_h = head.winfo_reqheight() + menu.winfo_reqheight() + foot.winfo_reqheight() + 12
+    total_h = max(420, min(total_h, 720))
+    root.geometry(f"{PANEL_W}x{total_h}")
     _place_near_tray(root)
     root.protocol("WM_DELETE_WINDOW", root.destroy)
     return root
