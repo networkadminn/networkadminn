@@ -74,6 +74,9 @@ class Agent:
 
     def refresh_server_policy(self) -> None:
         ping = self.client.ping()
+        if not ping and self.client.unauthorized and self._running:
+            if self._relogin():
+                ping = self.client.ping()
         if not ping:
             self._online = False
             if self._tray:
@@ -323,6 +326,20 @@ class Agent:
                 self._safe(self.client.notify_stop, self._stop_reason)
             self.buffer.close()
             print("[timetrack-agent] stopped.")
+
+    def _relogin(self) -> bool:
+        """Session ended (30 days or revoked): ask to sign in, or quit if cancelled."""
+        from .login_ui import show_login
+
+        print("[esstracker] session expired — please sign in again")
+        if show_login(self.config):
+            self.client.token = self.config.api_token
+            return True
+        print("[esstracker] sign-in cancelled — stopping")
+        self.request_stop("logout")
+        if self._tray is not None and self._tray._icon is not None:
+            self._tray._icon.stop()
+        return False
 
     def stop(self, *_: object) -> None:
         self._running = False

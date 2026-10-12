@@ -112,7 +112,11 @@ def _ensure_signed_in(cfg, *, force_login: bool = False):
     client = ServerClient(cfg.server_url, cfg.api_token)
     if client.ping() is not None:
         return True
-    # Token expired / wrong server → ask again
+    if not client.unauthorized:
+        # No network yet (e.g. Wi-Fi still connecting after boot): keep the saved
+        # sign-in and track offline; the buffer syncs once the server is reachable.
+        print("[esstracker] server not reachable — starting offline")
+        return True
     print("[esstracker] session expired — please sign in again")
     cfg.api_token = ""
     return show_login(cfg)

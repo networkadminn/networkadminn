@@ -25,6 +25,7 @@ class ServerClient:
         self.base_url = base_url.rstrip("/")
         self.token = token
         self.timeout = timeout
+        self.last_status: int | None = None
 
     def _url(self, path: str) -> str:
         return f"{self.base_url}{path}"
@@ -48,9 +49,20 @@ class ServerClient:
         )
         try:
             with urllib.request.urlopen(req, timeout=self.timeout) as resp:
-                return json.loads(resp.read().decode("utf-8"))
-        except (urllib.error.URLError, OSError, ValueError):
+                data = json.loads(resp.read().decode("utf-8"))
+                self.last_status = resp.status
+                return data
+        except urllib.error.HTTPError as exc:
+            self.last_status = exc.code
             return None
+        except (urllib.error.URLError, OSError, ValueError):
+            self.last_status = None
+            return None
+
+    @property
+    def unauthorized(self) -> bool:
+        """Last ping was refused by the server (signed out / 30-day session over)."""
+        return self.last_status == 401
 
     def post_activities(self, activities: list[dict]) -> bool:
         body = json.dumps({"activities": activities}).encode("utf-8")

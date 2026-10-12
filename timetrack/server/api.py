@@ -30,6 +30,9 @@ api_bp = Blueprint("api", __name__, url_prefix="/api/v1")
 
 _VALID_CATEGORIES = {"productive", "unproductive", "neutral"}
 
+SESSION_DAYS = 30
+SESSION_SECONDS = SESSION_DAYS * 24 * 3600
+
 
 def _token_from_request() -> str | None:
     auth = request.headers.get("Authorization", "")
@@ -49,6 +52,13 @@ def token_required(view):
         ).scalar_one_or_none()
         if user is None or not user.enabled:
             return jsonify({"error": "invalid token"}), 401
+        now = time.time()
+        if user.token_issued_at is None:
+            # Tokens from before sessions existed start their 30 days now.
+            user.token_issued_at = now
+            db.session.commit()
+        elif now - user.token_issued_at > SESSION_SECONDS:
+            return jsonify({"error": "session expired"}), 401
         g.agent_user = user
         return view(*args, **kwargs)
 
@@ -73,10 +83,15 @@ def agent_login():
     if user is None or not user.enabled or not user.check_password(password):
         return jsonify({"error": "invalid username or password"}), 401
 
-    # Ensure a token always exists
-    if not user.api_token:
+    # New 30-day session; an expired one gets a fresh token. A still-valid session is
+    # shared so signing in on a second device doesn't log out the first.
+    now = time.time()
+    expired = user.token_issued_at is not None and now - user.token_issued_at > SESSION_SECONDS
+    if not user.api_token or expired:
         user.rotate_token()
-        db.session.commit()
+    if user.token_issued_at is None or expired:
+        user.token_issued_at = now
+    db.session.commit()
 
     settings = get_settings(user.organization_id or 1)
     return jsonify(
