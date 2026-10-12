@@ -274,6 +274,7 @@ class AgentTray:
                 default=use_default,
             ),
             pystray.MenuItem("Sync now", self._flush_now),
+            pystray.MenuItem("Preferences…", self._open_preferences),
             pystray.Menu.SEPARATOR,
             pystray.MenuItem("Sign out", self._sign_out),
             pystray.MenuItem("Quit", self._quit),
@@ -305,6 +306,11 @@ class AgentTray:
     def _open_dashboard(self, icon=None, item=None) -> None:
         url = self.agent.config.server_url.rstrip("/") + "/me"
         webbrowser.open(url)
+
+    def _open_preferences(self, icon=None, item=None) -> None:
+        from .prefs_ui import open_preferences
+
+        open_preferences(self.agent)
 
     def _flush_now(self, icon=None, item=None) -> None:
         a, s = self.agent.flush()

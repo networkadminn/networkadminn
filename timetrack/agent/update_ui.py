@@ -46,13 +46,15 @@ def _snooze(state_dir: str, version: str) -> None:
         pass
 
 
-def maybe_prompt_update(update: dict | None, *, server_url: str, state_dir: str) -> None:
+def maybe_prompt_update(
+    update: dict | None, *, server_url: str, state_dir: str, force: bool = False
+) -> None:
     """Show the popup in its own thread if an update is offered and not snoozed."""
     global _showing
     if not isinstance(update, dict) or not update.get("latest") or not update.get("url"):
         return
     latest = str(update["latest"])
-    if _snoozed(state_dir, latest):
+    if not force and _snoozed(state_dir, latest):
         return
     with _lock:
         if _showing:
