@@ -134,6 +134,22 @@ class ServerClient:
         except (urllib.error.URLError, OSError, ValueError):
             return None
 
+    def fetch_tray_day(self) -> dict | None:
+        req = urllib.request.Request(
+            self._url("/api/v1/tray-day"), headers=self._headers(), method="GET"
+        )
+        try:
+            with urllib.request.urlopen(req, timeout=self.timeout) as resp:
+                data = json.loads(resp.read().decode("utf-8"))
+                self.last_status = resp.status
+                return data if data.get("ok") else None
+        except urllib.error.HTTPError as exc:
+            self.last_status = exc.code
+            return None
+        except (urllib.error.URLError, OSError, ValueError):
+            self.last_status = None
+            return None
+
     def login(self, username: str, password: str) -> dict | None:
         """Exchange username/password for an API token (first-run desktop login)."""
         body = json.dumps({"username": username, "password": password}).encode("utf-8")

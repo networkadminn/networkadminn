@@ -64,6 +64,7 @@ from .models import (
     Activity,
     ManualEntry,
     OfflineRequest,
+    PrivatePeriod,
     Project,
     Screenshot,
     User,
@@ -991,6 +992,109 @@ def _employee_day_context(user: User, day: datetime, *, is_self: bool) -> dict:
         ),
         "ai_report": ai_report,
         "gemini_configured": gemini_configured,
+    }
+
+
+def tray_day_json_for_user(user: User) -> dict:
+    """Compact today snapshot for the desktop tray flyout (agent API)."""
+    day = _parse_day(None)
+    start, end = day_bounds(day, tz_name=_tz())
+    acts = _activities_for(user.id, day)
+    summary = summarize(acts, start, end)
+    manual = _manual_for(user.id, day)
+    manual_seconds = sum(m.duration for m in manual)
+    desktime_seconds = summary.desktime_seconds(manual_seconds)
+    expected = _expected_seconds()
+    settings = get_settings(user.organization_id or 1)
+    cfg = current_app.config["TIMETRACK_SERVER_CONFIG"]
+    now_ts = datetime.now().timestamp()
+    last = _last_seen(user.id)
+    is_online = _is_online(user, last, now_ts, cfg.online_window)
+    is_today = day.date() == today_tz(_tz())
+    office_start = float(settings.office_start_hour or settings.expected_arrival_hour or 9.5)
+    office_end = float(settings.office_end_hour or 18.5)
+
+    private_seconds = 0.0
+    for period in db.session.execute(
+        db.select(PrivatePeriod).filter(
+            PrivatePeriod.user_id == user.id,
+            PrivatePeriod.start_ts < end,
+        )
+    ).scalars():
+        pend = period.end_ts
+        if pend is None:
+            pend = now_ts if period.active and is_today else period.start_ts
+        clip_start = max(float(period.start_ts), start)
+        clip_end = min(float(pend), end)
+        if clip_end > clip_start:
+            private_seconds += clip_end - clip_start
+
+    cat_total = (
+        summary.productive_seconds
+        + summary.neutral_seconds
+        + summary.unproductive_seconds
+        + summary.idle_seconds
+    ) or 1.0
+    mix_pct = {
+        "productive": round(100.0 * summary.productive_seconds / cat_total, 1),
+        "neutral": round(100.0 * summary.neutral_seconds / cat_total, 1),
+        "unproductive": round(100.0 * summary.unproductive_seconds / cat_total, 1),
+        "idle": round(100.0 * summary.idle_seconds / cat_total, 1),
+    }
+
+    now_pct = None
+    view_start_h, view_end_h = bar_view_hours(
+        office_start_h=office_start,
+        office_end_h=office_end,
+        day_start_ts=start,
+        arrival_ts=summary.arrival_ts,
+        last_seen_ts=summary.last_seen_ts,
+        manual_ranges=[(float(m.start_ts), float(m.end_ts)) for m in manual],
+        is_today=is_today,
+        is_online=is_online,
+        now_ts=now_tz(_tz()).timestamp() if is_today else None,
+        bar_mode="work",
+    )
+    view_start = start + view_start_h * 3600.0
+    view_end = start + view_end_h * 3600.0
+    view_span = max(1.0, view_end - view_start)
+    if is_today:
+        now_local = now_tz(_tz()).timestamp()
+        if view_start <= now_local <= view_end:
+            now_pct = round(((now_local - view_start) / view_span) * 100.0, 2)
+
+    top_apps = []
+    ranked = sorted(apps_with_share(summary), key=lambda r: float(r.get("seconds") or 0), reverse=True)
+    for row in ranked[:3]:
+        top_apps.append(
+            {
+                "app": row.get("app") or "",
+                "seconds": float(row.get("seconds") or 0),
+                "label": row.get("app") or "—",
+            }
+        )
+
+    office_label = f"{format_hour_short(office_start)} – {format_hour_short(office_end)}"
+    if _tz() == "Asia/Kolkata":
+        office_label += " IST"
+
+    return {
+        "day": day.strftime("%Y-%m-%d"),
+        "arrived": format_clock(summary.arrival_ts, tz_name=_tz()),
+        "arrival_ts": summary.arrival_ts,
+        "desktime_seconds": desktime_seconds,
+        "productive_seconds": summary.productive_seconds,
+        "span_seconds": summary.span_seconds,
+        "idle_seconds": summary.idle_seconds,
+        "private_seconds": private_seconds,
+        "dt_productivity": summary.desktime_productivity_pct,
+        "dt_effectiveness": summary.desktime_effectiveness_pct(expected),
+        "expected_seconds": expected,
+        "office_hours_label": office_label,
+        "is_online": is_online,
+        "now_pct": now_pct,
+        "mix_pct": mix_pct,
+        "top_apps": top_apps,
     }
 
 

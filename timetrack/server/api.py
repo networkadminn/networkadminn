@@ -213,6 +213,16 @@ def ping():
     )
 
 
+@api_bp.route("/tray-day")
+@token_required
+def tray_day():
+    """Today snapshot for the desktop tray flyout (rings, KPIs, top apps)."""
+    from .views import tray_day_json_for_user
+
+    u: User = g.agent_user
+    return jsonify({"ok": True, **tray_day_json_for_user(u)})
+
+
 @api_bp.route("/agent/stop", methods=["POST"])
 @token_required
 def agent_stop():
