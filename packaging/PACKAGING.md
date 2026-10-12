@@ -61,6 +61,7 @@ powershell -ExecutionPolicy Bypass -File packaging\build_windows.ps1
 #   powershell -ExecutionPolicy Bypass -File dist\windows\install.ps1 -Launch
 
 # macOS (on a Mac, or GitHub Actions "macOS dmg" on v* tags)
+# Full guide (Intel vs ARM, venv, CI): docs/MAC_BUILD.md
 bash packaging/build_mac.sh
 # → dist/releases/esstracker-*-arm64.dmg (Apple Silicon runner or Mac)
 # → dist/releases/esstracker-*-x86_64.dmg (Intel Mac only)
