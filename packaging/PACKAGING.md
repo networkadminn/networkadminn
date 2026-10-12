@@ -6,7 +6,7 @@ esstracker follows the same distribution model as DeskTime-class trackers:
 |----|----------|------------|-------|
 | Linux | `.deb` | Linux amd64 | Ready — Applications + tray + Sign in |
 | Windows | `.exe` | Windows 10/11 | SmartScreen until Authenticode-signed |
-| macOS | `.dmg` | macOS | Must codesign + notarize; drag to `/Applications` |
+| macOS | `.dmg` | macOS (CI: `macOS dmg` workflow on tag `v*`) | arm64 on GitHub; Intel via local `build_mac.sh`; codesign + notarize for wide distribution |
 
 ## Why we cannot “just build everything” on one Linux box
 
@@ -60,8 +60,10 @@ powershell -ExecutionPolicy Bypass -File packaging\build_windows.ps1
 # Install on an employee PC:
 #   powershell -ExecutionPolicy Bypass -File dist\windows\install.ps1 -Launch
 
-# macOS (on a Mac)
+# macOS (on a Mac, or GitHub Actions "macOS dmg" on v* tags)
 bash packaging/build_mac.sh
+# → dist/releases/esstracker-*-arm64.dmg (Apple Silicon runner or Mac)
+# → dist/releases/esstracker-*-x86_64.dmg (Intel Mac only)
 # then codesign + notarize before public download
 ```
 

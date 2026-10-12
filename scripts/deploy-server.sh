@@ -86,9 +86,11 @@ LINUX_RUN="$(gh run list -R "${REPO}" -w "Linux deb" -L 15 --json databaseId,hea
   | jq -r --arg t "${TAG}" '.[] | select(.conclusion=="success" and .headBranch==$t) | .databaseId' | head -1)"
 WIN_RUN="$(gh run list -R "${REPO}" -w "Windows installer" -L 15 --json databaseId,headBranch,conclusion \
   | jq -r --arg t "${TAG}" '.[] | select(.conclusion=="success" and .headBranch==$t) | .databaseId' | head -1)"
+MAC_RUN="$(gh run list -R "${REPO}" -w "macOS dmg" -L 15 --json databaseId,headBranch,conclusion \
+  | jq -r --arg t "${TAG}" '.[] | select(.conclusion=="success" and .headBranch==$t) | .databaseId' | head -1)"
 
-if [[ -z "${LINUX_RUN}" && -z "${WIN_RUN}" ]]; then
-  echo "WARN: no successful Linux/Windows runs found for tag/branch ${TAG}. Try: --tag vX.Y.Z"
+if [[ -z "${LINUX_RUN}" && -z "${WIN_RUN}" && -z "${MAC_RUN}" ]]; then
+  echo "WARN: no successful Linux/Windows/macOS runs found for tag/branch ${TAG}. Try: --tag vX.Y.Z"
   exit 0
 fi
 
@@ -98,7 +100,10 @@ fi
 if [[ -n "${WIN_RUN}" ]]; then
   gh run download "${WIN_RUN}" -R "${REPO}" -D "${TMP}/win" || true
 fi
+if [[ -n "${MAC_RUN}" ]]; then
+  gh run download "${MAC_RUN}" -R "${REPO}" -D "${TMP}/mac" || true
+fi
 
-find "${TMP}" -type f \( -name '*.deb' -o -name '*.exe' -o -name '*.zip' \) -exec cp -av {} "${RELEASES_DIR}/" \;
+find "${TMP}" -type f \( -name '*.deb' -o -name '*.exe' -o -name '*.zip' -o -name '*.dmg' \) -exec cp -av {} "${RELEASES_DIR}/" \;
 echo "==> Releases:"
 ls -la "${RELEASES_DIR}"/*"${TAG#v}"* 2>/dev/null || ls -la "${RELEASES_DIR}" | tail -5

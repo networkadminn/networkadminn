@@ -1,0 +1,37 @@
+name: macOS dmg
+
+on:
+  workflow_dispatch:
+  push:
+    tags: ["v*"]
+
+jobs:
+  build:
+    # GitHub-hosted macOS runners are Apple Silicon → arm64 .dmg.
+    # Intel (x86_64): run packaging/build_mac.sh on an Intel Mac (or self-hosted runner).
+    runs-on: macos-14
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Python packages
+        run: |
+          python3 -m pip install -q -U pip wheel
+          python3 -m pip install -q -r requirements.txt "pyinstaller>=6.0" Pillow pyobjc-framework-Quartz
+
+      - name: Build DMG
+        run: bash packaging/build_mac.sh
+
+      - name: Check DMG
+        run: |
+          ls -la dist/releases/*.dmg
+          test -s dist/releases/esstracker-*-arm64.dmg
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: esstracker-macos-arm64
+          path: dist/releases/esstracker-*-arm64.dmg
+          if-no-files-found: error
