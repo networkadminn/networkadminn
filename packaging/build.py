@@ -367,6 +367,10 @@ def build_deb() -> Path:
         autostart / "com.euclidee.esstracker.Agent.desktop",
     )
     shutil.copy2(
+        LINUX / "com.euclidee.esstracker.Agent-url.desktop",
+        appsdir / "com.euclidee.esstracker.Agent-url.desktop",
+    )
+    shutil.copy2(
         LINUX / "com.euclidee.esstracker.metainfo.xml",
         metadird / "com.euclidee.esstracker.metainfo.xml",
     )
@@ -426,6 +430,9 @@ set -e
 rm -f /usr/share/applications/com.euclidee.esstracker.Server.desktop
 if command -v update-desktop-database >/dev/null 2>&1; then
   update-desktop-database -q /usr/share/applications || true
+fi
+if command -v xdg-mime >/dev/null 2>&1; then
+  xdg-mime default com.euclidee.esstracker.Agent-url.desktop x-scheme-handler/esstracker 2>/dev/null || true
 fi
 if command -v gtk-update-icon-cache >/dev/null 2>&1; then
   gtk-update-icon-cache -f -t /usr/share/icons/hicolor >/dev/null 2>&1 || true

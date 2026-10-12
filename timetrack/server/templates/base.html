@@ -7,7 +7,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link rel="icon" type="image/png" href="{{ url_for('static', filename='brand/ess-mark.png') }}" />
-  <link rel="stylesheet" href="{{ url_for('static', filename='server.css') }}?v=57" />
+  <link rel="stylesheet" href="{{ url_for('static', filename='server.css') }}?v=58" />
   {% block head %}{% endblock %}
 </head>
 <body class="{% if current_user.is_authenticated %}app-shell{% else %}auth-shell{% endif %}">
@@ -126,12 +126,37 @@
         {% endif %}
       </div>
       <div class="content-top-right">
-        <div class="top-who">
-          <span class="top-who-meta">
-            <strong>{{ current_user.name }}</strong>
-            <small>{% if current_user.is_admin %}Company admin{% else %}Employee{% endif %}</small>
-          </span>
-          <span class="who-avatar" aria-hidden="true">{{ current_user.name[0]|upper }}</span>
+        <div class="profile-menu" data-profile-menu>
+          <button type="button" class="top-who profile-trigger" aria-expanded="false" aria-haspopup="true" data-profile-trigger>
+            <span class="top-who-meta">
+              <strong>{{ current_user.name }}</strong>
+              <small>{{ profile_org_name }}</small>
+            </span>
+            <span class="who-avatar" aria-hidden="true">{{ current_user.name[0]|upper }}</span>
+          </button>
+          <div class="profile-dropdown" role="menu" hidden data-profile-panel>
+            <div class="profile-dropdown-head">
+              <strong>{{ current_user.name }}</strong>
+              <span class="muted">{{ profile_org_name }}</span>
+              {% if profile_agent_online %}
+              <span class="profile-agent-pill is-on">Desktop app connected{% if profile_agent_version %} · v{{ profile_agent_version }}{% endif %}</span>
+              {% else %}
+              <span class="profile-agent-pill">Desktop app not detected</span>
+              {% endif %}
+            </div>
+            <a class="profile-dropdown-item" role="menuitem" href="{{ url_for('views.me') if not current_user.is_admin else url_for('views.admin') }}">
+              Profile
+            </a>
+            <a class="profile-dropdown-item" role="menuitem" href="esstracker://launch" data-launch-esstracker>
+              Launch esstracker app
+            </a>
+            <a class="profile-dropdown-item" role="menuitem" href="{{ url_for('views.download_page') }}">
+              Download esstracker app
+            </a>
+            <a class="profile-dropdown-item profile-dropdown-danger" role="menuitem" href="{{ url_for('auth.logout') }}">
+              Log out
+            </a>
+          </div>
         </div>
       </div>
     </header>
@@ -163,6 +188,40 @@
   </div>
   {% endif %}
   {% block overlays %}{% endblock %}
+  {% if current_user.is_authenticated %}
+  <script>
+  (function () {
+    var root = document.querySelector("[data-profile-menu]");
+    if (!root) return;
+    var btn = root.querySelector("[data-profile-trigger]");
+    var panel = root.querySelector("[data-profile-panel]");
+    function close() {
+      panel.hidden = true;
+      btn.setAttribute("aria-expanded", "false");
+    }
+    function toggle() {
+      var open = panel.hidden;
+      panel.hidden = !open;
+      btn.setAttribute("aria-expanded", open ? "true" : "false");
+    }
+    btn.addEventListener("click", function (e) {
+      e.stopPropagation();
+      toggle();
+    });
+    document.addEventListener("click", function (e) {
+      if (!root.contains(e.target)) close();
+    });
+    document.addEventListener("keydown", function (e) {
+      if (e.key === "Escape") close();
+    });
+    root.querySelectorAll("[data-launch-esstracker]").forEach(function (a) {
+      a.addEventListener("click", function () {
+        setTimeout(close, 100);
+      });
+    });
+  })();
+  </script>
+  {% endif %}
   {% block scripts %}{% endblock %}
 </body>
 </html>

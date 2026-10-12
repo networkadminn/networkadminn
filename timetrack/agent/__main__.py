@@ -205,6 +205,20 @@ def _cmd_logout(args: argparse.Namespace) -> int:
     return 0
 
 
+def _cmd_open_url(args: argparse.Namespace) -> int:
+    """Handle esstracker:// links from the browser (DeskTime-style launch)."""
+    url = (args.url or "").strip()
+    if url:
+        print(f"[esstracker] open {url}")
+    run_args = argparse.Namespace(
+        config=args.config,
+        no_tray=False,
+        no_login=False,
+        login=False,
+    )
+    return _cmd_run(run_args)
+
+
 def build_parser() -> argparse.ArgumentParser:
     p = argparse.ArgumentParser(prog="esstracker-agent", description=__doc__)
     p.add_argument("-c", "--config", help="path to agent.toml")
@@ -235,12 +249,17 @@ def build_parser() -> argparse.ArgumentParser:
     pp = sub.add_parser("private", help="toggle DeskTime-style Private Time")
     pp.add_argument("mode", choices=("on", "off", "status"))
     pp.set_defaults(func=_cmd_private)
+    ou = sub.add_parser("open-url", help="handle esstracker:// URL from the browser")
+    ou.add_argument("url", help="esstracker://…")
+    ou.set_defaults(func=_cmd_open_url)
     return p
 
 
 def main(argv: list[str] | None = None) -> None:
     raw = list(sys.argv[1:] if argv is None else argv)
-    commands = {"run", "ping", "status", "flush", "private", "logout"}
+    if raw and raw[0].startswith("esstracker://"):
+        raw = ["open-url", raw[0]]
+    commands = {"run", "ping", "status", "flush", "private", "logout", "open-url"}
     if not raw or raw[0] not in commands:
         if not (raw and raw[0] in ("-h", "--help")):
             raw = ["run", *raw]

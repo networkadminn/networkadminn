@@ -80,6 +80,26 @@ def create_app(config: ServerConfig | None = None, **overrides) -> Flask:
         }
 
     @app.context_processor
+    def inject_profile_menu():
+        import time
+
+        from flask_login import current_user
+
+        if not current_user.is_authenticated:
+            return {}
+        org = getattr(current_user, "organization", None)
+        org_name = (org.name if org else "") or "ESS Tracker"
+        agent_online = False
+        ping = current_user.last_agent_ping
+        if ping and not current_user.agent_stopped_at:
+            agent_online = (time.time() - float(ping)) < 300.0
+        return {
+            "profile_org_name": org_name,
+            "profile_agent_online": agent_online,
+            "profile_agent_version": current_user.agent_version or "",
+        }
+
+    @app.context_processor
     def inject_desk_flags():
         from flask_login import current_user
 

@@ -50,6 +50,12 @@ Name: "{userstartup}\esstracker"; Filename: "{app}\esstracker-Agent.exe"; Workin
 [Run]
 Filename: "{app}\esstracker-Agent.exe"; WorkingDir: "{app}"; Description: "Launch esstracker now"; Flags: nowait postinstall skipifsilent
 
+[Registry]
+Root: HKCU; Subkey: "Software\Classes\esstracker"; ValueType: string; ValueName: ""; ValueData: "URL:esstracker"; Flags: uninsdeletekey
+Root: HKCU; Subkey: "Software\Classes\esstracker"; ValueName: "URL Protocol"; ValueType: string; ValueData: ""
+Root: HKCU; Subkey: "Software\Classes\esstracker\DefaultIcon"; ValueType: string; ValueName: ""; ValueData: "{app}\esstracker-Agent.exe,0"
+Root: HKCU; Subkey: "Software\Classes\esstracker\shell\open\command"; ValueType: string; ValueName: ""; ValueData: """{app}\esstracker-Agent.exe"" ""%1"""
+
 [UninstallRun]
 Filename: "{sys}\taskkill.exe"; Parameters: "/IM esstracker-Agent.exe /F"; Flags: runhidden; RunOnceId: "KillAgent"
 

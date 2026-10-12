@@ -1,0 +1,8 @@
+[Desktop Entry]
+Type=Application
+Name=esstracker link handler
+NoDisplay=true
+Exec=esstracker-agent open-url %u
+Icon=esstracker
+MimeType=x-scheme-handler/esstracker;
+Terminal=false
