@@ -1401,6 +1401,33 @@ def admin_user(user_id: int):
     )
 
 
+@views_bp.route("/admin/user/<int:user_id>/categories", methods=["POST"])
+@admin_required
+def admin_user_categories(user_id: int):
+    from .settings_util import persist_category_rules
+    from .tenancy import current_org_id
+
+    _org_user_or_404(user_id)
+    day = _parse_day(request.form.get("day") or request.args.get("day"))
+    day_s = day.strftime("%Y-%m-%d")
+    app_rows = list(
+        zip(request.form.getlist("app_name"), request.form.getlist("app_category"))
+    )
+    site_rows = list(
+        zip(request.form.getlist("site_name"), request.form.getlist("site_category"))
+    )
+    if not app_rows and not site_rows:
+        flash("No apps or sites to update.", "error")
+        return redirect(url_for("views.admin_user", user_id=user_id, day=day_s))
+
+    changed = persist_category_rules(current_org_id(), app_rows, site_rows)
+    flash(
+        f"Categories saved for the whole team. Updated {changed} activities (last 90 days).",
+        "info",
+    )
+    return redirect(url_for("views.admin_user", user_id=user_id, day=day_s))
+
+
 @views_bp.route("/admin/user/<int:user_id>/ai-report/status")
 @admin_required
 def admin_user_ai_report_status(user_id: int):
@@ -1541,7 +1568,7 @@ def _tracked_for_categories(days: int = 14, limit: int = 60) -> tuple[list[dict]
 @admin_required
 def settings_rules():
     if request.method == "POST":
-        from .settings_util import recategorize_activities, save_tracked_category_rules
+        from .settings_util import persist_category_rules
         from .tenancy import current_org_id
 
         org_id = current_org_id()
@@ -1551,12 +1578,7 @@ def settings_rules():
         site_rows = list(
             zip(request.form.getlist("site_name"), request.form.getlist("site_category"))
         )
-        payload = save_tracked_category_rules(org_id, app_rows, site_rows)
-        path = _rules_path()
-        os.makedirs(os.path.dirname(path), exist_ok=True)
-        with open(path, "w", encoding="utf-8") as fh:
-            json.dump(payload, fh, indent=2)
-        changed = recategorize_activities(org_id)
+        changed = persist_category_rules(org_id, app_rows, site_rows)
         flash(
             f"Categories saved. Updated {changed} activities (last 90 days) — "
             "user bars and scores now match your choices.",

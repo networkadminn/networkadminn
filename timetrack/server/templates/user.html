@@ -15,7 +15,8 @@
           <span class="btn-daily">{{ office_hours_label }}</span>
           {% if off_day %}<span class="pill">Off day</span>
           {% elif absent %}<span class="pill warn">Absent</span>
-          {% elif late %}<span class="pill warn">Late</span>{% endif %}
+          {% elif late %}<span class="pill warn">Late</span>
+          {% elif early %}<span class="pill early">Early</span>{% endif %}
           {% if is_online %}<span class="pill live">Online</span>{% endif %}
         </div>
       </div>
@@ -122,86 +123,120 @@
     </div>
   </section>
 
-  <div class="two-col dash-admin-cols">
-    <section class="panel dash-panel">
-      <div class="panel-head">
-        <h2>Websites &amp; domains</h2>
-        <span class="muted">
-          <a href="{{ url_for('views.admin_user_websites', user_id=subject.id, day=day) }}">All URLs</a>
-          · <a href="{{ url_for('views.admin_user_websites', user_id=subject.id, day=day, range=7) }}">7 days</a>
-          · <a href="{{ url_for('views.admin_user_websites', user_id=subject.id, day=day, range=30) }}">30 days</a>
-        </span>
-      </div>
-      {% if sites %}
-      <table class="apps">
-        <thead><tr><th>Site</th><th>Category</th><th>Share</th><th class="num">Time</th></tr></thead>
-        <tbody>
-          {% for s in sites %}
-          <tr>
-            <td class="app-name">{{ s.domain }}</td>
-            <td><span class="tag {{ s.category }}">{{ s.category }}</span></td>
-            <td>
-              <div class="minibar"><div class="minibar-fill {{ s.category }}" style="width:{{ s.pct }}%"></div></div>
-              {{ s.pct }}%
-            </td>
-            <td class="num">{{ humanize(s.seconds) }}</td>
-          </tr>
-          {% endfor %}
-        </tbody>
-      </table>
-      {% else %}
-      <p class="empty">No websites detected for this day.</p>
-      {% endif %}
-      {% if url_visits %}
-      <h3 style="margin:16px 0 8px;font-size:14px">Latest URLs</h3>
-      <table class="apps">
-        <thead><tr><th>Time</th><th>Page</th><th class="num">Time spent</th></tr></thead>
-        <tbody>
-          {% for v in url_visits %}
-          <tr>
-            <td class="num">{{ v.start_ts|clock }}</td>
-            <td class="title-cell" title="{{ v.url or v.title }}">
-              <span class="site-chip">{{ v.domain }}</span>
-              {% if v.url %}<a href="{{ v.url }}" target="_blank" rel="noopener noreferrer">{{ (v.title or v.url)[:70] }}</a>
-              {% else %}{{ (v.title or '—')[:70] }}{% endif %}
-            </td>
-            <td class="num">{{ humanize(v.seconds) }}</td>
-          </tr>
-          {% endfor %}
-        </tbody>
-      </table>
-      <p class="muted" style="margin-top:6px"><a href="{{ url_for('views.admin_user_websites', user_id=subject.id, day=day) }}">See every URL for this day →</a></p>
-      {% endif %}
-    </section>
-    <section class="panel dash-panel">
-      <div class="panel-head">
-        <h2>Applications</h2>
-        <span class="muted">share of active time</span>
-      </div>
-      {% if apps %}
-      <table class="apps">
-        <thead>
-          <tr><th>Application</th><th>Category</th><th>Share</th><th class="num">Time</th></tr>
-        </thead>
-        <tbody>
-          {% for a in apps[:15] %}
-          <tr>
-            <td class="app-name">{{ a.app }}</td>
-            <td><span class="tag {{ a.category }}">{{ a.category }}</span></td>
-            <td>
-              <div class="minibar"><div class="minibar-fill {{ a.category }}" style="width:{{ a.pct }}%"></div></div>
-              {{ a.pct }}%
-            </td>
-            <td class="num">{{ humanize(a.seconds) }}</td>
-          </tr>
-          {% endfor %}
-        </tbody>
-      </table>
-      {% else %}
-      <div class="empty-state compact"><p>No application data for this day.</p></div>
-      {% endif %}
-    </section>
-  </div>
+  {% if apps or sites %}
+  <form method="post" action="{{ url_for('views.admin_user_categories', user_id=subject.id) }}" class="cat-form admin-user-cat-form" id="admin-user-cat-form">
+    <input type="hidden" name="day" value="{{ day }}" />
+    <div class="two-col dash-admin-cols">
+      <section class="panel dash-panel">
+        <div class="panel-head">
+          <h2>Websites &amp; domains</h2>
+          <span class="muted">
+            set category ·
+            <a href="{{ url_for('views.admin_user_websites', user_id=subject.id, day=day) }}">All URLs</a>
+            · <a href="{{ url_for('views.admin_user_websites', user_id=subject.id, day=day, range=7) }}">7 days</a>
+            · <a href="{{ url_for('views.admin_user_websites', user_id=subject.id, day=day, range=30) }}">30 days</a>
+          </span>
+        </div>
+        {% if sites %}
+        <table class="apps cat-inline-table">
+          <thead><tr><th>Site</th><th>Category</th><th>Share</th><th class="num">Time</th></tr></thead>
+          <tbody>
+            {% for s in sites %}
+            <tr class="cat-row" data-cat="{{ s.category }}">
+              <td class="app-name">
+                <input type="hidden" name="site_name" value="{{ s.domain }}" />
+                {{ s.domain }}
+              </td>
+              <td>
+                <select class="cat-select {{ s.category }}" name="site_category" aria-label="Category for {{ s.domain }}">
+                  <option value="productive" {% if s.category == 'productive' %}selected{% endif %}>Productive</option>
+                  <option value="neutral" {% if s.category == 'neutral' %}selected{% endif %}>Neutral</option>
+                  <option value="unproductive" {% if s.category == 'unproductive' %}selected{% endif %}>Unproductive</option>
+                </select>
+              </td>
+              <td>
+                <div class="minibar"><div class="minibar-fill {{ s.category }}" style="width:{{ s.pct }}%"></div></div>
+                {{ s.pct }}%
+              </td>
+              <td class="num">{{ humanize(s.seconds) }}</td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+        {% else %}
+        <p class="empty">No websites detected for this day.</p>
+        {% endif %}
+      </section>
+      <section class="panel dash-panel">
+        <div class="panel-head">
+          <h2>Applications</h2>
+          <span class="muted">set category · share of active time</span>
+        </div>
+        {% if apps %}
+        <table class="apps cat-inline-table">
+          <thead>
+            <tr><th>Application</th><th>Category</th><th>Share</th><th class="num">Time</th></tr>
+          </thead>
+          <tbody>
+            {% for a in apps[:15] %}
+            <tr class="cat-row" data-cat="{{ a.category }}">
+              <td class="app-name">
+                <input type="hidden" name="app_name" value="{{ a.app }}" />
+                {{ a.app }}
+              </td>
+              <td>
+                <select class="cat-select {{ a.category }}" name="app_category" aria-label="Category for {{ a.app }}">
+                  <option value="productive" {% if a.category == 'productive' %}selected{% endif %}>Productive</option>
+                  <option value="neutral" {% if a.category == 'neutral' %}selected{% endif %}>Neutral</option>
+                  <option value="unproductive" {% if a.category == 'unproductive' %}selected{% endif %}>Unproductive</option>
+                </select>
+              </td>
+              <td>
+                <div class="minibar"><div class="minibar-fill {{ a.category }}" style="width:{{ a.pct }}%"></div></div>
+                {{ a.pct }}%
+              </td>
+              <td class="num">{{ humanize(a.seconds) }}</td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+        {% else %}
+        <div class="empty-state compact"><p>No application data for this day.</p></div>
+        {% endif %}
+      </section>
+    </div>
+    <div class="cat-savebar form-actions">
+      <button class="btn primary inline" type="submit">Save categories</button>
+      <p class="muted">Applies to all employees. Past 90 days of activity is recalculated.</p>
+      <a class="btn ghost inline" href="{{ url_for('views.settings_rules') }}">All apps &amp; sites</a>
+    </div>
+  </form>
+  {% endif %}
+
+  {% if url_visits %}
+  <section class="panel dash-panel">
+    <div class="panel-head">
+      <h2>Latest URLs</h2>
+      <span class="muted"><a href="{{ url_for('views.admin_user_websites', user_id=subject.id, day=day) }}">See every URL for this day</a></span>
+    </div>
+    <table class="apps">
+      <thead><tr><th>Time</th><th>Page</th><th class="num">Time spent</th></tr></thead>
+      <tbody>
+        {% for v in url_visits %}
+        <tr>
+          <td class="num">{{ v.start_ts|clock }}</td>
+          <td class="title-cell" title="{{ v.url or v.title }}">
+            <span class="site-chip">{{ v.domain }}</span>
+            {% if v.url %}<a href="{{ v.url }}" target="_blank" rel="noopener noreferrer">{{ (v.title or v.url)[:70] }}</a>
+            {% else %}{{ (v.title or '—')[:70] }}{% endif %}
+          </td>
+          <td class="num">{{ humanize(v.seconds) }}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </section>
+  {% endif %}
 
   <section class="panel dash-panel" id="apps">
     <div class="panel-head">
@@ -325,6 +360,19 @@
 <script src="{{ url_for('static', filename='ai-report-drawer.js') }}?v=2"></script>
 {% endif %}
 <script src="{{ url_for('static', filename='prod-bar.js') }}?v=19"></script>
+<script>
+(function () {
+  var form = document.getElementById("admin-user-cat-form");
+  if (!form) return;
+  form.querySelectorAll(".cat-select").forEach(function (sel) {
+    sel.addEventListener("change", function () {
+      sel.className = "cat-select " + sel.value;
+      var row = sel.closest(".cat-row");
+      if (row) row.setAttribute("data-cat", sel.value);
+    });
+  });
+})();
+</script>
 <script>
   const DATA = {{ charts|tojson }};
   const grid = "rgba(15, 41, 28, 0.07)";

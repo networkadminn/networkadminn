@@ -83,6 +83,25 @@ def test_saving_rules_recategorizes_past_activity(app):
         assert act.category == "unproductive"
 
 
+def test_admin_user_page_category_form_recategorizes(app):
+    client = app.test_client()
+    client.post("/login", data={"username": "boss", "password": "bosspass"})
+    emp_id = app.config["_EMP_ID"]
+    page = client.get(f"/admin/user/{emp_id}")
+    assert page.status_code == 200
+    assert b"Save categories" in page.data
+    assert b'name="app_name"' in page.data
+    resp = client.post(
+        f"/admin/user/{emp_id}/categories",
+        data={"app_name": "slack", "app_category": "neutral", "day": "2020-01-01"},
+    )
+    assert resp.status_code == 302
+    assert f"/admin/user/{emp_id}" in resp.headers["Location"]
+    with app.app_context():
+        act = db.session.execute(db.select(Activity)).scalar_one()
+        assert act.category == "neutral"
+
+
 def _agent(tmp_path, role):
     from timetrack.agent.agent import Agent
 

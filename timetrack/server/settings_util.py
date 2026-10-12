@@ -271,6 +271,20 @@ def save_tracked_category_rules(
     return _dedupe_rules(payload)
 
 
+def persist_category_rules(
+    org_id: int,
+    app_rows: list[tuple[str, str]],
+    site_rows: list[tuple[str, str]],
+) -> int:
+    """Write rules.json and recategorize recent activity. Returns rows updated."""
+    payload = save_tracked_category_rules(org_id, app_rows, site_rows)
+    path = rules_path(org_id)
+    os.makedirs(os.path.dirname(path), exist_ok=True)
+    with open(path, "w", encoding="utf-8") as fh:
+        json.dump(payload, fh, indent=2)
+    return recategorize_activities(org_id)
+
+
 def ensure_schema() -> None:
     """Add new columns/tables for upgrades on existing SQLite databases."""
     db.create_all()
