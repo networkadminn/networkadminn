@@ -410,7 +410,7 @@ Section: utils
 Priority: optional
 Architecture: {deb_arch}
 Maintainer: ESS Tracker <noreply@euclideesolutions.com>
-Depends: libc6 (>= 2.31), libgtk-3-0t64 | libgtk-3-0, libnotify-bin, libayatana-appindicator3-1 | libappindicator3-1, gir1.2-gtk-3.0, gir1.2-ayatanaappindicator3-0.1 | gir1.2-appindicator3-0.1, python3-gi, libx11-6
+Depends: libc6 (>= 2.31), libgtk-3-0t64 | libgtk-3-0, libnotify-bin, libayatana-appindicator3-1 | libappindicator3-1, gir1.2-gtk-3.0, gir1.2-ayatanaappindicator3-0.1 | gir1.2-appindicator3-0.1, python3-gi, python3-tk, libx11-6
 Recommends: xdotool, x11-utils, xprintidle, gnome-shell-extension-appindicator | gnome-shell-extension-ubuntu-appindicators
 Provides: timetrack
 Conflicts: timetrack

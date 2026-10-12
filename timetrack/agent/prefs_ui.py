@@ -3,39 +3,112 @@
 from __future__ import annotations
 
 import os
+import shutil
+import subprocess
+import sys
 import threading
 import time
 from typing import TYPE_CHECKING
 
 from .. import __version__
 from . import autostart
+from .config import LOCK_PATH, ensure_data_dirs
 
 if TYPE_CHECKING:
     from .agent import Agent
 
 _lock = threading.Lock()
-_open = False
+_spawning = False
+
+
+def _prefs_lock_path() -> str:
+    ensure_data_dirs()
+    return str(LOCK_PATH.parent / "preferences.lock")
+
+
+def _prefs_already_open() -> bool:
+    path = _prefs_lock_path()
+    try:
+        pid = int(open(path, encoding="utf-8").read().strip())
+    except (OSError, ValueError):
+        return False
+    if pid <= 0:
+        return False
+    if sys.platform == "win32":
+        import ctypes
+
+        kernel32 = ctypes.windll.kernel32  # type: ignore[attr-defined]
+        PROCESS_QUERY_LIMITED_INFORMATION = 0x1000
+        STILL_ACTIVE = 259
+        handle = kernel32.OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, False, pid)
+        if not handle:
+            return False
+        code = ctypes.c_ulong()
+        if not kernel32.GetExitCodeProcess(handle, ctypes.byref(code)):
+            kernel32.CloseHandle(handle)
+            return False
+        kernel32.CloseHandle(handle)
+        return int(code.value) == STILL_ACTIVE
+    try:
+        os.kill(pid, 0)
+    except OSError:
+        return False
+    return True
+
+
+def _spawn_prefs_command() -> list[str]:
+    if getattr(sys, "frozen", False):
+        return [sys.executable, "preferences"]
+    agent_bin = shutil.which("esstracker-agent")
+    if agent_bin:
+        return [agent_bin, "preferences"]
+    return [sys.executable, "-m", "timetrack.agent", "preferences"]
 
 
 def open_preferences(agent: Agent) -> None:
-    """Show the window in its own thread (one at a time)."""
-    global _open
+    """Open preferences in a child process (Tk must run on that process main thread)."""
+    global _spawning
     with _lock:
-        if _open:
+        if _spawning or _prefs_already_open():
             return
-        _open = True
+        _spawning = True
+    try:
+        cmd = _spawn_prefs_command()
+        if agent.config.config_path:
+            cmd.extend(["-c", agent.config.config_path])
+        subprocess.Popen(
+            cmd,
+            env=os.environ.copy(),
+            start_new_session=True,
+            close_fds=True,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.PIPE,
+        )
+    except Exception as exc:
+        print(f"[esstracker] could not open preferences: {exc!r}")
+    finally:
+        with _lock:
+            _spawning = False
 
-    def _run() -> None:
-        global _open
+
+def run_preferences_window(agent: Agent) -> None:
+    """Run the Tk window on the main thread (``esstracker-agent preferences``)."""
+    path = _prefs_lock_path()
+    try:
+        with open(path, "w", encoding="utf-8") as fh:
+            fh.write(str(os.getpid()))
+    except OSError as exc:
+        print(f"[esstracker] preferences lock failed: {exc!r}")
+        return
+    try:
+        _window(agent)
+    except Exception as exc:
+        print(f"[esstracker] preferences failed: {exc!r}")
+    finally:
         try:
-            _window(agent)
-        except Exception as exc:
-            print(f"[esstracker] preferences failed: {exc!r}")
-        finally:
-            with _lock:
-                _open = False
-
-    threading.Thread(target=_run, daemon=True, name="esstracker-prefs").start()
+            os.remove(path)
+        except OSError:
+            pass
 
 
 def _window(agent: Agent) -> None:
@@ -147,4 +220,4 @@ def _window(agent: Agent) -> None:
     root.mainloop()
 
 
-__all__ = ["open_preferences"]
+__all__ = ["open_preferences", "run_preferences_window"]

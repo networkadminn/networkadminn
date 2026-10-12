@@ -205,6 +205,18 @@ def _cmd_logout(args: argparse.Namespace) -> int:
     return 0
 
 
+def _cmd_preferences(args: argparse.Namespace) -> int:
+    from .prefs_ui import run_preferences_window
+
+    agent = Agent(load_agent_config(args.config))
+    try:
+        agent.refresh_server_policy()
+        run_preferences_window(agent)
+    finally:
+        agent.buffer.close()
+    return 0
+
+
 def _cmd_open_url(args: argparse.Namespace) -> int:
     """Handle esstracker:// links from the browser (DeskTime-style launch)."""
     url = (args.url or "").strip()
@@ -246,6 +258,9 @@ def build_parser() -> argparse.ArgumentParser:
     sub.add_parser("logout", help="clear saved login (DeskTime sign-out)").set_defaults(
         func=_cmd_logout
     )
+    sub.add_parser("preferences", help="open the preferences window").set_defaults(
+        func=_cmd_preferences
+    )
     pp = sub.add_parser("private", help="toggle DeskTime-style Private Time")
     pp.add_argument("mode", choices=("on", "off", "status"))
     pp.set_defaults(func=_cmd_private)
@@ -259,7 +274,16 @@ def main(argv: list[str] | None = None) -> None:
     raw = list(sys.argv[1:] if argv is None else argv)
     if raw and raw[0].startswith("esstracker://"):
         raw = ["open-url", raw[0]]
-    commands = {"run", "ping", "status", "flush", "private", "logout", "open-url"}
+    commands = {
+        "run",
+        "ping",
+        "status",
+        "flush",
+        "private",
+        "logout",
+        "open-url",
+        "preferences",
+    }
     if not raw or raw[0] not in commands:
         if not (raw and raw[0] in ("-h", "--help")):
             raw = ["run", *raw]

@@ -20,7 +20,7 @@
 
     <article class="dt-kpi">
       <header>
-        <span>{% if left_display == 'ONLINE' %}Status{% else %}Left time{% endif %}</span>
+        <span>{% if left_display == 'ONLINE' %}Status{% else %}Left at{% endif %}</span>
       </header>
       <strong class="{% if left_display == 'ONLINE' %}ok live{% else %}ok{% endif %}">{{ left_display }}</strong>
       {{ sparkline('ok') }}

@@ -238,12 +238,22 @@ def _last_seen(user_id: int) -> float | None:
     return float(row) if row else None
 
 
-def _is_online(user: User, last: float | None, now_ts: float, window: float) -> bool:
-    """Recent activity, and the agent has not reported Quit / Sign out since."""
-    if last is None or (now_ts - last) > window:
+def _agent_connected(user: User, now_ts: float, window: float) -> bool:
+    """Desktop app recently pinged the server (matches profile menu)."""
+    ping = getattr(user, "last_agent_ping", None)
+    if ping is None or (now_ts - float(ping)) > window:
         return False
     stopped = getattr(user, "agent_stopped_at", None)
-    return not (stopped and stopped >= last)
+    return not (stopped and float(stopped) >= float(ping))
+
+
+def _is_online(user: User, last: float | None, now_ts: float, window: float) -> bool:
+    """Recent activity or agent ping, and the agent has not reported Quit / Sign out since."""
+    stopped = getattr(user, "agent_stopped_at", None)
+    if last is not None and (now_ts - last) <= window:
+        if not (stopped and stopped >= last):
+            return True
+    return _agent_connected(user, now_ts, window)
 
 
 def _latest_activity(user_id: int) -> Activity | None:
