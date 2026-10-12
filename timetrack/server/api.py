@@ -405,7 +405,7 @@ def ingest_activities():
     from ..config import Config as CoreConfig, merge_rules
     from .settings_util import load_server_rules
 
-    server_rules = merge_rules(load_server_rules(u.organization_id or 1))
+    server_rules = merge_rules(load_server_rules(u.organization_id or 1), replace=True)
     categorizer = CoreConfig(rules=server_rules)
 
     for item in items:
@@ -480,7 +480,7 @@ def ingest_screenshot():
         from ..config import UNPRODUCTIVE, merge_rules, Config as CoreConfig
         from .settings_util import load_server_rules
 
-        cfg_rules = merge_rules(load_server_rules(u.organization_id or 1))
+        cfg_rules = merge_rules(load_server_rules(u.organization_id or 1), replace=True)
         if CoreConfig(rules=cfg_rules).categorize(app_name, title) == UNPRODUCTIVE:
             is_unproductive = True
 

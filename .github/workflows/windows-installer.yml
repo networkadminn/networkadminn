@@ -8,6 +8,8 @@ on:
 jobs:
   build:
     runs-on: windows-latest
+    env:
+      HAS_CERT: ${{ secrets.WINDOWS_CERT_PFX_BASE64 != '' }}
     steps:
       - uses: actions/checkout@v4
 
@@ -22,8 +24,20 @@ jobs:
             choco install innosetup -y --no-progress
           }
 
+      - name: Load code-signing certificate
+        if: env.HAS_CERT == 'true'
+        env:
+          CERT: ${{ secrets.WINDOWS_CERT_PFX_BASE64 }}
+        shell: pwsh
+        run: |
+          $pfx = Join-Path $env:RUNNER_TEMP "esstracker-sign.pfx"
+          [IO.File]::WriteAllBytes($pfx, [Convert]::FromBase64String($env:CERT))
+          "ESSTRACKER_SIGN_PFX=$pfx" >> $env:GITHUB_ENV
+
       - name: Build client + installer
         shell: pwsh
+        env:
+          ESSTRACKER_SIGN_PASSWORD: ${{ secrets.WINDOWS_CERT_PASSWORD }}
         run: powershell -ExecutionPolicy Bypass -File packaging\build_windows.ps1
 
       - name: Probe browser URL capture (Edge)

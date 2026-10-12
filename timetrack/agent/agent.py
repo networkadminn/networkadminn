@@ -35,6 +35,7 @@ class Agent:
         self._last_window = ("unknown", "")
         self._private = False
         self._private_allowed = True
+        self._tray_logout_allowed, self._tray_quit_allowed = self._load_tray_policy()
         self._shot_blur = False
         self._shot_random = True
         self._shot_interval = self.config.screenshot_interval
@@ -65,6 +66,41 @@ class Agent:
         return self._private_allowed
 
     @property
+    def is_admin(self) -> bool:
+        return (self.role or "").lower() in ("admin", "superadmin")
+
+    @property
+    def tray_logout_allowed(self) -> bool:
+        return self.is_admin or self._tray_logout_allowed
+
+    @property
+    def tray_quit_allowed(self) -> bool:
+        return self.is_admin or self._tray_quit_allowed
+
+    def _tray_policy_path(self) -> str:
+        return os.path.join(os.path.dirname(os.path.abspath(self.config.buffer_path)), "tray_policy.json")
+
+    def _load_tray_policy(self) -> tuple[bool, bool]:
+        """Last policy from the server, so it still applies when starting offline."""
+        import json
+
+        try:
+            with open(self._tray_policy_path(), encoding="utf-8") as fh:
+                data = json.load(fh)
+            return bool(data.get("logout", True)), bool(data.get("quit", True))
+        except (OSError, ValueError, AttributeError):
+            return True, True
+
+    def _save_tray_policy(self) -> None:
+        import json
+
+        try:
+            with open(self._tray_policy_path(), "w", encoding="utf-8") as fh:
+                json.dump({"logout": self._tray_logout_allowed, "quit": self._tray_quit_allowed}, fh)
+        except OSError:
+            pass
+
+    @property
     def online(self) -> bool:
         return self._online
 
@@ -88,6 +124,13 @@ class Agent:
         self.username = str(ping.get("user") or self.username)
         self.display_name = str(ping.get("name") or self.display_name or self.username)
         self.role = str(ping.get("role") or self.role)
+        policy = (
+            bool(ping.get("tray_logout_allowed", True)),
+            bool(ping.get("tray_quit_allowed", True)),
+        )
+        if policy != (self._tray_logout_allowed, self._tray_quit_allowed):
+            self._tray_logout_allowed, self._tray_quit_allowed = policy
+            self._save_tray_policy()
         if ping.get("company"):
             self.company_name = str(ping["company"])
         if ping.get("client_update"):
@@ -124,7 +167,7 @@ class Agent:
         if isinstance(rules, dict):
             from ..config import merge_rules
 
-            self.config.rules = merge_rules(rules)
+            self.config.rules = merge_rules(rules, replace=True)
         if self._tray:
             self._tray.refresh_ui()
 

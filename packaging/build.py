@@ -484,6 +484,30 @@ def _publish_release(path: Path) -> Path:
     return dest
 
 
+def sign_windows(path: Path) -> None:
+    """Authenticode-sign ``path`` when ESSTRACKER_SIGN_PFX (+ _PASSWORD) is set.
+
+    Unsigned PyInstaller binaries trigger SmartScreen / browser "dangerous" warnings.
+    """
+    pfx = os.environ.get("ESSTRACKER_SIGN_PFX", "").strip()
+    if not pfx or platform.system() != "Windows":
+        return
+    signtool = shutil.which("signtool")
+    if not signtool:
+        kits = sorted(Path(r"C:\Program Files (x86)\Windows Kits\10\bin").glob("*/x64/signtool.exe"))
+        signtool = str(kits[-1]) if kits else ""
+    if not signtool:
+        sys.exit("signing requested but signtool.exe not found")
+    _run(
+        [
+            signtool, "sign", "/f", pfx, "/p", os.environ.get("ESSTRACKER_SIGN_PASSWORD", ""),
+            "/fd", "sha256", "/tr", "http://timestamp.digicert.com", "/td", "sha256",
+            "/d", "esstracker", str(path),
+        ]
+    )
+    print(f"Signed: {path}")
+
+
 def build_exe_client() -> Path:
     """Windows employee client only (tray + login + install helpers)."""
     if platform.system() != "Windows":
@@ -501,6 +525,7 @@ def build_exe_client() -> Path:
         if dst.exists():
             dst.unlink()
         src.rename(dst)
+        sign_windows(dst)
 
     # Ship company defaults + installer next to the agent (Ubuntu /etc equivalent)
     defaults = WINDOWS / "defaults.toml"

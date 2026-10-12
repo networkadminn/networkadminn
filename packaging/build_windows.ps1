@@ -43,6 +43,10 @@ $Iscc = @(
 if ($Iscc) {
     & $Iscc "/DAppVersion=$Version" "packaging\windows\esstracker.iss"
     if ($LASTEXITCODE -ne 0) { throw "Inno Setup build failed" }
+    if ($env:ESSTRACKER_SIGN_PFX) {
+        & $VenvPy -c "import sys; sys.path.insert(0, 'packaging'); from pathlib import Path; import build; build.sign_windows(Path(sys.argv[1]))" "dist\releases\esstracker-Setup-$Version.exe"
+        if ($LASTEXITCODE -ne 0) { throw "Signing installer failed" }
+    }
     Write-Host "Installer: dist\releases\esstracker-Setup-$Version.exe"
 } else {
     Write-Warning "Inno Setup 6 not found - skipped esstracker-Setup-$Version.exe (zip kit still built)."

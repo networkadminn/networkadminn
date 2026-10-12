@@ -124,6 +124,46 @@ def org_screenshot_dir(org_id: int | None = None) -> str:
     return path
 
 
+def recategorize_activities(org_id: int, days: int = 90) -> int:
+    """Re-apply company rules to recent activity so dashboards reflect rule changes.
+
+    Returns the number of rows whose category changed.
+    """
+    import time
+
+    from ..config import Config as CoreConfig, merge_rules
+    from .models import Activity, User
+
+    categorizer = CoreConfig(rules=merge_rules(load_server_rules(org_id), replace=True))
+    org_filter = User.organization_id == org_id
+    if org_id == 1:
+        org_filter = org_filter | User.organization_id.is_(None)
+    user_ids = list(db.session.execute(db.select(User.id).filter(org_filter)).scalars())
+    if not user_ids:
+        return 0
+    cutoff = time.time() - days * 86400.0
+    rows = db.session.execute(
+        db.select(Activity.id, Activity.app, Activity.title, Activity.url, Activity.category).filter(
+            Activity.user_id.in_(user_ids),
+            Activity.start_ts >= cutoff,
+            Activity.idle.is_(False),
+        )
+    ).all()
+    cache: dict[tuple[str, str, str], str] = {}
+    updates: list[dict] = []
+    for row in rows:
+        key = (row.app or "", row.title or "", row.url or "")
+        cat = cache.get(key)
+        if cat is None:
+            cat = cache[key] = categorizer.categorize(*key[:2], url=key[2])
+        if cat != row.category:
+            updates.append({"id": row.id, "category": cat})
+    if updates:
+        db.session.execute(db.update(Activity), updates)
+        db.session.commit()
+    return len(updates)
+
+
 def load_server_rules(org_id: int | None = None) -> dict[str, list[str]]:
     path = rules_path(org_id)
     if os.path.isfile(path):

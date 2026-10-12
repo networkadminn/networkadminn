@@ -111,6 +111,10 @@ class Config:
         Unproductive always wins ties.
         """
         domain = _activity_domain(app, title, url)
+        neutral = [n.strip().lower() for n in self.rules.get(NEUTRAL, []) if n.strip()]
+        # An app or site the admin marked Neutral beats partial matches in other lists.
+        if neutral and ((app or "").strip().lower() in neutral or (domain or "").lower() in neutral):
+            return NEUTRAL
         if domain:
             if _domain_matches(domain, self.rules.get(SITES_UNPRODUCTIVE, [])):
                 return UNPRODUCTIVE
@@ -145,15 +149,25 @@ def _domain_matches(domain: str, needles: list[str]) -> bool:
     return False
 
 
-def merge_rules(user_rules: dict[str, list[str]]) -> dict[str, list[str]]:
+def merge_rules(
+    user_rules: dict[str, list[str]], *, replace: bool = False
+) -> dict[str, list[str]]:
+    """Defaults plus user rules.
+
+    ``replace=True`` (company rules saved from the web Categories page): each list the
+    admin saved replaces that default list, so moving or removing an item sticks.
+    """
     merged: dict[str, list[str]] = {k: list(v) for k, v in DEFAULT_RULES.items()}
     for k, v in DEFAULT_SITE_RULES.items():
         merged[k] = list(v)
     for category, needles in (user_rules or {}).items():
         if category not in VALID_RULE_KEYS:
             continue
-        merged.setdefault(category, [])
-        merged[category].extend(str(n) for n in needles)
+        if replace:
+            merged[category] = [str(n) for n in needles]
+        else:
+            merged.setdefault(category, [])
+            merged[category].extend(str(n) for n in needles)
     return merged
 
 

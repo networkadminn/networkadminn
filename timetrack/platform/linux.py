@@ -121,6 +121,14 @@ def _process_name(pid: int | None) -> str:
         return "unknown"
 
 
+def get_browser_url(window: ActiveWindow | None) -> str:
+    if window is None:
+        return ""
+    from .linux_browser import browser_url_from_history
+
+    return browser_url_from_history(window.app, window.title)
+
+
 def get_idle_seconds() -> float:
     if _have("xprintidle"):
         out = _run(["xprintidle"])

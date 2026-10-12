@@ -152,6 +152,26 @@
       {% else %}
       <p class="empty">No websites detected for this day.</p>
       {% endif %}
+      {% if url_visits %}
+      <h3 style="margin:16px 0 8px;font-size:14px">Latest URLs</h3>
+      <table class="apps">
+        <thead><tr><th>Time</th><th>Page</th><th class="num">Time spent</th></tr></thead>
+        <tbody>
+          {% for v in url_visits %}
+          <tr>
+            <td class="num">{{ v.start_ts|clock }}</td>
+            <td class="title-cell" title="{{ v.url or v.title }}">
+              <span class="site-chip">{{ v.domain }}</span>
+              {% if v.url %}<a href="{{ v.url }}" target="_blank" rel="noopener noreferrer">{{ (v.title or v.url)[:70] }}</a>
+              {% else %}{{ (v.title or '—')[:70] }}{% endif %}
+            </td>
+            <td class="num">{{ humanize(v.seconds) }}</td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+      <p class="muted" style="margin-top:6px"><a href="{{ url_for('views.admin_user_websites', user_id=subject.id, day=day) }}">See every URL for this day →</a></p>
+      {% endif %}
     </section>
     <section class="panel dash-panel">
       <div class="panel-head">

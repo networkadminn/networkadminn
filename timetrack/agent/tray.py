@@ -276,8 +276,12 @@ class AgentTray:
             pystray.MenuItem("Sync now", self._flush_now),
             pystray.MenuItem("Preferences…", self._open_preferences),
             pystray.Menu.SEPARATOR,
-            pystray.MenuItem("Sign out", self._sign_out),
-            pystray.MenuItem("Quit", self._quit),
+            pystray.MenuItem(
+                "Sign out", self._sign_out, enabled=lambda _: self.agent.tray_logout_allowed
+            ),
+            pystray.MenuItem(
+                "Quit", self._menu_quit, enabled=lambda _: self.agent.tray_quit_allowed
+            ),
         ]
         return pystray.Menu(*items)
 
@@ -317,9 +321,18 @@ class AgentTray:
         print(f"[esstracker] tray sync: {a} activities, {s} screenshots")
         self.refresh_ui()
 
+    def _menu_quit(self, icon=None, item=None) -> None:
+        if not self.agent.tray_quit_allowed:
+            print("[esstracker] Quit is disabled by your administrator")
+            return
+        self._quit()
+
     def _sign_out(self, icon=None, item=None) -> None:
         from .config import clear_saved_token
 
+        if not self.agent.tray_logout_allowed:
+            print("[esstracker] Sign out is disabled by your administrator")
+            return
         clear_saved_token(self.agent.config)
         self.agent.config.api_token = ""
         print("[esstracker] signed out — relaunch to sign in again")

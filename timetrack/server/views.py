@@ -867,6 +867,7 @@ def _employee_day_context(user: User, day: datetime, *, is_self: bool) -> dict:
         "charts": _chart_payload(acts, day),
         "apps": apps_with_share(summary),
         "sites": top_sites(acts),
+        "url_visits": list(reversed(website_report(acts, start, end)["visits"]))[:15],
         "timeline": activity_timeline(acts, limit=100),
         "bar": bar,
         "bar_columns": bar_columns,
@@ -1330,7 +1331,7 @@ def _tracked_for_categories(days: int = 14, limit: int = 60) -> tuple[list[dict]
             .limit(8000)
         ).scalars()
     )
-    categorizer = RulesConfig(rules=merge_rules(_load_server_rules()))
+    categorizer = RulesConfig(rules=merge_rules(_load_server_rules(), replace=True))
     apps: dict[str, dict] = {}
     sites: dict[str, dict] = {}
     for a in rows:
@@ -1391,14 +1392,19 @@ def settings_rules():
         os.makedirs(os.path.dirname(path), exist_ok=True)
         with open(path, "w", encoding="utf-8") as fh:
             json.dump(payload, fh, indent=2)
+        from .settings_util import recategorize_activities
+        from .tenancy import current_org_id
+
+        changed = recategorize_activities(current_org_id())
         flash(
-            "Category rules saved. Agents sync them automatically within ~30 seconds.",
+            f"Category rules saved. Updated {changed} past activities (last 90 days); "
+            "new activity uses the new rules immediately.",
             "info",
         )
         return redirect(url_for("views.settings_rules"))
 
     stored = _load_server_rules()
-    merged = merge_rules(stored)
+    merged = merge_rules(stored, replace=True)
     # Show effective lists (defaults + custom) so admins see what actually applies.
     display = {
         PRODUCTIVE: stored.get(PRODUCTIVE) or merged.get(PRODUCTIVE, []),
