@@ -111,9 +111,19 @@ class Config:
         Unproductive always wins ties.
         """
         domain = _activity_domain(app, title, url)
+        app_l = (app or "").strip().lower()
         neutral = [n.strip().lower() for n in self.rules.get(NEUTRAL, []) if n.strip()]
-        # An app or site the admin marked Neutral beats partial matches in other lists.
-        if neutral and ((app or "").strip().lower() in neutral or (domain or "").lower() in neutral):
+        # App rules (Categories → tracked Applications) apply to every user on that process.
+        for needle in self.rules.get(PRODUCTIVE, []):
+            if _app_rule_matches(app_l, needle):
+                return PRODUCTIVE
+        for needle in self.rules.get(UNPRODUCTIVE, []):
+            if _app_rule_matches(app_l, needle):
+                return UNPRODUCTIVE
+        if app_l and app_l in neutral:
+            return NEUTRAL
+        # Neutral domain or app keyword beats partial matches in other lists.
+        if neutral and (app_l in neutral or (domain or "").lower() in neutral):
             return NEUTRAL
         if domain:
             if _domain_matches(domain, self.rules.get(SITES_UNPRODUCTIVE, [])):
@@ -124,7 +134,10 @@ class Config:
         haystack = f"{app} {title}".lower()
         for category in (UNPRODUCTIVE, PRODUCTIVE):
             for needle in self.rules.get(category, []):
-                if needle.strip().lower() in haystack:
+                n = needle.strip().lower()
+                if not n or n == app_l:
+                    continue
+                if n in haystack and n not in app_l:
                     return category
         return NEUTRAL
 
@@ -134,6 +147,18 @@ def _activity_domain(app: str, title: str, url: str = "") -> str:
 
     raw = (url or "").strip() or extract_url(app, title)
     return extract_domain(raw)
+
+
+def _app_rule_matches(app_l: str, needle: str) -> bool:
+    """True when a rule names this process (exact name or ``code`` → ``code.exe``)."""
+    n = (needle or "").strip().lower()
+    if not n or not app_l:
+        return False
+    if app_l == n:
+        return True
+    if app_l.endswith(f".{n}") or app_l.endswith(f"{n}.exe"):
+        return True
+    return False
 
 
 def _domain_matches(domain: str, needles: list[str]) -> bool:
@@ -150,13 +175,19 @@ def _domain_matches(domain: str, needles: list[str]) -> bool:
 
 
 def merge_rules(
-    user_rules: dict[str, list[str]], *, replace: bool = False
+    user_rules: dict[str, list[str]], *, replace: bool = False, org_only: bool = False
 ) -> dict[str, list[str]]:
-    """Defaults plus user rules.
+    """Merge categorization rules.
 
-    ``replace=True`` (company rules saved from the web Categories page): each list the
-    admin saved replaces that default list, so moving or removing an item sticks.
+    ``org_only=True``: use only what the company saved (no built-in YouTube/Slack defaults).
+    ``replace=True`` with ``org_only=False``: each saved list replaces that default list.
     """
+    if org_only:
+        stored = user_rules or {}
+        return {
+            key: [str(n) for n in stored.get(key, []) if str(n).strip()]
+            for key in VALID_RULE_KEYS
+        }
     merged: dict[str, list[str]] = {k: list(v) for k, v in DEFAULT_RULES.items()}
     for k, v in DEFAULT_SITE_RULES.items():
         merged[k] = list(v)

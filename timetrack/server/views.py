@@ -167,9 +167,47 @@ def _manual_for(user_id: int, day: datetime) -> list[ManualEntry]:
     )
 
 
+def _lunch_range(day: datetime) -> tuple[float, float] | None:
+    """Company lunch window for ``day`` as (start_ts, end_ts), or None if disabled."""
+    settings = get_settings()
+    ls = settings.lunch_start_hour
+    le = settings.lunch_end_hour
+    if ls is None or le is None or float(le) <= float(ls):
+        return None
+    tz = settings.timezone or _tz()
+    return (
+        office_datetime(day, float(ls), tz).timestamp(),
+        office_datetime(day, float(le), tz).timestamp(),
+    )
+
+
+def _without_lunch(acts: list[Activity], lunch: tuple[float, float] | None) -> list[Activity]:
+    """Drop the lunch window from activities.
+
+    Returns detached copies for clipped rows so the stored activity is never modified.
+    """
+    if lunch is None:
+        return acts
+    ls, le = lunch
+    cols = [c.name for c in Activity.__table__.columns]
+    out: list[Activity] = []
+    for a in acts:
+        s, e = float(a.start_ts), float(a.end_ts)
+        if e <= ls or s >= le:
+            out.append(a)
+            continue
+        for ps, pe in ((s, min(e, ls)), (max(s, le), e)):
+            if pe - ps <= 0:
+                continue
+            piece = Activity(**{c: getattr(a, c) for c in cols if c != "id"})
+            piece.start_ts, piece.end_ts, piece.duration = ps, pe, pe - ps
+            out.append(piece)
+    return out
+
+
 def _activities_for(user_id: int, day: datetime) -> list[Activity]:
     start, end = day_bounds(day, tz_name=_tz())
-    return list(
+    acts = list(
         db.session.execute(
             db.select(Activity)
             .filter(Activity.user_id == user_id)
@@ -177,6 +215,7 @@ def _activities_for(user_id: int, day: datetime) -> list[Activity]:
             .order_by(Activity.start_ts.asc())
         ).scalars()
     )
+    return _without_lunch(acts, _lunch_range(day))
 
 
 def _screenshots_for(user_id: int, day: datetime) -> list[Screenshot]:
@@ -263,13 +302,22 @@ def _is_off_day(day: datetime) -> bool:
     return not is_work_day(day, get_settings().work_days)
 
 
+def _office_start_ts(day: datetime) -> float:
+    settings = get_settings()
+    start_h = float(settings.office_start_hour or settings.expected_arrival_hour or 9.5)
+    return office_datetime(day, start_h, settings.timezone or _tz()).timestamp()
+
+
 def _is_late(arrival_ts: float | None, day: datetime) -> bool:
     if arrival_ts is None or _is_off_day(day):
         return False
-    settings = get_settings()
-    start_h = float(settings.office_start_hour or settings.expected_arrival_hour or 9.5)
-    expected = office_datetime(day, start_h, settings.timezone or _tz())
-    return arrival_ts > expected.timestamp()
+    return arrival_ts > _office_start_ts(day)
+
+
+def _is_early(arrival_ts: float | None, day: datetime) -> bool:
+    if arrival_ts is None or _is_off_day(day):
+        return False
+    return arrival_ts < _office_start_ts(day)
 
 
 def _dominant_category(
@@ -741,7 +789,12 @@ def _employee_day_context(user: User, day: datetime, *, is_self: bool) -> dict:
         gap_now_ts = now_tz(_tz()).timestamp()
     else:
         gap_now_ts = None  # past day — all empty ranges may be filled
-    fill_from_ts = summary.arrival_ts if summary.arrival_ts is not None else float("inf")
+    # Gaps are fillable from office start (or arrival if earlier); entries before
+    # arrival go through approval like any other offline request.
+    fill_from_ts = _office_start_ts(day)
+    if summary.arrival_ts is not None:
+        fill_from_ts = min(fill_from_ts, summary.arrival_ts)
+    lunch = _lunch_range(day)
     bar_raw = productivity_bar_segments(
         acts,
         start,
@@ -765,6 +818,8 @@ def _employee_day_context(user: User, day: datetime, *, is_self: bool) -> dict:
         ).scalars()
     )
     covered_ranges = [(float(r.start_ts), float(r.end_ts)) for r in covered_reqs]
+    if lunch is not None:
+        covered_ranges.append(lunch)
     bar_raw = suppress_covered_gaps(bar_raw, covered_ranges)
     bar = merge_bar_segments(bar_raw)
 
@@ -819,6 +874,16 @@ def _employee_day_context(user: User, day: datetime, *, is_self: bool) -> dict:
     office_left = max(0.0, min(100.0, ((office_start - view_start_h) / day_span_h) * 100.0))
     office_right = max(0.0, min(100.0, ((office_end - view_start_h) / day_span_h) * 100.0))
     office_width = max(0.0, office_right - office_left)
+    lunch_left = lunch_width = 0.0
+    lunch_label = ""
+    if lunch is not None:
+        ls, le = max(lunch[0], view_start), min(lunch[1], view_end)
+        if le > ls:
+            lunch_left = round(((ls - view_start) / view_span) * 100.0, 3)
+            lunch_width = round(((le - ls) / view_span) * 100.0, 3)
+        lunch_label = (
+            f"{format_clock(lunch[0], tz_name=_tz())} – {format_clock(lunch[1], tz_name=_tz())}"
+        )
     now_pct = None
     if is_today:
         local = now_tz(_tz())
@@ -890,8 +955,12 @@ def _employee_day_context(user: User, day: datetime, *, is_self: bool) -> dict:
         "is_online": is_online,
         "is_today": is_today,
         "late": _is_late(summary.arrival_ts, day),
+        "early": _is_early(summary.arrival_ts, day),
         "absent": absent,
         "off_day": off_day,
+        "lunch_left_pct": lunch_left,
+        "lunch_width_pct": lunch_width,
+        "lunch_label": lunch_label,
         "tz_name": _tz(),
         "office_hours_label": f"{format_hour_short(office_start)} – {format_hour_short(office_end)} IST"
         if _tz() == "Asia/Kolkata"
@@ -1045,6 +1114,7 @@ def admin():
             "arrived": format_clock(s.arrival_ts, tz_name=_tz()),
             "left": format_clock(s.last_seen_ts, tz_name=_tz()),
             "late": late and not absent,
+            "early": _is_early(s.arrival_ts, day) and not absent,
             "absent": absent,
             "dt_productivity": s.desktime_productivity_pct,
             "dt_effectiveness": s.desktime_effectiveness_pct(expected),
@@ -1331,7 +1401,7 @@ def _tracked_for_categories(days: int = 14, limit: int = 60) -> tuple[list[dict]
             .limit(8000)
         ).scalars()
     )
-    categorizer = RulesConfig(rules=merge_rules(_load_server_rules(), replace=True))
+    categorizer = RulesConfig(rules=merge_rules(_load_server_rules(), org_only=True))
     apps: dict[str, dict] = {}
     sites: dict[str, dict] = {}
     for a in rows:
@@ -1367,54 +1437,29 @@ def _tracked_for_categories(days: int = 14, limit: int = 60) -> tuple[list[dict]
 @admin_required
 def settings_rules():
     if request.method == "POST":
-        def _lines(name: str) -> list[str]:
-            seen: set[str] = set()
-            out: list[str] = []
-            for x in (request.form.get(name) or "").splitlines():
-                item = x.strip()
-                if not item:
-                    continue
-                key = item.lower()
-                if key in seen:
-                    continue
-                seen.add(key)
-                out.append(item)
-            return out
+        from .settings_util import recategorize_activities, save_tracked_category_rules
+        from .tenancy import current_org_id
 
-        payload = {
-            PRODUCTIVE: _lines("productive"),
-            UNPRODUCTIVE: _lines("unproductive"),
-            "neutral": _lines("neutral"),
-            SITES_PRODUCTIVE: _lines("sites_productive"),
-            SITES_UNPRODUCTIVE: _lines("sites_unproductive"),
-        }
+        org_id = current_org_id()
+        app_rows = list(
+            zip(request.form.getlist("app_name"), request.form.getlist("app_category"))
+        )
+        site_rows = list(
+            zip(request.form.getlist("site_name"), request.form.getlist("site_category"))
+        )
+        payload = save_tracked_category_rules(org_id, app_rows, site_rows)
         path = _rules_path()
         os.makedirs(os.path.dirname(path), exist_ok=True)
         with open(path, "w", encoding="utf-8") as fh:
             json.dump(payload, fh, indent=2)
-        from .settings_util import recategorize_activities
-        from .tenancy import current_org_id
-
-        changed = recategorize_activities(current_org_id())
+        changed = recategorize_activities(org_id)
         flash(
-            f"Category rules saved. Updated {changed} past activities (last 90 days); "
-            "new activity uses the new rules immediately.",
+            f"Categories saved. Updated {changed} activities (last 90 days) — "
+            "user bars and scores now match your choices.",
             "info",
         )
         return redirect(url_for("views.settings_rules"))
 
-    stored = _load_server_rules()
-    merged = merge_rules(stored, replace=True)
-    # Show effective lists (defaults + custom) so admins see what actually applies.
-    display = {
-        PRODUCTIVE: stored.get(PRODUCTIVE) or merged.get(PRODUCTIVE, []),
-        UNPRODUCTIVE: stored.get(UNPRODUCTIVE) or merged.get(UNPRODUCTIVE, []),
-        "neutral": stored.get("neutral") or [],
-        SITES_PRODUCTIVE: stored.get(SITES_PRODUCTIVE)
-        or merged.get(SITES_PRODUCTIVE, []),
-        SITES_UNPRODUCTIVE: stored.get(SITES_UNPRODUCTIVE)
-        or merged.get(SITES_UNPRODUCTIVE, []),
-    }
     tracked_apps, tracked_sites = _tracked_for_categories()
     counts = {
         "apps": len(tracked_apps),
@@ -1424,14 +1469,9 @@ def settings_rules():
             1 for x in tracked_apps + tracked_sites if x["category"] == UNPRODUCTIVE
         ),
         "neutral": sum(1 for x in tracked_apps + tracked_sites if x["category"] == NEUTRAL),
-        "keywords": sum(len(v) for v in display.values()),
     }
     return render_template(
         "settings_rules.html",
-        rules=display,
-        defaults=DEFAULT_RULES,
-        site_defaults=DEFAULT_SITE_RULES,
-        merged=merged,
         tracked_apps=tracked_apps,
         tracked_sites=tracked_sites,
         counts=counts,

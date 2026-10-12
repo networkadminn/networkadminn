@@ -167,7 +167,7 @@ class Agent:
         if isinstance(rules, dict):
             from ..config import merge_rules
 
-            self.config.rules = merge_rules(rules, replace=True)
+            self.config.rules = merge_rules(rules, org_only=True)
         if self._tray:
             self._tray.refresh_ui()
 

@@ -14,7 +14,15 @@ from timetrack.server.models import ROLE_ADMIN, ROLE_EMPLOYEE, Activity, User
 
 
 def _cat(rules, app, title="", url=""):
-    return Config(rules=merge_rules(rules, replace=True)).categorize(app, title, url=url)
+    return Config(rules=merge_rules(rules, org_only=True)).categorize(app, title, url=url)
+
+
+def test_exact_app_name_applies_org_wide():
+    rules = {"productive": ["Slack"], "unproductive": [], "neutral": [],
+             "sites_productive": [], "sites_unproductive": []}
+    assert _cat(rules, "Slack", "general") == "productive"
+    assert _cat(rules, "slack", "dm") == "productive"
+    assert _cat(rules, "SlackHelper", "x") == "neutral"
 
 
 def test_moving_default_item_sticks():
@@ -66,8 +74,8 @@ def test_saving_rules_recategorizes_past_activity(app):
     client = app.test_client()
     client.post("/login", data={"username": "boss", "password": "bosspass"})
     resp = client.post("/settings/rules", data={
-        "productive": "code", "unproductive": "slack", "neutral": "",
-        "sites_productive": "", "sites_unproductive": "",
+        "app_name": "slack",
+        "app_category": "unproductive",
     })
     assert resp.status_code in (200, 302)
     with app.app_context():
