@@ -158,6 +158,9 @@ def recategorize_activities(org_id: int, days: int = 90) -> int:
     cache: dict[tuple[str, str, str], str] = {}
     updates: list[dict] = []
     for row in rows:
+        # Gap / offline fills keep the category chosen at submit & approval.
+        if (row.app or "").strip().lower() == "offline":
+            continue
         key = (row.app or "", row.title or "", row.url or "")
         cat = cache.get(key)
         if cat is None:

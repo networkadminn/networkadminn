@@ -364,6 +364,7 @@
               {% if r.absent %}<span class="status offline">Absent</span>
               {% elif off_day %}<span class="status">Off day</span>
               {% elif r.late %}<span class="status late">Late</span>
+              {% elif r.early %}<span class="status early">Early</span>
               {% elif r.online %}<span class="status online">Online</span>
               {% else %}<span class="status offline">Offline</span>{% endif %}
               {% if r.online and r.live %}

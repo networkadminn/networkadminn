@@ -300,6 +300,10 @@ class CompanySettings(db.Model):
     # Office window (IST by default). expected_arrival_hour stays in sync with start.
     office_start_hour = db.Column(db.Float, nullable=False, default=9.5)
     office_end_hour = db.Column(db.Float, nullable=False, default=18.5)
+    # Strict lunch break: activity inside this window is never counted or fillable.
+    # Lunch is disabled when end <= start.
+    lunch_start_hour = db.Column(db.Float, nullable=False, default=13.5)
+    lunch_end_hour = db.Column(db.Float, nullable=False, default=14.25)
     # Comma-separated Python weekdays: 0=Mon … 6=Sun. Default Mon–Fri.
     work_days = db.Column(db.String(32), nullable=False, default="0,1,2,3,4")
     timezone = db.Column(db.String(64), nullable=False, default="Asia/Kolkata")

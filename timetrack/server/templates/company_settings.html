@@ -31,7 +31,21 @@
           <input type="time" name="office_end" value="{{ office_end_value }}" required />
         </label>
       </div>
-      <p class="muted small">Late = arrived after office start on a tracking day. Times shown everywhere use this timezone (default IST).</p>
+      <p class="muted small">Late = arrived after office start, Early = arrived before it (no grace period). Times shown everywhere use this timezone (default IST).</p>
+    </fieldset>
+
+    <fieldset class="settings-block">
+      <legend>Lunch break</legend>
+      <label class="check"><input type="checkbox" name="lunch_enabled" value="1" {% if lunch_enabled %}checked{% endif %} /> Strict lunch break</label>
+      <div class="two-col tight">
+        <label>Lunch start
+          <input type="time" name="lunch_start" value="{{ lunch_start_value }}" />
+        </label>
+        <label>Lunch end
+          <input type="time" name="lunch_end" value="{{ lunch_end_value }}" />
+        </label>
+      </div>
+      <p class="muted small">Activity during lunch is still captured but never counted, cannot be filled manually, and is shown as a grey Lunch block on the bar. Remember to subtract lunch from expected workday hours (e.g. 9h office − 45m lunch = 8.25).</p>
     </fieldset>
 
     <fieldset class="settings-block">
@@ -95,7 +109,7 @@
     </fieldset>
 
     <label>Expected workday hours
-      <input type="number" step="0.5" min="1" name="expected_hours" value="{{ settings.expected_hours }}" />
+      <input type="number" step="0.25" min="1" name="expected_hours" value="{{ settings.expected_hours }}" />
     </label>
     <button class="btn primary inline" type="submit">Save settings</button>
   </form>

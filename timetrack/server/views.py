@@ -33,6 +33,7 @@ from ..analytics import (
     productivity_bar_segments,
     bar_view_hours,
     summarize,
+    reconcile_fillable_gap_bounds,
     suppress_covered_gaps,
     timeline_buckets,
     top_sites,
@@ -806,6 +807,7 @@ def _employee_day_context(user: User, day: datetime, *, is_self: bool) -> dict:
     if summary.arrival_ts is not None:
         fill_from_ts = min(fill_from_ts, summary.arrival_ts)
     lunch = _lunch_range(day)
+    lunch_excluded = [lunch] if lunch is not None else []
     bar_raw = productivity_bar_segments(
         acts,
         start,
@@ -814,6 +816,7 @@ def _employee_day_context(user: User, day: datetime, *, is_self: bool) -> dict:
         tz_name=_tz(),
         now_ts=gap_now_ts,
         earliest_fill_ts=fill_from_ts,
+        excluded_ranges=lunch_excluded,
     )
 
     day_start, day_end = start, end
@@ -829,9 +832,8 @@ def _employee_day_context(user: User, day: datetime, *, is_self: bool) -> dict:
         ).scalars()
     )
     covered_ranges = [(float(r.start_ts), float(r.end_ts)) for r in covered_reqs]
-    if lunch is not None:
-        covered_ranges.append(lunch)
     bar_raw = suppress_covered_gaps(bar_raw, covered_ranges)
+    bar_raw = reconcile_fillable_gap_bounds(bar_raw)
     bar = merge_bar_segments(bar_raw)
 
     # Auto-fit bar: office band (~8 AM–8 PM for 9:30–6:30 settings) plus user activity.
@@ -864,8 +866,10 @@ def _employee_day_context(user: User, day: datetime, *, is_self: bool) -> dict:
         tz_name=_tz(),
         now_ts=gap_now_ts,
         earliest_fill_ts=fill_from_ts,
+        excluded_ranges=lunch_excluded,
     )
     bar_display = suppress_covered_gaps(bar_display, covered_ranges)
+    bar_display = reconcile_fillable_gap_bounds(bar_display)
     gaps = idle_gap_list(bar_display, tz_name=_tz())
     gap_seconds = sum(g["duration"] for g in gaps)
     bar_columns = _bar_stack_columns(

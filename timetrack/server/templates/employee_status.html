@@ -11,7 +11,8 @@
           <span class="btn-daily">{{ office_hours_label }}</span>
           {% if off_day %}<span class="pill">Off day</span>
           {% elif absent %}<span class="pill warn">Absent</span>
-          {% elif late %}<span class="pill warn">Late</span>{% endif %}
+          {% elif late %}<span class="pill warn">Late</span>
+          {% elif early %}<span class="pill early">Early</span>{% endif %}
           {% if is_online %}<span class="pill live">Online</span>{% endif %}
         </div>
       </div>

@@ -91,12 +91,64 @@ def _as_span(a: Activity | SimpleNamespace) -> SimpleNamespace:
     )
 
 
+def _copy_span(a: SimpleNamespace, start_ts: float, end_ts: float) -> SimpleNamespace:
+    return SimpleNamespace(
+        app=a.app,
+        title=a.title,
+        url=getattr(a, "url", "") or "",
+        category=a.category,
+        idle=a.idle,
+        start_ts=start_ts,
+        end_ts=end_ts,
+        duration=end_ts - start_ts,
+    )
+
+
+def _first_wins(spans: list[SimpleNamespace]) -> list[SimpleNamespace]:
+    """Remove overlapping double-counts on auto-tracked spans (first-wins)."""
+    ordered = sorted(spans, key=lambda x: (x.start_ts, x.end_ts, 0 if not x.idle else 1))
+    out: list[SimpleNamespace] = []
+    cursor = float("-inf")
+    for a in ordered:
+        if a.end_ts <= cursor:
+            continue
+        if a.start_ts < cursor:
+            a = _copy_span(a, cursor, a.end_ts)
+        if a.duration <= 0:
+            continue
+        out.append(a)
+        cursor = a.end_ts
+    return out
+
+
+def _apply_offline_overrides(
+    base: list[SimpleNamespace], offline: list[SimpleNamespace]
+) -> list[SimpleNamespace]:
+    """Approved gap fills replace overlapping auto-tracked time for charts and totals."""
+    timeline = list(base)
+    for m in sorted(offline, key=lambda x: (x.start_ts, x.end_ts)):
+        ms, me = m.start_ts, m.end_ts
+        carved: list[SimpleNamespace] = []
+        for a in timeline:
+            s, e = a.start_ts, a.end_ts
+            if e <= ms or s >= me:
+                carved.append(a)
+                continue
+            if s < ms:
+                carved.append(_copy_span(a, s, ms))
+            if e > me:
+                carved.append(_copy_span(a, me, e))
+        carved.append(m)
+        timeline = carved
+    return sorted(timeline, key=lambda x: (x.start_ts, x.end_ts, 0 if not x.idle else 1))
+
+
 def prepare_activities(
     activities: list[Activity],
     window_start: float | None = None,
     window_end: float | None = None,
 ) -> list[SimpleNamespace]:
-    """Clip to window and remove overlapping double-counts (first-wins)."""
+    """Clip to window, dedupe overlaps, and let approved offline fills win overlaps."""
     clipped: list[SimpleNamespace] = []
     for raw in activities:
         a = _as_span(raw)
@@ -112,20 +164,12 @@ def prepare_activities(
         a.duration = e - s
         clipped.append(a)
 
-    clipped.sort(key=lambda x: (x.start_ts, x.end_ts, 0 if not x.idle else 1))
-    out: list[SimpleNamespace] = []
-    cursor = float("-inf")
-    for a in clipped:
-        if a.end_ts <= cursor:
-            continue
-        if a.start_ts < cursor:
-            a.start_ts = cursor
-            a.duration = a.end_ts - a.start_ts
-            if a.duration <= 0:
-                continue
-        out.append(a)
-        cursor = a.end_ts
-    return out
+    offline = [a for a in clipped if (a.app or "").lower() == "offline"]
+    auto = [a for a in clipped if (a.app or "").lower() != "offline"]
+    base = _first_wins(auto)
+    if not offline:
+        return base
+    return _apply_offline_overrides(base, offline)
 
 
 def summarize(
@@ -314,6 +358,7 @@ def productivity_bar_segments(
     *,
     now_ts: float | None = None,
     earliest_fill_ts: float | None = None,
+    excluded_ranges: list[tuple[float, float]] | None = None,
 ) -> list[dict]:
     """Fine timeline segments for a DeskTime-like productivity bar."""
     buckets = timeline_buckets(activities, start_ts, end_ts, bucket_seconds)
@@ -362,7 +407,52 @@ def productivity_bar_segments(
         min_gap_seconds=bucket_seconds,
         now_ts=now_ts,
         earliest_fill_ts=earliest_fill_ts,
+        excluded_ranges=excluded_ranges,
     )
+
+
+def _ranges_overlap(a_start: float, a_end: float, b_start: float, b_end: float) -> bool:
+    return a_start < b_end and a_end > b_start
+
+
+def _segment_excluded(start: float, end: float, excluded_ranges: list[tuple[float, float]]) -> bool:
+    for xs, xe in excluded_ranges:
+        if _ranges_overlap(start, end, xs, xe):
+            return True
+    return False
+
+
+def _mark_fillable_gap_run(
+    segments: list[dict],
+    i: int,
+    j: int,
+    *,
+    min_gap_seconds: float,
+    now_ts: float | None,
+    earliest_fill_ts: float | None,
+) -> None:
+    gap_start = float(segments[i]["start"])
+    gap_end = float(segments[j - 1].get("end") or segments[j - 1]["start"])
+    if now_ts is not None:
+        if gap_start >= now_ts:
+            return
+        gap_end = min(gap_end, float(now_ts))
+    if earliest_fill_ts is not None:
+        if gap_end <= earliest_fill_ts:
+            return
+        gap_start = max(gap_start, earliest_fill_ts)
+    duration = gap_end - gap_start
+    if duration < min_gap_seconds:
+        return
+    for k in range(i, j):
+        seg_start = float(segments[k]["start"])
+        if now_ts is not None and seg_start >= now_ts:
+            continue
+        if earliest_fill_ts is not None and seg_start < earliest_fill_ts:
+            continue
+        segments[k]["fillable"] = True
+        segments[k]["gap_start"] = gap_start
+        segments[k]["gap_end"] = gap_end
 
 
 def annotate_idle_gaps(
@@ -371,13 +461,16 @@ def annotate_idle_gaps(
     min_gap_seconds: float = 300.0,
     now_ts: float | None = None,
     earliest_fill_ts: float | None = None,
+    excluded_ranges: list[tuple[float, float]] | None = None,
 ) -> list[dict]:
     """Mark consecutive empty bar buckets as one fillable idle/offline gap.
 
     Buckets that start in the future (after ``now_ts``) are never fillable.
     Gaps that straddle "now" are clipped so ``gap_end`` does not exceed now.
     Gaps before ``earliest_fill_ts`` (day start / first arrival) are not fillable.
+    Ranges in ``excluded_ranges`` (e.g. lunch) split gaps and are never fillable.
     """
+    excluded = excluded_ranges or []
     i = 0
     n = len(segments)
     while i < n:
@@ -387,29 +480,49 @@ def annotate_idle_gaps(
         j = i
         while j < n and segments[j].get("kind") == "empty":
             j += 1
+        k = i
+        while k < j:
+            seg_s = float(segments[k]["start"])
+            seg_e = float(segments[k].get("end") or seg_s)
+            if _segment_excluded(seg_s, seg_e, excluded):
+                k += 1
+                continue
+            m = k
+            while m < j:
+                ms = float(segments[m]["start"])
+                me = float(segments[m].get("end") or ms)
+                if _segment_excluded(ms, me, excluded):
+                    break
+                m += 1
+            _mark_fillable_gap_run(
+                segments,
+                k,
+                m,
+                min_gap_seconds=min_gap_seconds,
+                now_ts=now_ts,
+                earliest_fill_ts=earliest_fill_ts,
+            )
+            k = m
+        i = j
+    return segments
+
+
+def reconcile_fillable_gap_bounds(segments: list[dict]) -> list[dict]:
+    """Recompute ``gap_start`` / ``gap_end`` on each contiguous fillable run."""
+    i = 0
+    n = len(segments)
+    while i < n:
+        if not segments[i].get("fillable"):
+            i += 1
+            continue
+        j = i
+        while j < n and segments[j].get("fillable"):
+            j += 1
         gap_start = float(segments[i]["start"])
         gap_end = float(segments[j - 1].get("end") or segments[j - 1]["start"])
-        if now_ts is not None:
-            if gap_start >= now_ts:
-                i = j
-                continue
-            gap_end = min(gap_end, float(now_ts))
-        if earliest_fill_ts is not None:
-            if gap_end <= earliest_fill_ts:
-                i = j
-                continue
-            gap_start = max(gap_start, earliest_fill_ts)
-        duration = gap_end - gap_start
-        if duration >= min_gap_seconds:
-            for k in range(i, j):
-                seg_start = float(segments[k]["start"])
-                if now_ts is not None and seg_start >= now_ts:
-                    continue
-                if earliest_fill_ts is not None and seg_start < earliest_fill_ts:
-                    continue
-                segments[k]["fillable"] = True
-                segments[k]["gap_start"] = gap_start
-                segments[k]["gap_end"] = gap_end
+        for k in range(i, j):
+            segments[k]["gap_start"] = gap_start
+            segments[k]["gap_end"] = gap_end
         i = j
     return segments
 
@@ -756,6 +869,7 @@ __all__ = [
     "bar_view_hours",
     "productivity_bar_segments",
     "annotate_idle_gaps",
+    "reconcile_fillable_gap_bounds",
     "idle_gap_list",
     "suppress_covered_gaps",
     "merge_bar_segments",

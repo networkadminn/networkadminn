@@ -28,6 +28,9 @@
         <li><i class="neutral"></i> Neutral</li>
         <li><i class="unproductive"></i> Low</li>
         <li><i class="idle"></i> Idle</li>
+        {% if lunch_width_pct|default(0) > 0 %}
+        <li><i class="lunch"></i> Lunch</li>
+        {% endif %}
         {% if clickable_gaps %}
         <li><i class="gap"></i> Fillable</li>
         {% endif %}
@@ -74,6 +77,10 @@
             </div>
             <div class="pb7-office" style="left:{{ office_left_pct }}%;width:{{ office_width_pct }}%"
                  title="Office hours {{ office_hours_label }}"></div>
+            {% if lunch_width_pct|default(0) > 0 %}
+            <div class="pb7-lunch" style="left:{{ lunch_left_pct }}%;width:{{ lunch_width_pct }}%"
+                 title="Lunch {{ lunch_label }} — not counted"><span>Lunch</span></div>
+            {% endif %}
             {% for region in bar_away_regions %}
             <div class="pb7-away {{ region.kind }}" style="left:{{ region.left }}%;width:{{ region.width }}%"></div>
             {% endfor %}
@@ -133,6 +140,14 @@
                   <i style="left:{{ office_left_pct }}%;width:{{ office_width_pct }}%"></i>
                 </div>
               </div>
+              {% if lunch_width_pct|default(0) > 0 %}
+              <div class="pb7-track">
+                <span class="pb7-track-label"><i class="lunch"></i> Lunch</span>
+                <div class="pb7-track-rail lunch">
+                  <i style="left:{{ lunch_left_pct }}%;width:{{ lunch_width_pct }}%"></i>
+                </div>
+              </div>
+              {% endif %}
             </div>
             {% endif %}
             <div class="pb7-axis" aria-hidden="true">

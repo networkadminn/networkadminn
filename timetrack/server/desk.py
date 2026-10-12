@@ -33,7 +33,8 @@ from .models import (
     User,
 )
 from .settings_util import get_settings
-from .views import _activities_for, _parse_day
+from ..analytics import format_clock
+from .views import _activities_for, _lunch_range, _parse_day
 
 desk_bp = Blueprint("desk", __name__)
 
@@ -159,20 +160,24 @@ def offline_fill():
     raw_start = request.args.get("start") or ""
     raw_end = request.args.get("end") or ""
     if raw_start.replace(".", "", 1).isdigit() and raw_end.replace(".", "", 1).isdigit():
-        prefill_start = format_datetime_local(float(raw_start), tz_name)
-        prefill_end = format_datetime_local(float(raw_end), tz_name)
+        start_ts = float(raw_start)
+        end_ts = float(raw_end)
+        lunch = _lunch_range(day)
+        if lunch is not None and start_ts < lunch[1] and end_ts > lunch[0]:
+            start_ts = max(start_ts, lunch[1])
+            if end_ts > start_ts:
+                prefill_start = format_datetime_local(start_ts, tz_name)
+                prefill_end = format_datetime_local(end_ts, tz_name)
+        elif end_ts > start_ts:
+            prefill_start = format_datetime_local(start_ts, tz_name)
+            prefill_end = format_datetime_local(end_ts, tz_name)
     elif "T" in raw_start and "T" in raw_end:
         prefill_start, prefill_end = raw_start, raw_end
 
-    arrival_ts = _day_arrival_ts(current_user.id, day)
-    if arrival_ts is not None and raw_start.replace(".", "", 1).isdigit():
-        try:
-            if float(raw_start) < arrival_ts:
-                flash("Cannot fill time before you started your day.", "error")
-                prefill_start = ""
-                prefill_end = ""
-        except ValueError:
-            pass
+    prefill_category = (request.args.get("category") or "").strip().lower()
+    if prefill_category not in ("productive", "unproductive", "neutral"):
+        # Gap clicks prefill times only — default to productive for away/work fills.
+        prefill_category = "productive" if (prefill_start and prefill_end) else "neutral"
 
     if request.method == "POST":
         try:
@@ -189,9 +194,18 @@ def offline_fill():
         if end_ts <= start_ts:
             flash("End must be after start.", "error")
             return redirect(url_for("desk.offline_fill", day=day.strftime("%Y-%m-%d")))
+        lunch = _lunch_range(day)
+        if lunch is not None and start_ts < lunch[1] and end_ts > lunch[0]:
+            flash(
+                "Lunch time cannot be filled — choose a range outside "
+                f"{format_clock(lunch[0], tz_name=tz_name)}–{format_clock(lunch[1], tz_name=tz_name)}.",
+                "error",
+            )
+            return redirect(url_for("desk.offline_fill", day=day.strftime("%Y-%m-%d")))
         arrival_ts = _day_arrival_ts(current_user.id, day)
-        if arrival_ts is not None and start_ts < arrival_ts:
-            flash("Cannot fill time before you started your day.", "error")
+        before_arrival = arrival_ts is None or start_ts < arrival_ts
+        if before_arrival and not (request.form.get("note") or "").strip():
+            flash("Please add a reason for time before you started tracking.", "error")
             return redirect(url_for("desk.offline_fill", day=day.strftime("%Y-%m-%d")))
         now_ts = time.time()
         if start_ts > now_ts + 60:
@@ -215,7 +229,9 @@ def offline_fill():
         elif not note:
             note = "Idle time" if fill_kind == "idle" else "Offline / away from desk"
         # Employees always need approval; admins respect company setting.
-        needs_approval = (not current_user.is_admin) or settings.offline_requires_approval
+        needs_approval = (
+            (not current_user.is_admin) or settings.offline_requires_approval or before_arrival
+        )
         status = "pending" if needs_approval else "approved"
         duration = end_ts - start_ts
         req = OfflineRequest(
@@ -263,6 +279,7 @@ def offline_fill():
         requires_approval=(not current_user.is_admin) or settings.offline_requires_approval,
         prefill_start=prefill_start,
         prefill_end=prefill_end,
+        prefill_category=prefill_category,
         my_recent=my_recent,
         humanize=humanize,
         tz_name=tz_name,
@@ -654,6 +671,13 @@ def company_settings():
         settings.office_end_hour = end_h
         settings.expected_arrival_hour = start_h  # keep late logic in sync
 
+        lunch_s = _parse_time("lunch_start", 13.5)
+        lunch_e = _parse_time("lunch_end", 14.25)
+        if not request.form.get("lunch_enabled"):
+            lunch_e = lunch_s
+        settings.lunch_start_hour = lunch_s
+        settings.lunch_end_hour = lunch_e
+
         selected = {int(v) for v in request.form.getlist("work_days") if str(v).isdigit()}
         settings.work_days = work_days_csv(selected) if selected else "0,1,2,3,4"
 
@@ -664,6 +688,13 @@ def company_settings():
     selected = {str(d) for d in parse_work_days(settings.work_days)}
     sh, sm = hour_parts(float(settings.office_start_hour or settings.expected_arrival_hour or 9.5))
     eh, em = hour_parts(float(settings.office_end_hour or 18.5))
+    lunch_s = float(settings.lunch_start_hour if settings.lunch_start_hour is not None else 13.5)
+    lunch_e = float(settings.lunch_end_hour if settings.lunch_end_hour is not None else 14.25)
+    lunch_enabled = lunch_e > lunch_s
+    if not lunch_enabled:
+        lunch_s, lunch_e = 13.5, 14.25
+    lsh, lsm = hour_parts(lunch_s)
+    leh, lem = hour_parts(lunch_e)
     return render_template(
         "company_settings.html",
         settings=settings,
@@ -671,6 +702,9 @@ def company_settings():
         selected_days=selected,
         office_start_value=f"{sh:02d}:{sm:02d}",
         office_end_value=f"{eh:02d}:{em:02d}",
+        lunch_enabled=lunch_enabled,
+        lunch_start_value=f"{lsh:02d}:{lsm:02d}",
+        lunch_end_value=f"{leh:02d}:{lem:02d}",
         timezones=[
             ("Asia/Kolkata", "India (IST) — Asia/Kolkata"),
             ("Asia/Dubai", "Dubai (GST)"),
