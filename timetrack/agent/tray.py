@@ -16,6 +16,7 @@ from __future__ import annotations
 import os
 import sys
 import threading
+import time
 import webbrowser
 from pathlib import Path
 from typing import TYPE_CHECKING, Callable
@@ -289,7 +290,7 @@ class AgentTray:
                 default=use_default,
             ),
             pystray.MenuItem("Sync now", self._flush_now),
-            pystray.MenuItem("Preferences…", self._open_preferences),
+            pystray.MenuItem("Preferences", self._preferences_menu()),
             pystray.Menu.SEPARATOR,
             pystray.MenuItem(
                 "Sign out", self._sign_out, enabled=lambda _: self.agent.tray_logout_allowed
@@ -326,10 +327,79 @@ class AgentTray:
         url = self.agent.config.server_url.rstrip("/") + "/me"
         webbrowser.open(url)
 
-    def _open_preferences(self, icon=None, item=None) -> None:
-        from .prefs_ui import open_preferences
+    def _preferences_menu(self):
+        """Tray submenu — no Tk window (works on GNOME AppIndicator)."""
+        import pystray
 
-        open_preferences(self.agent)
+        from .. import __version__
+        from . import autostart
+
+        server = self.agent.config.server_url.replace("https://", "").replace("http://", "")
+        if len(server) > 40:
+            server = server[:37] + "…"
+        return pystray.Menu(
+            pystray.MenuItem(f"Version {__version__}", self._noop),
+            pystray.MenuItem(f"Server: {server}", self._noop),
+            pystray.Menu.SEPARATOR,
+            pystray.MenuItem(
+                "Launch at login",
+                self._toggle_autostart,
+                checked=lambda _: autostart.is_enabled(),
+                enabled=lambda _: autostart.is_supported(),
+            ),
+            pystray.MenuItem("Test connection", self._pref_test_connection),
+            pystray.MenuItem("Check for updates", self._pref_check_updates),
+            pystray.MenuItem("Download page", self._open_download),
+        )
+
+    def _toggle_autostart(self, icon=None, item=None) -> None:
+        from . import autostart
+        from .idle_ui import notify
+
+        want = not autostart.is_enabled()
+        try:
+            autostart.set_enabled(want)
+            notify("esstracker", f"Launch at login {'ON' if want else 'OFF'}")
+        except Exception as exc:
+            notify("esstracker", f"Startup setting failed: {exc}")
+        self.refresh_ui()
+
+    def _pref_test_connection(self, icon=None, item=None) -> None:
+        from .idle_ui import notify
+
+        def work() -> None:
+            t0 = time.monotonic()
+            data = self.agent.client.ping()
+            ms = int((time.monotonic() - t0) * 1000)
+            if data:
+                notify("esstracker", f"Connected · {ms} ms")
+            else:
+                notify("esstracker", "Server not reachable — check your internet")
+
+        threading.Thread(target=work, daemon=True, name="esstracker-ping").start()
+
+    def _pref_check_updates(self, icon=None, item=None) -> None:
+        from .. import __version__
+        from .idle_ui import notify
+
+        base = self.agent.config.server_url.rstrip("/")
+
+        def work() -> None:
+            data = self.agent.client.ping()
+            upd = (data or {}).get("client_update") if data else None
+            if data is None:
+                notify("esstracker", "Could not reach the server")
+            elif upd:
+                latest = upd.get("latest") or "new"
+                notify("esstracker", f"Version {latest} available")
+                webbrowser.open(base + str(upd.get("page") or "/download"))
+            else:
+                notify("esstracker", f"You have the latest version ({__version__})")
+
+        threading.Thread(target=work, daemon=True, name="esstracker-update").start()
+
+    def _open_download(self, icon=None, item=None) -> None:
+        webbrowser.open(self.agent.config.server_url.rstrip("/") + "/download")
 
     def _flush_now(self, icon=None, item=None) -> None:
         a, s = self.agent.flush()

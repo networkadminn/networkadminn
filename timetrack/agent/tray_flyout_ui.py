@@ -369,7 +369,7 @@ def _build(tray: AgentTray):
     tk.Label(open_row, text="↗", font=("Segoe UI", 11), fg=INK, bg=ACCENT_DARK).pack(side="right")
 
     row(menu, "↻", "Sync now", command=lambda: (tray._flush_now(), refresh_all()))
-    row(menu, "⚙", "Preferences…", command=tray._open_preferences)
+    row(menu, "⚙", "Download page", command=tray._open_download)
     dashed_rule(menu)
     if agent.tray_logout_allowed:
         row(menu, "⏻", "Sign out", command=tray._sign_out)
