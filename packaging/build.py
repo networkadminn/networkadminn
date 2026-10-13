@@ -77,6 +77,7 @@ HIDDEN = [
 ]
 
 WINDOWS = PACKAGING / "windows"
+MACOS = PACKAGING / "macos"
 
 
 def _run(cmd: list[str], **kwargs) -> None:
@@ -119,10 +120,62 @@ def _windows_icon() -> Path | None:
         return None
 
 
+def _macos_icon() -> Path | None:
+    """Build packaging/macos/esstracker.icns from the ESS PNG (Dock / Finder icon)."""
+    icns = MACOS / "esstracker.icns"
+    src = LINUX / "icons" / "esstracker-512.png"
+    if not src.is_file():
+        src = ROOT / "timetrack" / "agent" / "assets" / "ess-mark.png"
+    if not src.is_file():
+        return icns if icns.is_file() else None
+    if icns.is_file() and icns.stat().st_mtime >= src.stat().st_mtime:
+        return icns
+    try:
+        from PIL import Image
+
+        MACOS.mkdir(parents=True, exist_ok=True)
+        iconset = BUILD / "esstracker.iconset"
+        if iconset.exists():
+            shutil.rmtree(iconset)
+        iconset.mkdir(parents=True)
+        img = Image.open(src).convert("RGBA")
+        resample = getattr(getattr(Image, "Resampling", Image), "LANCZOS", Image.LANCZOS)
+        for name, size in {
+            "icon_16x16.png": 16,
+            "icon_16x16@2x.png": 32,
+            "icon_32x32.png": 32,
+            "icon_32x32@2x.png": 64,
+            "icon_128x128.png": 128,
+            "icon_128x128@2x.png": 256,
+            "icon_256x256.png": 256,
+            "icon_256x256@2x.png": 512,
+            "icon_512x512.png": 512,
+            "icon_512x512@2x.png": 1024,
+        }.items():
+            img.resize((size, size), resample).save(iconset / name)
+        if icns.exists():
+            icns.unlink()
+        _run(["iconutil", "-c", "icns", str(iconset), "-o", str(icns)])
+        shutil.rmtree(iconset)
+        print(f"Wrote macOS icon: {icns}")
+        return icns
+    except Exception as exc:
+        print(f"WARNING: could not build .icns ({exc!r})", file=sys.stderr)
+        return icns if icns.is_file() else None
+
+
+def _platform_dist() -> Path:
+    if platform.system() == "Windows":
+        return DIST / "windows"
+    if platform.system() == "Darwin":
+        return DIST / "macos"
+    return DIST / "linux"
+
+
 def build_binaries(*, onefile: bool, apps: tuple[tuple[str, str], ...] | None = None) -> Path:
     """Build PyInstaller binaries for the current platform. Returns output dir."""
     _ensure_pyinstaller()
-    out = DIST / ("windows" if platform.system() == "Windows" else "linux")
+    out = _platform_dist()
     if out.exists():
         shutil.rmtree(out)
     out.mkdir(parents=True)
@@ -613,6 +666,18 @@ def build_exe_client() -> Path:
     return dst
 
 
+def _patch_macos_app_bundle(app_dir: Path) -> None:
+    """Menu-bar agent: no Dock bounce; show version in Finder."""
+    plist = app_dir / "Contents" / "Info.plist"
+    if not plist.is_file():
+        return
+    _run(["plutil", "-replace", "LSUIElement", "-bool", "true", str(plist)])
+    _run(
+        ["plutil", "-replace", "CFBundleShortVersionString", "-string", VERSION, str(plist)]
+    )
+    _run(["plutil", "-replace", "CFBundleVersion", "-string", VERSION, str(plist)])
+
+
 def build_dmg(*, arch: str = "") -> Path:
     """macOS .app + .dmg (must run on Darwin)."""
     if platform.system() != "Darwin":
@@ -636,7 +701,7 @@ def build_dmg(*, arch: str = "") -> Path:
             "if __name__ == '__main__':\n    main()\n",
             encoding="utf-8",
         )
-        icon_png = LINUX / "icons" / "esstracker-512.png"
+        mac_icon = _macos_icon()
         cmd = [
             sys.executable,
             "-m",
@@ -658,17 +723,30 @@ def build_dmg(*, arch: str = "") -> Path:
             str(ROOT),
             "--onedir",
         ]
+        if mac_icon is not None:
+            cmd.extend(["--icon", str(mac_icon)])
         assets = ROOT / "timetrack" / "agent" / "assets"
         if assets.exists():
             cmd.extend(["--add-data", f"{assets}{sep}timetrack/agent/assets"])
         for mod in HIDDEN:
             cmd.extend(["--hidden-import", mod])
+        for mod in (
+            "AppKit",
+            "Foundation",
+            "objc",
+            "PyObjCTools.MachSignals",
+            "pystray._darwin",
+        ):
+            cmd.extend(["--hidden-import", mod])
+        cmd.extend(["--collect-all", "tkinter", "--collect-all", "pystray"])
         cmd.append(str(launcher))
         _run(cmd)
         app_dir = out / "esstracker.app"
 
     if not app_dir.exists():
         sys.exit(f"missing macOS app bundle under {out}")
+
+    _patch_macos_app_bundle(app_dir)
 
     # Stage DMG contents
     stage = BUILD / "dmg-stage"

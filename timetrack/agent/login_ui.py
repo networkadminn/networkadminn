@@ -18,6 +18,36 @@ from typing import Callable
 from .client import ServerClient
 from .config import AgentConfig, DEFAULT_SERVER_URL, save_agent_config
 
+_ESS_GREEN = "#0B7A4B"
+_ESS_GREEN_ACTIVE = "#09663F"
+_ESS_BTN_STYLE = "EssSignIn.TButton"
+
+
+def _configure_tk_login_styles(root: tk.Misc) -> ttk.Style:
+    """macOS Aqua ignores tk.Button bg/fg; ttk + clam gives the branded green button."""
+    style = ttk.Style(root)
+    if sys.platform == "darwin":
+        style.theme_use("clam")
+    style.configure(
+        _ESS_BTN_STYLE,
+        background=_ESS_GREEN,
+        foreground="#FFFFFF",
+        font=("Sans", 11, "bold"),
+        padding=(0, 10),
+        borderwidth=0,
+        focuscolor=_ESS_GREEN,
+    )
+    style.map(
+        _ESS_BTN_STYLE,
+        background=[
+            ("pressed", _ESS_GREEN_ACTIVE),
+            ("active", _ESS_GREEN_ACTIVE),
+            ("disabled", "#8FA89A"),
+        ],
+        foreground=[("disabled", "#FFFFFF")],
+    )
+    return style
+
 
 def _is_frozen() -> bool:
     return bool(getattr(sys, "frozen", False)) or hasattr(sys, "_MEIPASS")
@@ -182,6 +212,8 @@ def _tk_login(
     y = (root.winfo_screenheight() - h) // 2
     root.geometry(f"{w}x{h}+{x}+{y}")
 
+    _configure_tk_login_styles(root)
+
     card = tk.Frame(root, bg="#FFFFFF", highlightbackground="#D5E5DB", highlightthickness=1)
     card.place(relx=0.5, rely=0.5, anchor="center", width=340, height=400)
 
@@ -271,19 +303,28 @@ def _tk_login(
             on_success(cfg)
         root.destroy()
 
-    btn = tk.Button(
-        form,
-        text="Sign in & start tracking",
-        command=do_login,
-        bg="#0B7A4B",
-        fg="#FFFFFF",
-        activebackground="#09663F",
-        activeforeground="#FFFFFF",
-        font=("Sans", 11, "bold"),
-        relief="flat",
-        cursor="hand2",
-        pady=10,
-    )
+    if sys.platform == "darwin":
+        btn = ttk.Button(
+            form,
+            text="Sign in & start tracking",
+            command=do_login,
+            style=_ESS_BTN_STYLE,
+            cursor="hand2",
+        )
+    else:
+        btn = tk.Button(
+            form,
+            text="Sign in & start tracking",
+            command=do_login,
+            bg=_ESS_GREEN,
+            fg="#FFFFFF",
+            activebackground=_ESS_GREEN_ACTIVE,
+            activeforeground="#FFFFFF",
+            font=("Sans", 11, "bold"),
+            relief="flat",
+            cursor="hand2",
+            pady=10,
+        )
     btn.pack(fill="x", pady=(4, 8))
 
     tk.Label(

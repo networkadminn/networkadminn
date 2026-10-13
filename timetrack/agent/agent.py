@@ -11,6 +11,7 @@ from __future__ import annotations
 import os
 import random
 import signal
+import sys
 import threading
 import time
 import uuid
@@ -18,7 +19,7 @@ from types import FrameType
 
 from .. import platform as pf
 from ..monitor import clean_url, extract_url, is_browser
-from ..platform.screenshot import capture_jpeg
+from ..platform.screenshot import capture_jpeg, ensure_macos_screen_recording_access
 from .buffer import AgentBuffer
 from .client import ServerClient
 from .config import AgentConfig, load_agent_config
@@ -307,6 +308,8 @@ class Agent:
     def run(self, *, tray: bool = True) -> None:
         self._running = True
         self._install_signal_handlers()
+        if sys.platform == "darwin" and self._shots_enabled:
+            ensure_macos_screen_recording_access()
         self.refresh_server_policy()
 
         who = self.display_name or self.username or "??"

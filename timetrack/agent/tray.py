@@ -182,6 +182,20 @@ def _pick_backend() -> str | None:
             os.environ.pop("PYSTRAY_BACKEND", None)
             return None
 
+    if sys.platform == "darwin":
+        preferred = os.environ.get("PYSTRAY_BACKEND", "darwin")
+        os.environ["PYSTRAY_BACKEND"] = preferred
+        try:
+            # Do not reload pystray on macOS — PyObjC classes cannot be re-registered.
+            import pystray
+
+            _ = pystray.Icon
+            return preferred
+        except Exception as exc:
+            print(f"[esstracker] tray backend {preferred!r} unavailable: {exc!r}")
+            os.environ.pop("PYSTRAY_BACKEND", None)
+            return None
+
     _ensure_system_gi()
     desktop = (os.environ.get("XDG_CURRENT_DESKTOP") or "").lower()
     session = (os.environ.get("XDG_SESSION_TYPE") or "").lower()
@@ -439,6 +453,11 @@ class AgentTray:
                     "No system-tray backend available on Windows.\n"
                     "Install: pip install pystray Pillow pywin32"
                 )
+            if sys.platform == "darwin":
+                raise RuntimeError(
+                    "No menu-bar tray on macOS (pystray darwin backend failed).\n"
+                    "Install: pip install pystray Pillow pyobjc-framework-Cocoa"
+                )
             raise RuntimeError(
                 "No system-tray backend available on this Ubuntu session.\n"
                 "Try an X11 session, or install:\n"
@@ -458,6 +477,10 @@ class AgentTray:
             print(
                 "[esstracker] tip: left-click the tray icon for actions "
                 "(the X11 tray backend has no right-click menu)"
+            )
+        elif backend == "darwin":
+            print(
+                "[esstracker] tip: click the ESS icon in the menu bar (top-right) for options"
             )
         self._icon = pystray.Icon(
             "esstracker",

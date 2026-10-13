@@ -73,12 +73,37 @@ def _acquire_single_instance_windows() -> bool:
     return True
 
 
+def _lock_holder_alive() -> bool:
+    """True if agent.lock references a running process (stale after crash)."""
+    try:
+        pid = int(LOCK_PATH.read_text(encoding="utf-8").strip())
+    except (OSError, ValueError):
+        return False
+    if pid <= 0:
+        return False
+    try:
+        os.kill(pid, 0)
+    except OSError:
+        return False
+    return True
+
+
 def _acquire_single_instance_posix() -> bool:
     """fcntl flock — used on Linux/macOS."""
     global _lock_fh
     import fcntl
 
-    _lock_fh = open(LOCK_PATH, "w", encoding="utf-8")
+    try:
+        ensure_data_dirs()
+        if LOCK_PATH.exists() and not _lock_holder_alive():
+            LOCK_PATH.unlink(missing_ok=True)
+        _lock_fh = open(LOCK_PATH, "w", encoding="utf-8")
+    except OSError as exc:
+        print(
+            f"[esstracker] warning: could not use lock file ({exc!r}); "
+            "continuing without single-instance guard"
+        )
+        return True
     try:
         fcntl.flock(_lock_fh.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
     except BlockingIOError:
@@ -122,9 +147,33 @@ def _ensure_signed_in(cfg, *, force_login: bool = False):
     return show_login(cfg)
 
 
+def _notify_already_running() -> None:
+    """Windowed macOS builds have no console — surface a visible hint."""
+    msg = "esstracker is already running. Click the ESS icon in the menu bar."
+    if sys.platform == "darwin":
+        try:
+            import subprocess
+
+            safe = msg.replace('"', "'")[:500]
+            subprocess.run(
+                [
+                    "osascript",
+                    "-e",
+                    f'display notification "{safe}" with title "esstracker"',
+                ],
+                check=False,
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+            )
+            return
+        except Exception:
+            pass
+    print(f"[esstracker] already running (tray). {msg}")
+
+
 def _cmd_run(args: argparse.Namespace) -> int:
     if not _acquire_single_instance():
-        print("[esstracker] already running (tray). Open the ESS tray icon.")
+        _notify_already_running()
         return 0
 
     cfg = load_agent_config(args.config)
@@ -270,25 +319,55 @@ def build_parser() -> argparse.ArgumentParser:
     return p
 
 
+def _show_fatal_error(exc: BaseException) -> None:
+    """Windowed macOS .app has no terminal — surface startup crashes."""
+    msg = f"{type(exc).__name__}: {exc}"
+    print(f"[esstracker] fatal: {msg}", file=sys.stderr)
+    if sys.platform != "darwin":
+        return
+    try:
+        import subprocess
+
+        safe = msg.replace('"', "'")[:500]
+        subprocess.run(
+            [
+                "osascript",
+                "-e",
+                f'display alert "esstracker could not start" message "{safe}" as critical',
+            ],
+            check=False,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+        )
+    except Exception:
+        pass
+
+
 def main(argv: list[str] | None = None) -> None:
-    raw = list(sys.argv[1:] if argv is None else argv)
-    if raw and raw[0].startswith("esstracker://"):
-        raw = ["open-url", raw[0]]
-    commands = {
-        "run",
-        "ping",
-        "status",
-        "flush",
-        "private",
-        "logout",
-        "open-url",
-        "preferences",
-    }
-    if not raw or raw[0] not in commands:
-        if not (raw and raw[0] in ("-h", "--help")):
-            raw = ["run", *raw]
-    args = build_parser().parse_args(raw)
-    raise SystemExit(args.func(args))
+    try:
+        raw = list(sys.argv[1:] if argv is None else argv)
+        if raw and raw[0].startswith("esstracker://"):
+            raw = ["open-url", raw[0]]
+        commands = {
+            "run",
+            "ping",
+            "status",
+            "flush",
+            "private",
+            "logout",
+            "open-url",
+            "preferences",
+        }
+        if not raw or raw[0] not in commands:
+            if not (raw and raw[0] in ("-h", "--help")):
+                raw = ["run", *raw]
+        args = build_parser().parse_args(raw)
+        raise SystemExit(args.func(args))
+    except SystemExit:
+        raise
+    except Exception as exc:
+        _show_fatal_error(exc)
+        raise SystemExit(1) from exc
 
 
 if __name__ == "__main__":
