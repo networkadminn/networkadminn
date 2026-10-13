@@ -69,11 +69,20 @@ Or use CI: push tag `vX.Y.Z` and download artifact from **macOS dmg**.
 3. First launch: right-click → **Open** if Gatekeeper blocks an unsigned build.
 4. **System Settings → Privacy & Security:** grant **Accessibility** and **Screen Recording** to esstracker (needed for window titles and screenshots).
 
-## Upload to production download server
+## Publish (GitHub Releases + download server)
+
+Intel DMGs are built locally; CI only produces **arm64** on tag `v*`.
 
 ```bash
+# GitHub Releases (after: gh auth login  OR  export GITHUB_TOKEN=...)
+chmod +x scripts/publish-macos-dmg.sh
+./scripts/publish-macos-dmg.sh dist/releases/esstracker-*-x86_64.dmg
+
+# Production /download page (SSH):
+./scripts/publish-macos-dmg.sh --server dist/releases/esstracker-*-x86_64.dmg
+
+# Or manual scp:
 scp dist/releases/esstracker-*-x86_64.dmg root@31.97.239.250:/www/wwwroot/timetrack/data/releases/
-# arm64:
 scp dist/releases/esstracker-*-arm64.dmg root@31.97.239.250:/www/wwwroot/timetrack/data/releases/
 ```
 
