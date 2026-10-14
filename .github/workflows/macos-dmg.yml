@@ -1,5 +1,6 @@
 name: macOS dmg
 
+# macOS only; Linux/Windows/server deploy: client-release.yml
 on:
   workflow_dispatch:
   push:

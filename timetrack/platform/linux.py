@@ -8,7 +8,8 @@ Active window detection strategy (first that works wins):
 Idle detection strategy:
 
 1. ``xprintidle`` (milliseconds since last input)
-2. Fall back to ``0.0`` (treated as "active") if unavailable.
+2. X11 Screen Saver extension (``libXss``) when ``xprintidle`` is not installed
+3. Fall back to ``0.0`` (treated as "active") if neither works
 
 These rely on an X11 session. Wayland does not expose window titles to
 unprivileged clients in a portable way, so on Wayland the app name is
@@ -129,9 +130,65 @@ def get_browser_url(window: ActiveWindow | None) -> str:
     return browser_url_from_history(window.app, window.title)
 
 
+def _idle_via_xscreensaver() -> float | None:
+    """Seconds since last input via XScreenSaverQueryInfo (no xprintidle binary)."""
+    try:
+        import ctypes
+        from ctypes import POINTER, Structure, byref, c_int, c_ulong
+
+        class XScreenSaverInfo(Structure):
+            _fields_ = [
+                ("window", c_ulong),
+                ("state", c_int),
+                ("kind", c_int),
+                ("til_or_since", c_ulong),
+                ("idle", c_ulong),
+                ("eventMask", c_ulong),
+            ]
+
+        xlib = ctypes.CDLL("libX11.so.6")
+        xss = ctypes.CDLL("libXss.so.1")
+        xlib.XOpenDisplay.argtypes = [ctypes.c_char_p]
+        xlib.XOpenDisplay.restype = ctypes.c_void_p
+        xlib.XDefaultRootWindow.argtypes = [ctypes.c_void_p]
+        xlib.XDefaultRootWindow.restype = c_ulong
+        xlib.XCloseDisplay.argtypes = [ctypes.c_void_p]
+        xss.XScreenSaverQueryInfo.argtypes = [
+            ctypes.c_void_p,
+            c_ulong,
+            POINTER(XScreenSaverInfo),
+        ]
+        xss.XScreenSaverQueryInfo.restype = c_int
+
+        display = xlib.XOpenDisplay(None)
+        if not display:
+            return None
+        info = XScreenSaverInfo()
+        root = xlib.XDefaultRootWindow(display)
+        ok = xss.XScreenSaverQueryInfo(display, root, byref(info))
+        xlib.XCloseDisplay(display)
+        if not ok:
+            return None
+        return int(info.idle) / 1000.0
+    except (OSError, AttributeError, ValueError):
+        return None
+
+
 def get_idle_seconds() -> float:
     if _have("xprintidle"):
         out = _run(["xprintidle"])
         if out and out.strip().isdigit():
             return int(out.strip()) / 1000.0
+    via_xss = _idle_via_xscreensaver()
+    if via_xss is not None:
+        return via_xss
     return 0.0
+
+
+def idle_detection_available() -> bool:
+    """True when keyboard/mouse idle time can be read on this X11 session."""
+    if _have("xprintidle"):
+        out = _run(["xprintidle"])
+        if out is not None and out.strip().isdigit():
+            return True
+    return _idle_via_xscreensaver() is not None

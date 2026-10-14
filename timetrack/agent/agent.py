@@ -321,6 +321,12 @@ class Agent:
             f"private={'ON' if self._private else 'off'} "
             f"tray={'on' if tray else 'off'}"
         )
+        if pf.backend_name() == "linux" and not pf.idle_detection_available():
+            print(
+                "[timetrack-agent] WARNING: idle detection unavailable — "
+                "install xprintidle (sudo apt install xprintidle) or use an X11 session. "
+                "Away time may be logged as active until fixed."
+            )
 
         if tray:
             from .tray import AgentTray, tray_available

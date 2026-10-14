@@ -18,3 +18,7 @@ def get_active_window() -> ActiveWindow | None:
 
 def get_idle_seconds() -> float:
     return 0.0
+
+
+def idle_detection_available() -> bool:
+    return False

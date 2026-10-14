@@ -1,9 +1,8 @@
 name: Windows installer
 
+# Prefer .github/workflows/client-release.yml (builds 22.04 + 24.04 + Windows + server deploy).
 on:
   workflow_dispatch:
-  push:
-    tags: ["v*"]
 
 jobs:
   build:

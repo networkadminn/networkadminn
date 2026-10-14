@@ -394,7 +394,7 @@ def _bar_stack_columns(
         active_sec = prod + unprod + neut
         qual = round(100.0 * prod / active_sec, 1) if active_sec > 0 else 0.0
         category = _dominant_category(prod, neut, unprod, idle, show_idle=show_idle)
-        if is_fill and tracked <= 0:
+        if is_fill:
             category = "gap"
         elif is_requested and tracked <= 0:
             category = "requested"
@@ -444,7 +444,7 @@ def _bar_hour_ticks(view_start: float, view_end: float, tz_name: str) -> list[di
     span = max(1.0, view_end - view_start)
     span_h = span / 3600.0
     # Full-day charts: label every 2 hours so 12 AM … 12 AM stays readable
-    if span_h <= 8:
+    if span_h <= 11:
         step_h = 1
     elif span_h <= 14:
         step_h = 2
@@ -532,6 +532,33 @@ def _presence_tracks(segments: list[dict], view_start: float, view_end: float) -
         tracks.append({"left": round(left, 3), "width": round(width, 3)})
         i = j
     return tracks
+
+
+def _presence_fill_gaps(
+    gaps: list[dict], view_start: float, view_end: float
+) -> list[dict]:
+    """Position fillable offline gaps on the presence strip (same times as chart gaps)."""
+    span = max(1.0, view_end - view_start)
+    out: list[dict] = []
+    for g in gaps:
+        s = float(g["start"])
+        e = float(g["end"])
+        if e <= view_start or s >= view_end:
+            continue
+        s_cl = max(s, view_start)
+        e_cl = min(e, view_end)
+        left = max(0.0, ((s_cl - view_start) / span) * 100.0)
+        width = max(0.15, min(100.0 - left, ((e_cl - s_cl) / span) * 100.0))
+        out.append(
+            {
+                "left": round(left, 3),
+                "width": round(width, 3),
+                "start": s,
+                "end": e,
+                "label": f"{g.get('label_start', '')}–{g.get('label_end', '')}",
+            }
+        )
+    return out
 
 
 def _bar_away_regions(
@@ -808,6 +835,7 @@ def _employee_day_context(user: User, day: datetime, *, is_self: bool) -> dict:
         fill_from_ts = min(fill_from_ts, summary.arrival_ts)
     lunch = _lunch_range(day)
     lunch_excluded = [lunch] if lunch is not None else []
+    idle_gap_min = float(settings.idle_threshold or 180)
     bar_raw = productivity_bar_segments(
         acts,
         start,
@@ -817,6 +845,7 @@ def _employee_day_context(user: User, day: datetime, *, is_self: bool) -> dict:
         now_ts=gap_now_ts,
         earliest_fill_ts=fill_from_ts,
         excluded_ranges=lunch_excluded,
+        min_gap_seconds=idle_gap_min,
     )
 
     day_start, day_end = start, end
@@ -867,6 +896,7 @@ def _employee_day_context(user: User, day: datetime, *, is_self: bool) -> dict:
         now_ts=gap_now_ts,
         earliest_fill_ts=fill_from_ts,
         excluded_ranges=lunch_excluded,
+        min_gap_seconds=idle_gap_min,
     )
     bar_display = suppress_covered_gaps(bar_display, covered_ranges)
     bar_display = reconcile_fillable_gap_bounds(bar_display)
@@ -876,6 +906,7 @@ def _employee_day_context(user: User, day: datetime, *, is_self: bool) -> dict:
         bar_display, bucket_seconds=bucket_seconds, view_start=view_start, view_end=view_end
     )
     presence_tracks = _presence_tracks(bar_raw, view_start, view_end)
+    presence_fill_gaps = _presence_fill_gaps(gaps, view_start, view_end)
     bar_hour_ticks = _bar_hour_ticks(view_start, view_end, _tz())
     bar_away_regions = _bar_away_regions(
         view_start=view_start,
@@ -954,6 +985,7 @@ def _employee_day_context(user: User, day: datetime, *, is_self: bool) -> dict:
         "bar_hour_ticks": bar_hour_ticks,
         "bar_away_regions": bar_away_regions,
         "presence_tracks": presence_tracks,
+        "presence_fill_gaps": presence_fill_gaps,
         "timeline_chart": timeline_chart,
         "view_start_ts": view_start,
         "view_end_ts": view_end,
@@ -1121,11 +1153,44 @@ def home():
     return redirect(url_for("views.me"))
 
 
+@views_bp.route("/blog")
+def blog_index():
+    from .blog_posts import all_posts, blog_categories
+
+    posts = all_posts()
+    return render_template(
+        "blog_index.html",
+        posts=posts,
+        categories=blog_categories(posts),
+        nav_active="blog",
+    )
+
+
+@views_bp.route("/blog/<slug>")
+def blog_post(slug: str):
+    from .blog_posts import all_posts, get_post
+
+    post = get_post(slug)
+    if post is None:
+        abort(404)
+    all_p = all_posts()
+    related = [p for p in all_p if p.slug != slug][:3]
+    same_cat = [p for p in all_p if p.category == post.category and p.slug != slug][:2]
+    return render_template(
+        "blog_post.html",
+        post=post,
+        related=related,
+        same_category=same_cat,
+        nav_active="blog",
+    )
+
+
 @views_bp.route("/download")
+@login_required
 def download_page():
     from .releases import scan_releases
 
-    return render_template("public_download.html", releases=scan_releases())
+    return render_template("download.html", releases=scan_releases())
 
 
 @views_bp.route("/download/<platform>/<path:filename>")
@@ -1159,6 +1224,85 @@ def me():
         current_user.id, month_start.year, month_start.month, tz_name=_tz()
     )
     return render_template("employee_status.html", **ctx)
+
+
+def _avatar_peer_or_404(user_id: int) -> User:
+    """Avatar may be shown for self or anyone in the same organization."""
+    from .tenancy import assert_same_org
+
+    user = db.session.get(User, user_id) or abort(404)
+    if user.id != current_user.id and not assert_same_org(user):
+        abort(404)
+    return user
+
+
+@views_bp.route("/avatar/<int:user_id>")
+@login_required
+def user_avatar(user_id: int):
+    from .avatar_util import avatar_disk_path, user_has_avatar
+
+    user = _avatar_peer_or_404(user_id)
+    if not user_has_avatar(user):
+        abort(404)
+    cfg = current_app.config["TIMETRACK_SERVER_CONFIG"]
+    path = avatar_disk_path(cfg.data_dir, user.id)
+    if not path.is_file():
+        abort(404)
+    return send_from_directory(
+        str(path.parent),
+        path.name,
+        mimetype="image/jpeg",
+        max_age=86400,
+    )
+
+
+@views_bp.route("/me/account", methods=["GET", "POST"])
+@login_required
+def my_account():
+    from .avatar_util import remove_avatar_file, save_avatar_upload, user_has_avatar
+    from .models import User
+
+    user = db.session.get(User, current_user.id) or abort(404)
+    cfg = current_app.config["TIMETRACK_SERVER_CONFIG"]
+    if request.method == "POST":
+        action = (request.form.get("action") or "").strip()
+        if action == "photo":
+            try:
+                save_avatar_upload(user, request.files.get("photo"), cfg.data_dir)
+                db.session.commit()
+                flash("Profile photo updated.", "info")
+            except ValueError as exc:
+                flash(str(exc), "error")
+        elif action == "remove_photo":
+            if user_has_avatar(user):
+                remove_avatar_file(user, cfg.data_dir)
+                db.session.commit()
+                flash("Profile photo removed.", "info")
+        elif action == "profile":
+            name = (request.form.get("name") or "").strip()
+            email = (request.form.get("email") or "").strip()
+            user.display_name = name
+            user.email = email
+            db.session.commit()
+            flash("Profile saved.", "info")
+        elif action == "password":
+            current_pw = request.form.get("current_password") or ""
+            password = request.form.get("password") or ""
+            confirm = request.form.get("confirm") or ""
+            if not user.check_password(current_pw):
+                flash("Current password is incorrect.", "error")
+            elif len(password) < 6:
+                flash("Password must be at least 6 characters.", "error")
+            elif password != confirm:
+                flash("New passwords do not match.", "error")
+            else:
+                user.set_password(password)
+                db.session.commit()
+                flash("Password updated.", "info")
+        else:
+            flash("Unknown action.", "error")
+        return redirect(url_for("views.my_account"))
+    return render_template("my_account.html")
 
 
 @views_bp.route("/admin")

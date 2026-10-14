@@ -30,7 +30,7 @@ esstracker follows the same distribution model as DeskTime-class trackers:
 - Best on **X11** with `xdotool` + `xprintidle`.
 - **Wayland** often hides window titles from unprivileged clients.
 - GNOME needs **AppIndicator** support for the tray.
-- Deb Depends already pulls tray/notification libraries.
+- Deb **Depends** pull `xprintidle`, `xdotool`, `libxss1`, and tray/notification libraries (idle + active window).
 
 ## Linux (Ubuntu 20.04 / 22.04 / 24.04)
 
@@ -84,5 +84,22 @@ Upload artifacts to the server:
 ```bash
 scp dist/releases/* root@SERVER:/www/wwwroot/timetrack/data/releases/
 ```
+
+### GitHub Actions (Ubuntu 22.04 + 24.04 + Windows → server)
+
+Workflow: **`.github/workflows/client-release.yml`**
+
+| Trigger | Builds | Deploy to server |
+|---------|--------|------------------|
+| Push tag `v*` (e.g. `v0.3.14`) | `.deb` for 22.04 & 24.04, Windows Setup + zip | Yes (if secret set) |
+| Manual **workflow_dispatch** | Same | Only if **Upload builds to tracker production server** is checked |
+
+**One-time setup** in GitHub → Settings → Secrets → Actions:
+
+- `PRODUCTION_SSH_KEY` — private key for `root@31.97.239.250` (same as `server-key.pem`)
+
+Optional Windows signing: `WINDOWS_CERT_PFX_BASE64`, `WINDOWS_CERT_PASSWORD`.
+
+After a successful run, files land in `/www/wwwroot/timetrack/data/releases/` and appear on **https://tracker.euclideesolutions.com/download**.
 
 The public page is `/download`.

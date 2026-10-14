@@ -158,5 +158,9 @@ def _read_value(edit) -> str | None:
         return None
 
 
+def idle_detection_available() -> bool:
+    return True
+
+
 # Silence "imported but unused" for os on some linters; kept for parity.
 _ = os

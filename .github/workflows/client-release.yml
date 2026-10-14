@@ -1,0 +1,166 @@
+# Build Linux (.deb for Ubuntu 22.04 + 24.04) and Windows installers, then upload to production.
+#
+# Triggers: push tag v* (build + deploy), or manual run (build; optional deploy).
+#
+# Repository secret (required for deploy):
+#   PRODUCTION_SSH_KEY — contents of server-key.pem (root@31.97.239.250)
+#
+name: Client release
+
+on:
+  workflow_dispatch:
+    inputs:
+      deploy:
+        description: Upload builds to tracker production server
+        type: boolean
+        default: false
+  push:
+    tags: ["v*"]
+
+jobs:
+  linux:
+    name: Linux deb (Ubuntu ${{ matrix.ubuntu }})
+    strategy:
+      fail-fast: false
+      matrix:
+        ubuntu: ["22.04", "24.04"]
+    runs-on: ubuntu-${{ matrix.ubuntu }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: System packages
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq \
+            libgirepository1.0-dev libcairo2-dev pkg-config gir1.2-gtk-3.0 \
+            libayatana-appindicator3-1 gir1.2-ayatanaappindicator3-0.1 \
+            libnotify-bin python3-tk tk-dev dpkg-dev fakeroot xvfb \
+            xprintidle xdotool libxss1
+
+      - name: Python packages
+        run: |
+          python -m pip install -q -U pip wheel
+          python -m pip install -q -r requirements.txt "pyinstaller>=6.0" Pillow "PyGObject<3.51" pycairo
+
+      - name: Build .deb
+        env:
+          ESSTRACKER_DEB_TAG: ubuntu${{ matrix.ubuntu }}
+        run: python packaging/build.py deb
+
+      - name: Check package and binary
+        run: |
+          ls -la dist/*.deb dist/releases/
+          dpkg-deb -I dist/esstracker_*_ubuntu${{ matrix.ubuntu }}_amd64.deb | head -20
+          xvfb-run -a dist/linux/timetrack-agent --help >/dev/null
+          echo "binary starts OK"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: linux-ubuntu${{ matrix.ubuntu }}
+          path: |
+            dist/esstracker_*_ubuntu${{ matrix.ubuntu }}_amd64.deb
+            dist/releases/esstracker_*_ubuntu${{ matrix.ubuntu }}_amd64.deb
+          if-no-files-found: error
+
+  windows:
+    name: Windows installer
+    runs-on: windows-latest
+    env:
+      HAS_CERT: ${{ secrets.WINDOWS_CERT_PFX_BASE64 != '' }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install Inno Setup
+        shell: pwsh
+        run: |
+          if (-not (Test-Path "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe")) {
+            choco install innosetup -y --no-progress
+          }
+
+      - name: Load code-signing certificate
+        if: env.HAS_CERT == 'true'
+        env:
+          CERT: ${{ secrets.WINDOWS_CERT_PFX_BASE64 }}
+        shell: pwsh
+        run: |
+          $pfx = Join-Path $env:RUNNER_TEMP "esstracker-sign.pfx"
+          [IO.File]::WriteAllBytes($pfx, [Convert]::FromBase64String($env:CERT))
+          "ESSTRACKER_SIGN_PFX=$pfx" >> $env:GITHUB_ENV
+
+      - name: Build client + installer
+        shell: pwsh
+        env:
+          ESSTRACKER_SIGN_PASSWORD: ${{ secrets.WINDOWS_CERT_PASSWORD }}
+        run: powershell -ExecutionPolicy Bypass -File packaging\build_windows.ps1
+
+      - name: Check installer exists
+        shell: pwsh
+        run: |
+          Get-ChildItem dist\releases\esstracker-Setup-*.exe, dist\releases\esstracker-*-windows.zip | Format-Table Name, Length
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: windows
+          path: |
+            dist/releases/esstracker-Setup-*.exe
+            dist/releases/esstracker-*-windows.zip
+          if-no-files-found: error
+
+  deploy-server:
+    name: Deploy to production
+    needs: [linux, windows]
+    runs-on: ubuntu-latest
+    if: >-
+      (github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')) ||
+      (github.event_name == 'workflow_dispatch' && inputs.deploy)
+    steps:
+      - name: Download build artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+          merge-multiple: true
+
+      - name: Collect release files
+        run: |
+          mkdir -p staging
+          find artifacts -type f \( -name '*.deb' -o -name '*.exe' -o -name '*.zip' \) -print0 \
+            | xargs -0 -I{} cp -v {} staging/
+          ls -la staging/
+          test "$(ls -1 staging/*.deb 2>/dev/null | wc -l)" -ge 2
+          test -n "$(ls staging/esstracker-Setup-*.exe 2>/dev/null)"
+
+      - name: Upload to tracker server
+        env:
+          SSH_KEY: ${{ secrets.PRODUCTION_SSH_KEY }}
+        run: |
+          if [ -z "${SSH_KEY}" ]; then
+            echo "PRODUCTION_SSH_KEY secret is not set — skip deploy"
+            exit 1
+          fi
+          install -m 600 -d ~/.ssh
+          printf '%s\n' "$SSH_KEY" > ~/.ssh/production.pem
+          chmod 600 ~/.ssh/production.pem
+          ssh -i ~/.ssh/production.pem -o StrictHostKeyChecking=accept-new -p 22 \
+            root@31.97.239.250 'mkdir -p /www/wwwroot/timetrack/data/releases'
+          rsync -avz --progress \
+            -e "ssh -i ~/.ssh/production.pem -o StrictHostKeyChecking=accept-new -p 22" \
+            staging/ root@31.97.239.250:/www/wwwroot/timetrack/data/releases/
+          ssh -i ~/.ssh/production.pem -p 22 root@31.97.239.250 \
+            'ls -la /www/wwwroot/timetrack/data/releases/ | tail -20'
+
+      - name: Attach to GitHub Release
+        if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: staging/*
+          generate_release_notes: true
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

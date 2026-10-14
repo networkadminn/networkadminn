@@ -359,6 +359,7 @@ def productivity_bar_segments(
     now_ts: float | None = None,
     earliest_fill_ts: float | None = None,
     excluded_ranges: list[tuple[float, float]] | None = None,
+    min_gap_seconds: float | None = None,
 ) -> list[dict]:
     """Fine timeline segments for a DeskTime-like productivity bar."""
     buckets = timeline_buckets(activities, start_ts, end_ts, bucket_seconds)
@@ -402,9 +403,10 @@ def productivity_bar_segments(
                 "gap_end": None,
             }
         )
+    gap_min = float(min_gap_seconds) if min_gap_seconds is not None else bucket_seconds
     return annotate_idle_gaps(
         segments,
-        min_gap_seconds=bucket_seconds,
+        min_gap_seconds=gap_min,
         now_ts=now_ts,
         earliest_fill_ts=earliest_fill_ts,
         excluded_ranges=excluded_ranges,
@@ -463,7 +465,10 @@ def annotate_idle_gaps(
     earliest_fill_ts: float | None = None,
     excluded_ranges: list[tuple[float, float]] | None = None,
 ) -> list[dict]:
-    """Mark consecutive empty bar buckets as one fillable idle/offline gap.
+    """Mark consecutive empty or agent-idle bar buckets as fillable idle/offline gaps.
+
+    Empty buckets = no synced activity. Idle buckets = keyboard/mouse idle per agent.
+    ``min_gap_seconds`` is usually the company idle threshold (e.g. 180).
 
     Buckets that start in the future (after ``now_ts``) are never fillable.
     Gaps that straddle "now" are clipped so ``gap_end`` does not exceed now.
@@ -471,39 +476,40 @@ def annotate_idle_gaps(
     Ranges in ``excluded_ranges`` (e.g. lunch) split gaps and are never fillable.
     """
     excluded = excluded_ranges or []
-    i = 0
-    n = len(segments)
-    while i < n:
-        if segments[i].get("kind") != "empty":
-            i += 1
-            continue
-        j = i
-        while j < n and segments[j].get("kind") == "empty":
-            j += 1
-        k = i
-        while k < j:
-            seg_s = float(segments[k]["start"])
-            seg_e = float(segments[k].get("end") or seg_s)
-            if _segment_excluded(seg_s, seg_e, excluded):
-                k += 1
+    for gap_kind in ("empty", "idle"):
+        i = 0
+        n = len(segments)
+        while i < n:
+            if segments[i].get("kind") != gap_kind:
+                i += 1
                 continue
-            m = k
-            while m < j:
-                ms = float(segments[m]["start"])
-                me = float(segments[m].get("end") or ms)
-                if _segment_excluded(ms, me, excluded):
-                    break
-                m += 1
-            _mark_fillable_gap_run(
-                segments,
-                k,
-                m,
-                min_gap_seconds=min_gap_seconds,
-                now_ts=now_ts,
-                earliest_fill_ts=earliest_fill_ts,
-            )
-            k = m
-        i = j
+            j = i
+            while j < n and segments[j].get("kind") == gap_kind:
+                j += 1
+            k = i
+            while k < j:
+                seg_s = float(segments[k]["start"])
+                seg_e = float(segments[k].get("end") or seg_s)
+                if _segment_excluded(seg_s, seg_e, excluded):
+                    k += 1
+                    continue
+                m = k
+                while m < j:
+                    ms = float(segments[m]["start"])
+                    me = float(segments[m].get("end") or ms)
+                    if _segment_excluded(ms, me, excluded):
+                        break
+                    m += 1
+                _mark_fillable_gap_run(
+                    segments,
+                    k,
+                    m,
+                    min_gap_seconds=min_gap_seconds,
+                    now_ts=now_ts,
+                    earliest_fill_ts=earliest_fill_ts,
+                )
+                k = m
+            i = j
     return segments
 
 

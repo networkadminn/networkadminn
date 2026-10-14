@@ -55,10 +55,19 @@ def backend_name() -> str:
     return getattr(_backend, "BACKEND_NAME", _system.lower())
 
 
+def idle_detection_available() -> bool:
+    """Whether keyboard/mouse idle time is measurable on this host."""
+    fn = getattr(_backend, "idle_detection_available", None)
+    if fn is not None:
+        return bool(fn())
+    return False
+
+
 __all__ = [
     "ActiveWindow",
     "get_active_window",
     "get_idle_seconds",
     "get_browser_url",
     "backend_name",
+    "idle_detection_available",
 ]
