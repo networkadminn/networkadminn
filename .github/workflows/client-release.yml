@@ -145,7 +145,8 @@ jobs:
             echo "PRODUCTION_SSH_KEY secret is not set — skip deploy"
             exit 1
           fi
-          install -m 600 -d ~/.ssh
+          mkdir -p ~/.ssh
+          chmod 700 ~/.ssh
           printf '%s\n' "$SSH_KEY" > ~/.ssh/production.pem
           chmod 600 ~/.ssh/production.pem
           ssh -i ~/.ssh/production.pem -o StrictHostKeyChecking=accept-new -p 22 \
