@@ -30,6 +30,7 @@ from ..analytics import (
     humanize,
     idle_gap_list,
     merge_bar_segments,
+    merge_nearby_gaps,
     productivity_bar_segments,
     bar_view_hours,
     summarize,
@@ -346,12 +347,20 @@ def _dominant_category(
     return max(scores, key=scores.get)
 
 
+def _overlaps_range(s: float, e: float, ranges: list[tuple[float, float]]) -> bool:
+    for rs, re in ranges:
+        if s < re and e > rs:
+            return True
+    return False
+
+
 def _bar_stack_columns(
     segments: list[dict],
     *,
     bucket_seconds: float = 300.0,
     view_start: float | None = None,
     view_end: float | None = None,
+    display_gaps: list[dict] | None = None,
 ) -> list[dict]:
     """Per-bucket columns: height = productivity %, color = dominant category."""
     cols: list[dict] = []
@@ -361,6 +370,11 @@ def _bar_stack_columns(
         if view_start is not None and view_end is not None
         else 0.0
     )
+    gap_ranges: list[tuple[float, float]] = []
+    if display_gaps:
+        for g in display_gaps:
+            gap_ranges.append((float(g["start"]), float(g["end"])))
+
     for seg in segments:
         s = float(seg.get("start") or 0)
         e = float(seg.get("end") or (s + bucket_seconds))
@@ -378,29 +392,37 @@ def _bar_stack_columns(
         idle = float(seg.get("idle") or 0)
         tracked = prod + unprod + neut + idle
         active = (prod + unprod + neut) > 0
-        show_idle = idle > 0 and (active or idle >= total * 0.35)
+        show_idle = False
         is_fill = bool(seg.get("fillable"))
         is_requested = bool(seg.get("requested"))
-        if tracked <= 0 and not is_fill and not is_requested:
-            continue
         orig_start = float(seg.get("start") or 0)
+        orig_end = float(seg.get("end") or (orig_start + bucket_seconds))
+        if gap_ranges and _overlaps_range(orig_start, orig_end, gap_ranges):
+            continue
+        if is_fill or seg.get("kind") in ("idle", "empty"):
+            continue
+        if not active and not is_requested:
+            continue
+        if tracked <= 0 and not is_requested:
+            continue
         left = width = 0.0
         if span > 0 and view_start is not None:
             slot = max(0.0, min(100.0, (total / span) * 100.0))
-            # Fill the slot — nearly continuous bars across the day
             width = max(0.2, slot * 0.96)
             left = max(0.0, min(100.0 - width, ((orig_start - view_start) / span) * 100.0))
 
         active_sec = prod + unprod + neut
         qual = round(100.0 * prod / active_sec, 1) if active_sec > 0 else 0.0
         category = _dominant_category(prod, neut, unprod, idle, show_idle=show_idle)
-        if is_fill:
-            category = "gap"
-        elif is_requested and tracked <= 0:
+        if is_requested and tracked <= 0:
             category = "requested"
 
-        # Height = how full the 5-min slot was; color = dominant activity type
-        fill = round(min(100.0, 100.0 * tracked / total), 1) if tracked > 0 else 0.0
+        active_sec_only = prod + unprod + neut
+        fill = (
+            round(min(100.0, 100.0 * active_sec_only / total), 1)
+            if active_sec_only > 0
+            else 0.0
+        )
         if fill > 0:
             height = round(max(fill, 8.0), 1)
         else:
@@ -414,15 +436,15 @@ def _bar_stack_columns(
                 "width": round(width, 4),
                 "quality": qual,
                 "productivity": qual,
-                "height_pct": height if (active or show_idle or tracked > 0) else 0.0,
+                "height_pct": height if active else 0.0,
                 "stack_p": round(100.0 * prod / total, 2) if prod else 0.0,
                 "stack_n": round(100.0 * neut / total, 2) if neut else 0.0,
                 "stack_u": round(100.0 * unprod / total, 2) if unprod else 0.0,
-                "stack_i": round(100.0 * idle / total, 2) if idle else 0.0,
+                "stack_i": 0.0,
                 "category": category,
                 "label": seg.get("label") or "",
                 "label_end": seg.get("label_end") or seg.get("label") or "",
-                "fillable": is_fill,
+                "fillable": False,
                 "requested": is_requested,
                 "gap_start": seg.get("gap_start"),
                 "gap_end": seg.get("gap_end"),
@@ -430,7 +452,7 @@ def _bar_stack_columns(
                 "neutral_m": round(neut / 60.0, 1),
                 "unproductive_m": round(unprod / 60.0, 1),
                 "idle_m": round(idle / 60.0, 1),
-                "active": active or show_idle,
+                "active": active,
                 "top_app": seg.get("top_app") or "",
                 "top_domain": seg.get("top_domain") or "",
             }
@@ -506,13 +528,47 @@ def _bar_hour_ticks(view_start: float, view_end: float, tz_name: str) -> list[di
     return ticks
 
 
-def _presence_tracks(segments: list[dict], view_start: float, view_end: float) -> list[dict]:
+def _intervals_minus_gaps(
+    start: float,
+    end: float,
+    gap_ranges: list[tuple[float, float]],
+) -> list[tuple[float, float]]:
+    """Pieces of [start, end) that do not overlap idle/offline gap ranges."""
+    if end <= start:
+        return []
+    if not gap_ranges:
+        return [(start, end)]
+    pieces: list[tuple[float, float]] = [(start, end)]
+    for gs, ge in sorted(gap_ranges):
+        next_pieces: list[tuple[float, float]] = []
+        for ps, pe in pieces:
+            if pe <= gs or ps >= ge:
+                next_pieces.append((ps, pe))
+                continue
+            if ps < gs:
+                next_pieces.append((ps, gs))
+            if pe > ge:
+                next_pieces.append((ge, pe))
+        pieces = next_pieces
+    return [(a, b) for a, b in pieces if b - a > 0.01]
+
+
+def _presence_tracks(
+    segments: list[dict],
+    view_start: float,
+    view_end: float,
+    *,
+    display_gaps: list[dict] | None = None,
+) -> list[dict]:
     span = max(1.0, view_end - view_start)
     tracks: list[dict] = []
+    gap_ranges = [(float(g["start"]), float(g["end"])) for g in (display_gaps or [])]
     i, n = 0, len(segments)
 
     def _tracked(seg: dict) -> bool:
-        return seg.get("kind") in ("productive", "neutral", "unproductive", "idle")
+        if seg.get("fillable") or seg.get("kind") in ("idle", "empty"):
+            return False
+        return seg.get("kind") in ("productive", "neutral", "unproductive")
 
     while i < n:
         if not _tracked(segments[i]):
@@ -527,9 +583,10 @@ def _presence_tracks(segments: list[dict], view_start: float, view_end: float) -
             i = j
             continue
         s, e = max(s, view_start), min(e, view_end)
-        left = max(0.0, ((s - view_start) / span) * 100.0)
-        width = max(0.15, min(100.0 - left, ((e - s) / span) * 100.0))
-        tracks.append({"left": round(left, 3), "width": round(width, 3)})
+        for ps, pe in _intervals_minus_gaps(s, e, gap_ranges):
+            left = max(0.0, ((ps - view_start) / span) * 100.0)
+            width = max(0.15, min(100.0 - left, ((pe - ps) / span) * 100.0))
+            tracks.append({"left": round(left, 3), "width": round(width, 3)})
         i = j
     return tracks
 
@@ -549,6 +606,7 @@ def _presence_fill_gaps(
         e_cl = min(e, view_end)
         left = max(0.0, ((s_cl - view_start) / span) * 100.0)
         width = max(0.15, min(100.0 - left, ((e_cl - s_cl) / span) * 100.0))
+        dur = float(g.get("duration") or (e_cl - s_cl))
         out.append(
             {
                 "left": round(left, 3),
@@ -556,6 +614,7 @@ def _presence_fill_gaps(
                 "start": s,
                 "end": e,
                 "label": f"{g.get('label_start', '')}–{g.get('label_end', '')}",
+                "duration_label": humanize(dur),
             }
         )
     return out
@@ -900,12 +959,23 @@ def _employee_day_context(user: User, day: datetime, *, is_self: bool) -> dict:
     )
     bar_display = suppress_covered_gaps(bar_display, covered_ranges)
     bar_display = reconcile_fillable_gap_bounds(bar_display)
-    gaps = idle_gap_list(bar_display, tz_name=_tz())
+    gaps_raw = idle_gap_list(bar_display, tz_name=_tz())
+    gaps = merge_nearby_gaps(
+        gaps_raw,
+        bridge_seconds=max(600.0, float(idle_gap_min)),
+        tz_name=_tz(),
+    )
     gap_seconds = sum(g["duration"] for g in gaps)
     bar_columns = _bar_stack_columns(
-        bar_display, bucket_seconds=bucket_seconds, view_start=view_start, view_end=view_end
+        bar_display,
+        bucket_seconds=bucket_seconds,
+        view_start=view_start,
+        view_end=view_end,
+        display_gaps=gaps,
     )
-    presence_tracks = _presence_tracks(bar_raw, view_start, view_end)
+    presence_tracks = _presence_tracks(
+        bar_display, view_start, view_end, display_gaps=gaps
+    )
     presence_fill_gaps = _presence_fill_gaps(gaps, view_start, view_end)
     bar_hour_ticks = _bar_hour_ticks(view_start, view_end, _tz())
     bar_away_regions = _bar_away_regions(

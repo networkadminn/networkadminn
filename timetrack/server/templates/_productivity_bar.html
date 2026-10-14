@@ -2,6 +2,7 @@
 {% set bar_columns = bar_columns|default([]) %}
 {% set bar_away_regions = bar_away_regions|default([]) %}
 {% set presence_tracks = presence_tracks|default([]) %}
+{% set presence_fill_gaps = presence_fill_gaps|default([]) %}
 {% set bar_hour_ticks = bar_hour_ticks|default([]) %}
 {% set bar_mode = bar_mode|default('day') %}
 <section class="panel prod-bar-v7{% if compact %} is-compact{% endif %}{% if clickable_gaps %} is-self{% endif %}"
@@ -28,35 +29,8 @@
         <li><i class="neutral"></i> Neutral</li>
         <li><i class="unproductive"></i> Low</li>
         <li><i class="idle"></i> Idle</li>
-        {% if lunch_width_pct|default(0) > 0 %}
-        <li><i class="lunch"></i> Lunch</li>
-        {% endif %}
-        {% if clickable_gaps %}
-        <li><i class="gap"></i> Fillable</li>
-        {% endif %}
       </ul>
     </div>
-  </div>
-
-  <div class="pb7-stats" aria-label="Day productivity summary">
-    <div class="pb7-stat">
-      <span>Productivity</span>
-      <strong>{{ (dt_productivity or 0)|round(0)|int }}%</strong>
-    </div>
-    <div class="pb7-stat">
-      <span>Desk time</span>
-      <strong>{{ humanize(desktime_seconds or 0) }}</strong>
-    </div>
-    <div class="pb7-stat">
-      <span>Idle</span>
-      <strong>{{ humanize(summary.idle_seconds or 0) }}</strong>
-    </div>
-    {% if gaps and clickable_gaps %}
-    <div class="pb7-stat warn">
-      <span>Gaps to fill</span>
-      <strong>{{ gaps|length }}</strong>
-    </div>
-    {% endif %}
   </div>
 
   <div class="pb7-body">
@@ -87,26 +61,33 @@
             {% if is_today and now_pct is not none %}
             <div class="pb7-now" style="left:{{ now_pct }}%"><span>Now</span></div>
             {% endif %}
+            {% if presence_tracks or (clickable_gaps and presence_fill_gaps) %}
+            <div class="pb7-presence"{% if not clickable_gaps %} aria-hidden="true"{% endif %}
+                 title="{% if clickable_gaps %}Blue = tracked · striped gaps = click to fill offline time{% else %}Times with tracked activity{% endif %}">
+              {% for t in presence_tracks %}
+              <i class="pb7-presence-active" style="left:{{ t.left }}%;width:{{ t.width }}%"></i>
+              {% endfor %}
+              {% if clickable_gaps %}
+              {% for g in presence_fill_gaps %}
+              <a class="pb7-presence-gap" style="left:{{ g.left }}%;width:{{ g.width }}%"
+                 href="{{ url_for('desk.offline_fill', day=day, start=g.start, end=g.end) }}"
+                 title="Idle time, {{ g.duration_label|default('') }} · {{ g.label }} — click to fill"
+                 aria-label="Idle gap {{ g.label }}"></a>
+              {% endfor %}
+              {% endif %}
+            </div>
+            {% endif %}
             <div class="pb7-cols">
               {% for col in bar_columns %}
               {% set tip_time = col.label ~ ('–' ~ col.label_end if col.label_end and col.label_end != col.label else '') %}
-              {% if col.fillable and clickable_gaps and not col.active %}
-              <a class="pb7-col fillable" style="left:{{ col.left }}%;width:{{ col.width }}%"
-                 href="{{ url_for('desk.offline_fill', day=day, start=col.gap_start, end=col.gap_end) }}"
-                 data-tip="{{ tip_time }}|gap"
-                 aria-label="Fill gap {{ tip_time }}"></a>
-              {% elif col.requested and not col.active %}
+              {% if col.requested and not col.active %}
               <div class="pb7-col requested" style="left:{{ col.left }}%;width:{{ col.width }}%;--i:{{ loop.index0 }}"
                    data-tip="{{ tip_time }}|requested"
                    title="Time request submitted"></div>
-              {% elif col.active or col.fillable %}
-              <div class="pb7-col cat-{{ col.category }}{% if col.fillable %} fillable{% endif %}"
+              {% elif col.active %}
+              <div class="pb7-col cat-{{ col.category }}"
                    style="left:{{ col.left }}%;width:{{ col.width }}%;--i:{{ loop.index0 }}"
-                   data-tip="{{ tip_time }}|{{ col.productive_m }}|{{ col.neutral_m }}|{{ col.unproductive_m }}|{{ col.idle_m }}|{{ col.productivity|default(col.quality) }}|{{ col.category }}|{{ col.top_app|default('') }}|{{ col.top_domain|default('') }}{% if col.fillable %}|gap{% endif %}"
-                   {% if col.fillable and clickable_gaps %}
-                   role="link" tabindex="0"
-                   data-href="{{ url_for('desk.offline_fill', day=day, start=col.gap_start, end=col.gap_end) }}"
-                   {% endif %}>
+                   data-tip="{{ tip_time }}|{{ col.productive_m }}|{{ col.neutral_m }}|{{ col.unproductive_m }}|{{ col.idle_m }}|{{ col.productivity|default(col.quality) }}|{{ col.category }}|{{ col.top_app|default('') }}|{{ col.top_domain|default('') }}">
                 {% if col.height_pct|default(0) > 0 %}
                 <span class="pb7-stack" style="height:{{ col.height_pct }}%" aria-hidden="true">
                   {% if col.stack_i > 0 %}<i class="idle" style="flex:{{ col.stack_i }}"></i>{% endif %}
@@ -124,32 +105,12 @@
           </div>
 
           <div class="pb7-footer">
-            {% if presence_tracks %}
-            <div class="pb7-tracks" aria-hidden="true">
-              <div class="pb7-track">
-                <span class="pb7-track-label"><i class="presence"></i> Active</span>
-                <div class="pb7-track-rail presence">
-                  {% for t in presence_tracks %}
-                  <i style="left:{{ t.left }}%;width:{{ t.width }}%"></i>
-                  {% endfor %}
-                </div>
-              </div>
-              <div class="pb7-track">
-                <span class="pb7-track-label"><i class="schedule"></i> Office</span>
-                <div class="pb7-track-rail schedule">
-                  <i style="left:{{ office_left_pct }}%;width:{{ office_width_pct }}%"></i>
-                </div>
-              </div>
-              {% if lunch_width_pct|default(0) > 0 %}
-              <div class="pb7-track">
-                <span class="pb7-track-label"><i class="lunch"></i> Lunch</span>
-                <div class="pb7-track-rail lunch">
-                  <i style="left:{{ lunch_left_pct }}%;width:{{ lunch_width_pct }}%"></i>
-                </div>
-              </div>
-              {% endif %}
+            <div class="pb7-axis-ticks" aria-hidden="true">
+              {% for t in bar_hour_ticks %}
+              <i class="{% if t.major|default(true) %}is-major{% endif %}{% if t.edge %} is-{{ t.edge }}{% endif %}"
+                 style="left:{{ t.left }}%"></i>
+              {% endfor %}
             </div>
-            {% endif %}
             <div class="pb7-axis" aria-hidden="true">
               {% for t in bar_hour_ticks %}
               <span class="{% if t.major|default(true) %}is-major{% endif %}{% if t.edge %} is-{{ t.edge }}{% endif %}"

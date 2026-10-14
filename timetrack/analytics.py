@@ -373,7 +373,7 @@ def productivity_bar_segments(
         active = prod + unprod + neut
         if active <= 0 and idle <= 0:
             kind = "empty"
-        elif idle >= active and idle >= bucket_seconds * 0.35:
+        elif idle > 0 and idle >= active:
             kind = "idle"
         elif prod >= unprod and prod >= neut:
             kind = "productive"
@@ -555,6 +555,32 @@ def idle_gap_list(segments: list[dict], tz_name: str | None = None) -> list[dict
             }
         )
     return gaps
+
+
+def merge_nearby_gaps(
+    gaps: list[dict],
+    *,
+    bridge_seconds: float = 600.0,
+    tz_name: str | None = None,
+) -> list[dict]:
+    """Merge fillable gaps separated by short active blips (one bar / one chip)."""
+    if not gaps:
+        return []
+    ordered = sorted(gaps, key=lambda g: float(g["start"]))
+    out: list[dict] = [dict(ordered[0])]
+    for g in ordered[1:]:
+        prev = out[-1]
+        ps, pe = float(prev["start"]), float(prev["end"])
+        gs, ge = float(g["start"]), float(g["end"])
+        if gs <= pe + float(bridge_seconds):
+            prev["end"] = max(pe, ge)
+            prev["start"] = ps
+            prev["duration"] = float(prev["end"]) - float(prev["start"])
+            prev["label_start"] = format_clock(prev["start"], tz_name=tz_name)
+            prev["label_end"] = format_clock(prev["end"], tz_name=tz_name)
+        else:
+            out.append(dict(g))
+    return out
 
 
 def suppress_covered_gaps(
@@ -877,6 +903,7 @@ __all__ = [
     "annotate_idle_gaps",
     "reconcile_fillable_gap_bounds",
     "idle_gap_list",
+    "merge_nearby_gaps",
     "suppress_covered_gaps",
     "merge_bar_segments",
     "prepare_activities",
