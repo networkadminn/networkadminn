@@ -79,15 +79,47 @@ def _defaults_paths() -> list[Path]:
 
 
 def _candidate_paths() -> list[Path]:
+    """Search order: per-user profile first (survives Windows upgrades), then cwd, then system."""
+    home_cfg = Path(os.path.expanduser("~"))
     return [
+        config_dir() / "agent.toml",
+        home_cfg / ".config" / "esstracker" / "agent.toml",
+        home_cfg / ".config" / "timetrack" / "agent.toml",
         Path.cwd() / "agent.toml",
         Path.cwd() / "config.toml",
-        config_dir() / "agent.toml",
-        Path(os.path.expanduser("~")) / ".config" / "esstracker" / "agent.toml",
-        Path(os.path.expanduser("~")) / ".config" / "timetrack" / "agent.toml",
         Path("/etc/esstracker/agent.toml"),
         Path("/etc/timetrack/agent.toml"),
     ]
+
+
+def _token_in_file(path: Path) -> bool:
+    if tomllib is None or not path.is_file():
+        return False
+    try:
+        with open(path, "rb") as fh:
+            data = tomllib.load(fh)
+        agent = data.get("agent", data)
+        return bool(str(agent.get("api_token") or "").strip())
+    except Exception:
+        return False
+
+
+def _resolve_auto_config_path() -> Path | None:
+    """Pick agent.toml: prefer profile file with a saved sign-in over empty cwd copies."""
+    existing = [p for p in _candidate_paths() if p.is_file() and p.name != "defaults.toml"]
+    if not existing:
+        return None
+    user_cfg = USER_CONFIG_PATH.resolve()
+    with_token = [p for p in existing if _token_in_file(p)]
+    for p in with_token:
+        if p.resolve() == user_cfg:
+            return p
+    if with_token:
+        return with_token[0]
+    for p in existing:
+        if p.resolve() == user_cfg:
+            return p
+    return existing[0]
 
 
 def _apply_defaults_file(cfg: AgentConfig) -> None:
@@ -115,10 +147,7 @@ def load_agent_config(path: str | os.PathLike[str] | None = None) -> AgentConfig
     if path is not None:
         candidate = Path(path)
     else:
-        for p in _candidate_paths():
-            if p.is_file() and p.name != "defaults.toml":
-                candidate = p
-                break
+        candidate = _resolve_auto_config_path()
 
     if candidate is not None and candidate.is_file() and tomllib is not None:
         with open(candidate, "rb") as fh:
@@ -148,12 +177,45 @@ def load_agent_config(path: str | os.PathLike[str] | None = None) -> AgentConfig
     if not cfg.config_path:
         cfg.config_path = str(USER_CONFIG_PATH)
     ensure_data_dirs(cfg)
+    _maybe_migrate_token_to_profile(cfg)
     return cfg
+
+
+def _maybe_migrate_token_to_profile(cfg: AgentConfig) -> None:
+    """Windows: token next to the exe is lost on upgrade — copy to %APPDATA% once."""
+    if not cfg.api_token:
+        return
+    if sys.platform != "win32":
+        return
+    try:
+        current = Path(cfg.config_path).resolve()
+        profile = USER_CONFIG_PATH.resolve()
+    except OSError:
+        return
+    if current == profile:
+        return
+    save_agent_config(cfg)
+
+
+def _save_destination(cfg: AgentConfig, path: str | os.PathLike[str] | None) -> Path:
+    if path is not None:
+        return Path(path)
+    # Signed-in state always lives in the per-user profile (not beside the frozen exe).
+    if cfg.api_token:
+        return USER_CONFIG_PATH
+    if cfg.config_path:
+        try:
+            if Path(cfg.config_path).resolve() == USER_CONFIG_PATH.resolve():
+                return USER_CONFIG_PATH
+        except OSError:
+            pass
+        return Path(cfg.config_path)
+    return USER_CONFIG_PATH
 
 
 def save_agent_config(cfg: AgentConfig, path: str | os.PathLike[str] | None = None) -> Path:
     """Write agent.toml so next launch needs no setup (DeskTime-style)."""
-    dest = Path(path or cfg.config_path or USER_CONFIG_PATH)
+    dest = _save_destination(cfg, path)
     dest.parent.mkdir(parents=True, exist_ok=True)
 
     def q(s: str) -> str:

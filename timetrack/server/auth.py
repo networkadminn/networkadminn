@@ -18,6 +18,8 @@ from flask import (
 from flask_login import current_user, login_required, login_user, logout_user
 from sqlalchemy import func, or_
 
+from .email_templates import render_email
+from .login_page import login_page_context
 from .extensions import db
 from .mail import send_email
 from .models import PasswordResetToken, User
@@ -50,9 +52,12 @@ def login():
     if current_user.is_authenticated:
         return redirect(url_for("views.home"))
 
+    login_username = ""
+
     if request.method == "POST":
         username = (request.form.get("username") or "").strip()
         password = request.form.get("password") or ""
+        login_username = username
         user = db.session.execute(
             db.select(User).filter_by(username=username)
         ).scalar_one_or_none()
@@ -62,7 +67,7 @@ def login():
         elif not user.enabled:
             flash("This account is disabled.", "error")
         else:
-            login_user(user)
+            login_user(user, remember=True)
             nxt = request.args.get("next") or ""
             if not nxt.startswith("/") or nxt.startswith("//"):
                 nxt = ""
@@ -72,7 +77,11 @@ def login():
                 nxt = ""
             return redirect(nxt or url_for("views.home"))
 
-    return render_template("login.html")
+    from .login_page import login_page_context
+
+    ctx = login_page_context()
+    ctx["login_username"] = login_username
+    return render_template("login.html", **ctx)
 
 
 @auth_bp.route("/logout")
@@ -106,7 +115,7 @@ def forgot_password():
         )
         if not identity:
             flash("Enter your username or email.", "error")
-            return render_template("forgot_password.html")
+            return render_template("forgot_password.html", **login_page_context())
 
         user = db.session.execute(
             db.select(User).filter(
@@ -130,31 +139,13 @@ def forgot_password():
 
             reset_url = url_for("auth.reset_password", token=token, _external=True)
             name = user.name or user.username
-            text = (
-                f"Hi {name},\n\n"
-                f"Reset your esstracker password using this link "
-                f"(valid {_RESET_TTL_HOURS} hour):\n\n{reset_url}\n\n"
-                "If you did not request this, you can ignore this email.\n\n"
-                "— ESS Tracker\n"
+            text, html = render_email(
+                "password_reset",
+                name=name,
+                username=user.username,
+                reset_url=reset_url,
+                ttl_hours=_RESET_TTL_HOURS,
             )
-            html = f"""
-            <div style="font-family:Arial,sans-serif;max-width:520px;margin:0 auto;color:#0F291C">
-              <h2 style="color:#0B7A4B">Reset your esstracker password</h2>
-              <p>Hi {name},</p>
-              <p>We received a request to reset your password. This link expires in
-              {_RESET_TTL_HOURS} hour.</p>
-              <p style="margin:28px 0">
-                <a href="{reset_url}"
-                   style="background:#0B7A4B;color:#fff;padding:12px 20px;border-radius:8px;
-                          text-decoration:none;font-weight:700">
-                  Choose a new password
-                </a>
-              </p>
-              <p style="font-size:13px;color:#5F7A6A">Or paste this URL:<br/>
-                <a href="{reset_url}">{reset_url}</a></p>
-              <p style="font-size:12px;color:#5F7A6A">If you did not request this, ignore this email.</p>
-            </div>
-            """
             cfg = current_app.config["TIMETRACK_SERVER_CONFIG"]
             ok, err = send_email(
                 to=user.email.strip(),
@@ -170,12 +161,12 @@ def forgot_password():
                     "or try again later.",
                     "error",
                 )
-                return render_template("forgot_password.html")
+                return render_template("forgot_password.html", **login_page_context())
 
         flash(generic, "info")
         return redirect(url_for("auth.login"))
 
-    return render_template("forgot_password.html")
+    return render_template("forgot_password.html", **login_page_context())
 
 
 @auth_bp.route("/reset-password/<token>", methods=["GET", "POST"])
