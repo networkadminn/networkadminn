@@ -74,6 +74,7 @@ HIDDEN = [
     "win32con",
     "pywintypes",
     "pythoncom",
+    "timetrack.platform.linux_screenshot",
 ]
 
 WINDOWS = PACKAGING / "windows"
@@ -328,6 +329,19 @@ def _install_agent_venv(optdir: Path) -> None:
         check=True,
     )
     shutil.copytree(ROOT / "timetrack", app / "timetrack")
+    _relink_venv_python_for_deb(venv)
+
+
+def _relink_venv_python_for_deb(venv: Path) -> None:
+    """CI builders use ephemeral Python paths; the .deb must use system python3."""
+    bindir = venv / "bin"
+    if not bindir.is_dir():
+        return
+    for name in list(bindir.iterdir()):
+        if name.name == "python" or name.name == "python3" or name.name.startswith("python3."):
+            name.unlink(missing_ok=True)
+    (bindir / "python").symlink_to("/usr/bin/python3")
+    (bindir / "python3").symlink_to("python")
 
 
 def _write_wrapper(path: Path, target: str, *, default_args: str = "") -> None:
@@ -335,10 +349,27 @@ def _write_wrapper(path: Path, target: str, *, default_args: str = "") -> None:
         "#!/bin/sh\n"
         "# esstracker launcher — Ubuntu 20.04 / 22.04 / 24.04 compatible\n"
         'export ESSTRACKER_ICON="${ESSTRACKER_ICON:-/usr/share/icons/hicolor/256x256/apps/esstracker.png}"\n'
-        'if [ -z "${ESSTRACKER_FORCE_WAYLAND:-}" ]; then\n'
-        '  export GDK_BACKEND="${GDK_BACKEND:-x11}"\n'
-        "fi\n"
         'export XDG_CURRENT_DESKTOP="${XDG_CURRENT_DESKTOP:-$XDG_SESSION_DESKTOP}"\n'
+        "# SSH/autostart may lack DISPLAY/WAYLAND; discover from the user runtime dir.\n"
+        'if [ -z "${WAYLAND_DISPLAY:-}" ] && [ -n "${XDG_RUNTIME_DIR:-}" ]; then\n'
+        '  for _wl in "$XDG_RUNTIME_DIR"/wayland-[0-9]*; do\n'
+        '    if [ -S "$_wl" ]; then\n'
+        '      export WAYLAND_DISPLAY="$(basename "$_wl")"\n'
+        "      break\n"
+        "    fi\n"
+        "  done\n"
+        "fi\n"
+        'if [ -z "${DISPLAY:-}" ]; then\n'
+        '  export DISPLAY="${DISPLAY:-:0}"\n'
+        "fi\n"
+        "# Forcing X11 GTK on Wayland breaks gnome-screenshot (no X authority over SSH).\n"
+        'if [ -z "${ESSTRACKER_FORCE_WAYLAND:-}" ]; then\n'
+        '  if [ -n "${WAYLAND_DISPLAY:-}" ] || [ "${XDG_SESSION_TYPE:-}" = wayland ]; then\n'
+        "    unset GDK_BACKEND\n"
+        "  else\n"
+        '    export GDK_BACKEND="${GDK_BACKEND:-x11}"\n'
+        "  fi\n"
+        "fi\n"
         'PYTHON_VENV="/opt/esstracker/venv/bin/python"\n'
         'PYTHON_APP="/opt/esstracker/app"\n'
         f'BIN="/opt/esstracker/{target}"\n'
@@ -463,8 +494,8 @@ Section: utils
 Priority: optional
 Architecture: {deb_arch}
 Maintainer: ESS Tracker <noreply@euclideesolutions.com>
-Depends: libc6 (>= 2.31), libgtk-3-0t64 | libgtk-3-0, libnotify-bin, libayatana-appindicator3-1 | libappindicator3-1, gir1.2-gtk-3.0, gir1.2-ayatanaappindicator3-0.1 | gir1.2-appindicator3-0.1, python3-gi, python3-tk, libx11-6, libxss1, xprintidle, xdotool
-Recommends: x11-utils, gnome-shell-extension-appindicator | gnome-shell-extension-ubuntu-appindicators
+Depends: libc6 (>= 2.31), libgtk-3-0t64 | libgtk-3-0, libnotify-bin, libayatana-appindicator3-1 | libappindicator3-1, gir1.2-gtk-3.0, gir1.2-ayatanaappindicator3-0.1 | gir1.2-appindicator3-0.1, python3-gi, python3-tk, libx11-6, libxss1, xprintidle, xdotool, gnome-screenshot
+Recommends: grim, x11-utils, gnome-shell-extension-appindicator | gnome-shell-extension-ubuntu-appindicators
 Provides: timetrack
 Conflicts: timetrack
 Replaces: timetrack
@@ -493,10 +524,22 @@ fi
 if command -v update-icon-caches >/dev/null 2>&1; then
   update-icon-caches /usr/share/icons/hicolor >/dev/null 2>&1 || true
 fi
+# CI-built venv may point at a non-existent Python path; always use system python3.
+VENV_BIN="/opt/esstracker/venv/bin"
+if [ -d "$VENV_BIN" ] && [ -x /usr/bin/python3 ]; then
+  rm -f "$VENV_BIN/python" "$VENV_BIN/python3" "$VENV_BIN"/python3.*
+  ln -sf /usr/bin/python3 "$VENV_BIN/python"
+  ln -sf python "$VENV_BIN/python3"
+  for _pip in "$VENV_BIN/pip" "$VENV_BIN/pip3" "$VENV_BIN/pip3."*; do
+    [ -f "$_pip" ] || continue
+    sed -i '1s|^#!.*|#!/usr/bin/python3|' "$_pip" 2>/dev/null || true
+  done
+fi
 echo ""
 echo "  esstracker (ESS) client installed."
 echo "  Open Applications → esstracker → Sign in"
 echo "  Supported: @SUPPORTED@ (amd64)"
+echo "  Wayland screenshots use gnome-screenshot (installed with this package)."
 echo "  Tip: X11 session gives the best window-title + tray + idle support."
 echo "  Idle gaps need xprintidle (installed) and the agent running."
 echo ""

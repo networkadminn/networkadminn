@@ -114,6 +114,15 @@ def _capture_pil():
         img = _capture_pil_darwin()
         if img is not None:
             return img
+    if sys.platform.startswith("linux"):
+        try:
+            from .linux_screenshot import capture_linux_pil
+
+            img = capture_linux_pil()
+            if img is not None:
+                return img
+        except Exception:
+            pass
     try:
         return _capture_pil_mss()
     except Exception:

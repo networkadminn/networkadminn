@@ -42,7 +42,7 @@ jobs:
             libgirepository1.0-dev libcairo2-dev pkg-config gir1.2-gtk-3.0 \
             libayatana-appindicator3-1 gir1.2-ayatanaappindicator3-0.1 \
             libnotify-bin python3-tk tk-dev dpkg-dev fakeroot xvfb \
-            xprintidle xdotool libxss1
+            xprintidle xdotool libxss1 gnome-screenshot
 
       - name: Python packages
         run: |
@@ -58,6 +58,8 @@ jobs:
         run: |
           ls -la dist/*.deb dist/releases/
           dpkg-deb -I dist/esstracker_*_ubuntu${{ matrix.ubuntu }}_amd64.deb | head -20
+          dpkg-deb -c dist/esstracker_*_ubuntu${{ matrix.ubuntu }}_amd64.deb | grep -q linux_screenshot.py
+          readlink build/deb/esstracker_*/opt/esstracker/venv/bin/python | grep -q '/usr/bin/python3'
           xvfb-run -a dist/linux/timetrack-agent --help >/dev/null
           echo "binary starts OK"
 
