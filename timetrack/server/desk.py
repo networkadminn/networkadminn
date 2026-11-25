@@ -19,7 +19,7 @@ from flask import (
 )
 from flask_login import current_user, login_required
 
-from ..analytics import day_bounds, humanize, summarize
+from ..analytics import compute_day_metrics, day_bounds, humanize, summarize
 from .auth import admin_required
 from .extensions import db
 from .models import (
@@ -34,9 +34,37 @@ from .models import (
 )
 from .settings_util import get_settings
 from ..analytics import format_clock
-from .views import _activities_for, _lunch_range, _parse_day
+from .views import (
+    _activities_for,
+    _day_nav,
+    _expected_seconds,
+    _lunch_range,
+    _manual_for,
+    _parse_day,
+    _tz,
+)
 
 desk_bp = Blueprint("desk", __name__)
+
+
+def _fill_target_user_id() -> int:
+    """Employee self, or admin filling/editing another user’s day."""
+    uid = request.form.get("user_id", type=int)
+    if uid and current_user.is_admin:
+        from .tenancy import current_org_id
+
+        user = db.session.get(User, uid)
+        org = current_org_id()
+        if user and user.organization_id == org:
+            return uid
+    return current_user.id
+
+
+def _day_view_redirect(day: str | datetime, user_id: int):
+    day_s = day if isinstance(day, str) else day.strftime("%Y-%m-%d")
+    if user_id != current_user.id:
+        return redirect(url_for("views.admin_user", user_id=user_id, day=day_s))
+    return redirect(url_for("views.me", day=day_s))
 
 
 def _day_arrival_ts(user_id: int, day: datetime) -> float | None:
@@ -174,12 +202,24 @@ def offline_fill():
     elif "T" in raw_start and "T" in raw_end:
         prefill_start, prefill_end = raw_start, raw_end
 
+    gap_prefill_range = ""
+    gap_prefill_duration = ""
+    if raw_start.replace(".", "", 1).isdigit() and raw_end.replace(".", "", 1).isdigit():
+        _gs, _ge = float(raw_start), float(raw_end)
+        if _ge > _gs:
+            gap_prefill_range = (
+                f"{format_clock(_gs, tz_name=tz_name)} – {format_clock(_ge, tz_name=tz_name)}"
+            )
+            gap_prefill_duration = humanize(_ge - _gs)
+
     prefill_category = (request.args.get("category") or "").strip().lower()
     if prefill_category not in ("productive", "unproductive", "neutral"):
         # Gap clicks prefill times only — default to productive for away/work fills.
         prefill_category = "productive" if (prefill_start and prefill_end) else "neutral"
 
     if request.method == "POST":
+        target_user_id = _fill_target_user_id()
+        edit_id = request.form.get("request_id", type=int)
         try:
             start = datetime.strptime(request.form.get("start") or "", "%Y-%m-%dT%H:%M")
             end = datetime.strptime(request.form.get("end") or "", "%Y-%m-%dT%H:%M")
@@ -202,7 +242,7 @@ def offline_fill():
                 "error",
             )
             return redirect(url_for("desk.offline_fill", day=day.strftime("%Y-%m-%d")))
-        arrival_ts = _day_arrival_ts(current_user.id, day)
+        arrival_ts = _day_arrival_ts(target_user_id, day)
         before_arrival = arrival_ts is None or start_ts < arrival_ts
         if before_arrival and not (request.form.get("note") or "").strip():
             flash("Please add a reason for time before you started tracking.", "error")
@@ -221,6 +261,15 @@ def offline_fill():
         if category not in ("productive", "unproductive", "neutral"):
             category = "neutral"
         note = (request.form.get("note") or "").strip()
+        project_name = (request.form.get("project_name") or "").strip()
+        task_name = (request.form.get("task_name") or "").strip()
+        extra: list[str] = []
+        if project_name:
+            extra.append(f"Project: {project_name}")
+        if task_name:
+            extra.append(f"Task: {task_name}")
+        if extra:
+            note = f"{note} ({', '.join(extra)})" if note else ", ".join(extra)
         fill_kind = request.form.get("fill_kind") or "offline"
         if fill_kind not in ("offline", "idle"):
             fill_kind = "offline"
@@ -232,10 +281,44 @@ def offline_fill():
         needs_approval = (
             (not current_user.is_admin) or settings.offline_requires_approval or before_arrival
         )
-        status = "pending" if needs_approval else "approved"
         duration = end_ts - start_ts
+        redirect_day = day.strftime("%Y-%m-%d")
+
+        if edit_id:
+            row = db.session.get(OfflineRequest, edit_id) or abort(404)
+            if row.user_id != current_user.id and not current_user.is_admin:
+                abort(403)
+            if row.status == "rejected":
+                flash("Cannot edit a rejected request.", "error")
+                return redirect(url_for("views.me", day=redirect_day))
+            old_start, old_end = float(row.start_ts), float(row.end_ts)
+            if row.status == "approved":
+                _remove_offline_activities(row.user_id, old_start, old_end)
+            row.start_ts = start_ts
+            row.end_ts = end_ts
+            row.duration = duration
+            row.category = category
+            row.note = note
+            if row.status == "approved":
+                db.session.add(
+                    Activity(
+                        user_id=row.user_id,
+                        app="offline",
+                        title=note or "Manual / offline time",
+                        category=category,
+                        idle=False,
+                        start_ts=start_ts,
+                        end_ts=end_ts,
+                        duration=duration,
+                    )
+                )
+            db.session.commit()
+            flash("Offline time updated.", "info")
+            return _day_view_redirect(redirect_day, row.user_id)
+
+        status = "pending" if needs_approval else "approved"
         req = OfflineRequest(
-            user_id=current_user.id,
+            user_id=target_user_id,
             start_ts=start_ts,
             end_ts=end_ts,
             duration=duration,
@@ -247,7 +330,7 @@ def offline_fill():
         if status == "approved":
             db.session.add(
                 Activity(
-                    user_id=current_user.id,
+                    user_id=target_user_id,
                     app="offline",
                     title=note or "Manual / offline time",
                     category=category,
@@ -260,10 +343,10 @@ def offline_fill():
         db.session.commit()
         flash(
             "Time submitted."
-            + (" Awaiting admin approval." if status == "pending" else " Added to your day."),
+            + (" Awaiting admin approval." if status == "pending" else " Added to their day."),
             "info",
         )
-        return redirect(url_for("views.me", day=day.strftime("%Y-%m-%d")))
+        return _day_view_redirect(redirect_day, target_user_id)
 
     my_recent = list(
         db.session.execute(
@@ -283,7 +366,200 @@ def offline_fill():
         my_recent=my_recent,
         humanize=humanize,
         tz_name=tz_name,
+        gap_prefill_range=gap_prefill_range,
+        gap_prefill_duration=gap_prefill_duration,
     )
+
+
+def _overlapping_tracked_activities(
+    user_id: int, start_ts: float, end_ts: float
+) -> list[Activity]:
+    return list(
+        db.session.execute(
+            db.select(Activity)
+            .filter(
+                Activity.user_id == user_id,
+                Activity.idle.is_(False),
+                Activity.app != "offline",
+                Activity.start_ts < end_ts,
+                Activity.end_ts > start_ts,
+            )
+            .order_by(Activity.start_ts.asc())
+        ).scalars()
+    )
+
+
+def _punch_tracked_hole(user_id: int, start_ts: float, end_ts: float) -> None:
+    """Remove agent-tracked activity (not manual offline) within [start_ts, end_ts]."""
+    if end_ts <= start_ts:
+        return
+    cols = [c.name for c in Activity.__table__.columns]
+    while True:
+        acts = _overlapping_tracked_activities(user_id, start_ts, end_ts)
+        if not acts:
+            break
+        act = acts[0]
+        a0, a1 = float(act.start_ts), float(act.end_ts)
+        if a0 >= start_ts and a1 <= end_ts:
+            db.session.delete(act)
+            db.session.flush()
+            continue
+        if a0 < start_ts and a1 > end_ts:
+            right = Activity(**{c: getattr(act, c) for c in cols if c != "id"})
+            right.start_ts = end_ts
+            right.end_ts = a1
+            right.duration = a1 - end_ts
+            act.end_ts = start_ts
+            act.duration = start_ts - a0
+            db.session.add(right)
+        elif a0 < start_ts:
+            act.end_ts = start_ts
+            act.duration = start_ts - a0
+        else:
+            act.start_ts = end_ts
+            act.duration = a1 - end_ts
+        db.session.flush()
+
+
+def _tracked_metadata_from_acts(acts: list[Activity]) -> tuple[str, str, str]:
+    if not acts:
+        return "productive", "unknown", "Tracked time"
+    by_dur = sorted(acts, key=lambda a: float(a.duration), reverse=True)
+    main = by_dur[0]
+    weights = {"productive": 0.0, "neutral": 0.0, "unproductive": 0.0}
+    for a in acts:
+        cat = a.category if a.category in weights else "neutral"
+        weights[cat] += float(a.duration)
+    category = max(weights, key=weights.get)
+    return category, (main.app or "unknown"), (main.title or "Tracked time")
+
+
+def _title_with_project_task(base: str, project: str, task: str) -> str:
+    extra: list[str] = []
+    if project:
+        extra.append(f"Project: {project}")
+    if task:
+        extra.append(f"Task: {task}")
+    if not extra:
+        return base or "Tracked time"
+    if base and base not in ("Tracked time", "unknown"):
+        return f"{base} ({', '.join(extra)})"
+    return ", ".join(extra)
+
+
+def _parse_day_times_from_form() -> tuple[datetime, float, float, str]:
+    from ..tzutil import zone as tz_zone
+    from .settings_util import company_tz_name
+
+    tz_name = company_tz_name()
+    tz = tz_zone(tz_name)
+    day = _parse_day(request.form.get("day"))
+    start = datetime.strptime(request.form.get("start") or "", "%Y-%m-%dT%H:%M").replace(
+        tzinfo=tz
+    )
+    end = datetime.strptime(request.form.get("end") or "", "%Y-%m-%dT%H:%M").replace(tzinfo=tz)
+    return day, start.timestamp(), end.timestamp(), tz_name
+
+
+@desk_bp.route("/tracked/edit", methods=["POST"])
+@login_required
+def tracked_edit():
+    target_user_id = _fill_target_user_id()
+    try:
+        day, start_ts, end_ts, tz_name = _parse_day_times_from_form()
+    except ValueError:
+        flash("Invalid start/end time.", "error")
+        return redirect(request.referrer or url_for("views.me"))
+    if end_ts <= start_ts:
+        flash("End must be after start.", "error")
+        return _day_view_redirect(day, target_user_id)
+    try:
+        orig_start = float(request.form.get("orig_start") or start_ts)
+        orig_end = float(request.form.get("orig_end") or end_ts)
+    except ValueError:
+        orig_start, orig_end = start_ts, end_ts
+    if orig_end <= orig_start:
+        orig_start, orig_end = start_ts, end_ts
+
+    overlapping = _overlapping_tracked_activities(
+        target_user_id, orig_start, orig_end
+    )
+    category, app_name, base_title = _tracked_metadata_from_acts(overlapping)
+    project_name = (request.form.get("project_name") or "").strip()
+    task_name = (request.form.get("task_name") or "").strip()
+    title = _title_with_project_task(base_title, project_name, task_name)
+
+    _punch_tracked_hole(target_user_id, orig_start, orig_end)
+    db.session.add(
+        Activity(
+            user_id=target_user_id,
+            app=app_name[:255],
+            title=title,
+            category=category,
+            idle=False,
+            start_ts=start_ts,
+            end_ts=end_ts,
+            duration=end_ts - start_ts,
+        )
+    )
+    db.session.commit()
+    flash("Tracked time updated.", "info")
+    return _day_view_redirect(day, target_user_id)
+
+
+@desk_bp.route("/tracked/delete", methods=["POST"])
+@login_required
+def tracked_delete():
+    target_user_id = _fill_target_user_id()
+    try:
+        day, start_ts, end_ts, _tz_name = _parse_day_times_from_form()
+    except ValueError:
+        flash("Invalid start/end time.", "error")
+        return redirect(request.referrer or url_for("views.me"))
+    if end_ts <= start_ts:
+        flash("End must be after start.", "error")
+        return _day_view_redirect(day, target_user_id)
+    _punch_tracked_hole(target_user_id, start_ts, end_ts)
+    db.session.commit()
+    flash("Tracked time removed.", "info")
+    return _day_view_redirect(day, target_user_id)
+
+
+def _remove_offline_activities(user_id: int, start_ts: float, end_ts: float) -> None:
+    """Drop manual offline activities tied to an offline request."""
+    rows = list(
+        db.session.execute(
+            db.select(Activity).filter(
+                Activity.user_id == user_id,
+                Activity.app == "offline",
+                Activity.start_ts < end_ts + 2.0,
+                Activity.end_ts > start_ts - 2.0,
+            )
+        ).scalars()
+    )
+    for act in rows:
+        if abs(float(act.start_ts) - start_ts) <= 2.0 and abs(float(act.end_ts) - end_ts) <= 2.0:
+            db.session.delete(act)
+
+
+@desk_bp.route("/offline/<int:rid>/delete", methods=["POST"])
+@login_required
+def offline_delete(rid: int):
+    from ..tzutil import zone as tz_zone
+    from .settings_util import company_tz_name
+
+    row = db.session.get(OfflineRequest, rid) or abort(404)
+    if row.user_id != current_user.id and not current_user.is_admin:
+        abort(403)
+    tz_name = company_tz_name()
+    tz = tz_zone(tz_name)
+    day = datetime.fromtimestamp(float(row.start_ts), tz=tz).strftime("%Y-%m-%d")
+    if row.status == "approved":
+        _remove_offline_activities(row.user_id, float(row.start_ts), float(row.end_ts))
+    db.session.delete(row)
+    db.session.commit()
+    flash("Offline time entry removed.", "info")
+    return redirect(request.referrer or url_for("views.me", day=day))
 
 
 @desk_bp.route("/approvals", methods=["GET", "POST"])
@@ -312,15 +588,42 @@ def approvals():
             row.status = "rejected"
             flash("Offline request rejected.", "info")
         db.session.commit()
+        from .request_cache import invalidate_pending_offline_cache
+
+        invalidate_pending_offline_cache()
+        day_q = request.form.get("day") or request.args.get("day")
+        if day_q:
+            return redirect(url_for("desk.approvals", day=day_q))
         return redirect(url_for("desk.approvals"))
 
-    pending = list(
+    from .settings_util import company_tz_name
+
+    tz_name = company_tz_name()
+    day = _parse_day(request.args.get("day"))
+    nav = _day_nav(day)
+    start, end = day_bounds(day, tz_name=tz_name)
+
+    pending_all = list(
         db.session.execute(
             db.select(OfflineRequest)
             .filter_by(status="pending")
-            .order_by(OfflineRequest.created_at.desc())
+            .order_by(OfflineRequest.start_ts.desc())
         ).scalars()
     )
+    total_pending = len(pending_all)
+    pending = [
+        r
+        for r in pending_all
+        if float(r.start_ts) < end and float(r.end_ts) > start
+    ]
+    pending_by_day: list[dict] = []
+    if pending:
+        pending_by_day.append(
+            {
+                "label": day.strftime("%A, %B %d, %Y").replace(" 0", " "),
+                "requests": sorted(pending, key=lambda r: float(r.start_ts)),
+            }
+        )
     recent = list(
         db.session.execute(
             db.select(OfflineRequest)
@@ -332,8 +635,15 @@ def approvals():
     return render_template(
         "approvals.html",
         pending=pending,
+        pending_by_day=pending_by_day,
         recent=recent,
         humanize=humanize,
+        tz_name=tz_name,
+        total_pending=total_pending,
+        day=nav["day"],
+        prev_day=nav["prev_day"],
+        next_day=nav["next_day"],
+        day_label=day.strftime("%a, %B %d, %Y").replace(" 0", " "),
     )
 
 
@@ -774,8 +1084,13 @@ def export_team_csv():
             "productivity_pct",
         ]
     )
+    start, end = day_bounds(day, tz_name=_tz())
+    expected = _expected_seconds()
     for u in users:
-        s = summarize(_activities_for(u.id, day), *day_bounds(day))
+        acts = _activities_for(u.id, day)
+        manual = _manual_for(u.id, day)
+        dm = compute_day_metrics(acts, manual, start, end, expected)
+        s = dm.summary
         w.writerow(
             [
                 u.username,
@@ -784,7 +1099,7 @@ def export_team_csv():
                 int(s.productive_seconds),
                 int(s.unproductive_seconds),
                 int(s.idle_seconds),
-                s.desktime_productivity_pct,
+                dm.dt_productivity,
             ]
         )
     return Response(

@@ -85,6 +85,8 @@ class User(UserMixin, db.Model):
     enabled = db.Column(db.Boolean, nullable=False, default=True)
     team_id = db.Column(db.Integer, db.ForeignKey("teams.id"), nullable=True)
     private_time_allowed = db.Column(db.Boolean, nullable=False, default=True)
+    # Let employee see their own screenshots on My Day / My screenshots nav.
+    view_own_screenshots = db.Column(db.Boolean, nullable=False, default=False)
     # Per-user screenshot overrides (NULL = use company settings)
     screenshots_enabled = db.Column(db.Boolean, nullable=True)
     screenshot_interval = db.Column(db.Integer, nullable=True)
@@ -99,6 +101,8 @@ class User(UserMixin, db.Model):
     agent_platform = db.Column(db.String(16), nullable=True)
     # Start of the agent's sign-in session (unix ts); the token expires SESSION_DAYS later.
     token_issued_at = db.Column(db.Float, nullable=True)
+    avatar_filename = db.Column(db.String(120), default="")
+    avatar_updated_at = db.Column(db.Float, nullable=True)
 
     activities = db.relationship(
         "Activity", backref="user", lazy="dynamic", cascade="all, delete-orphan"

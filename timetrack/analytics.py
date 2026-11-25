@@ -47,12 +47,12 @@ class Summary:
             return 0.0
         return round(100.0 * self.active_seconds / self.total_seconds, 1)
 
-    @property
-    def desktime_productivity_pct(self) -> float:
-        """DeskTime-style: productive time / time at the computer (active)."""
-        if self.active_seconds <= 0:
+    def desktime_productivity_pct(self, manual_seconds: float = 0.0) -> float:
+        """DeskTime-style: productive time / DeskTime time (active + exclusive manual)."""
+        denom = self.desktime_seconds(manual_seconds)
+        if denom <= 0:
             return 0.0
-        return round(100.0 * self.productive_seconds / self.active_seconds, 1)
+        return round(100.0 * self.productive_seconds / denom, 1)
 
     def desktime_effectiveness_pct(self, expected_seconds: float = 8 * 3600) -> float:
         """DeskTime-style: productive / expected hours (may exceed 100% with overtime)."""
@@ -76,6 +76,128 @@ class Summary:
     def desktime_seconds(self, manual_seconds: float = 0.0) -> float:
         """DeskTime time = computer (active) + manually entered offline/project time."""
         return self.active_seconds + max(0.0, manual_seconds)
+
+
+@dataclass
+class DayMetrics:
+    """DeskTime-aligned day KPIs (single source of truth for dashboards)."""
+
+    summary: Summary
+    manual_total_seconds: float
+    manual_extra_seconds: float
+    desktime_seconds: float
+    dt_productivity: float
+    dt_effectiveness: float
+
+
+def _clip_manual_interval(
+    start: float,
+    end: float,
+    window_start: float | None,
+    window_end: float | None,
+) -> tuple[float, float] | None:
+    s, e = start, end
+    if window_start is not None:
+        s = max(s, window_start)
+    if window_end is not None:
+        e = min(e, window_end)
+    if e <= s:
+        return None
+    return s, e
+
+
+def manual_total_seconds(
+    manual_entries: list,
+    window_start: float | None = None,
+    window_end: float | None = None,
+) -> float:
+    total = 0.0
+    for m in manual_entries:
+        raw_start = float(m.start_ts)
+        raw_end = float(m.end_ts)
+        clipped = _clip_manual_interval(raw_start, raw_end, window_start, window_end)
+        if clipped is None:
+            continue
+        total += clipped[1] - clipped[0]
+    return total
+
+
+def _manual_duplicated_by_activity(
+    start_ts: float,
+    end_ts: float,
+    activities: list,
+    *,
+    eps: float = 1.0,
+) -> bool:
+    """True when a ManualEntry interval is already represented by tracked Activity (e.g. timer)."""
+    duration = max(0.0, end_ts - start_ts)
+    if duration <= 0:
+        return False
+    for raw in activities:
+        if bool(getattr(raw, "idle", False)):
+            continue
+        a_start = float(raw.start_ts)
+        a_end = float(raw.end_ts)
+        if abs(a_start - start_ts) <= eps and abs(a_end - end_ts) <= eps:
+            return True
+        overlap_start = max(a_start, start_ts)
+        overlap_end = min(a_end, end_ts)
+        if overlap_end > overlap_start:
+            overlap = overlap_end - overlap_start
+            if overlap >= 0.9 * duration:
+                return True
+    return False
+
+
+def exclusive_manual_seconds(
+    manual_entries: list,
+    activities: list,
+    *,
+    window_start: float | None = None,
+    window_end: float | None = None,
+    eps: float = 1.0,
+) -> float:
+    """Manual time not already counted in ``active_seconds`` (dedupes timer ManualEntry + Activity)."""
+    total = 0.0
+    for m in manual_entries:
+        raw_start = float(m.start_ts)
+        raw_end = float(m.end_ts)
+        clipped = _clip_manual_interval(raw_start, raw_end, window_start, window_end)
+        if clipped is None:
+            continue
+        start_ts, end_ts = clipped
+        if _manual_duplicated_by_activity(start_ts, end_ts, activities, eps=eps):
+            continue
+        total += end_ts - start_ts
+    return total
+
+
+def compute_day_metrics(
+    activities: list,
+    manual_entries: list,
+    window_start: float | None = None,
+    window_end: float | None = None,
+    expected_seconds: float = 8 * 3600,
+) -> DayMetrics:
+    summary = summarize(activities, window_start, window_end)
+    manual_total = manual_total_seconds(manual_entries, window_start, window_end)
+    manual_extra = exclusive_manual_seconds(
+        manual_entries,
+        activities,
+        window_start=window_start,
+        window_end=window_end,
+    )
+    desktime = summary.desktime_seconds(manual_extra)
+    dt_productivity = summary.desktime_productivity_pct(manual_extra)
+    dt_effectiveness = summary.desktime_effectiveness_pct(expected_seconds)
+    return DayMetrics(
+        summary=summary,
+        manual_total_seconds=manual_total,
+        manual_extra_seconds=manual_extra,
+        desktime_seconds=desktime,
+        dt_productivity=dt_productivity,
+        dt_effectiveness=dt_effectiveness,
+    )
 
 
 def _as_span(a: Activity | SimpleNamespace) -> SimpleNamespace:
@@ -476,6 +598,7 @@ def annotate_idle_gaps(
     Ranges in ``excluded_ranges`` (e.g. lunch) split gaps and are never fillable.
     """
     excluded = excluded_ranges or []
+    # Empty = no synced samples; idle = keyboard/mouse idle while the agent still runs.
     for gap_kind in ("empty", "idle"):
         i = 0
         n = len(segments)
@@ -604,9 +727,53 @@ def suppress_covered_gaps(
                 seg["fillable"] = False
                 seg["gap_start"] = None
                 seg["gap_end"] = None
-                seg["requested"] = True
                 break
     return segments
+
+
+def _annotate_offline_request_status(
+    segments: list[dict],
+    requests: list,
+    *,
+    status: str,
+) -> list[dict]:
+    if not segments or not requests:
+        return segments
+    for req in requests:
+        rs = float(req.start_ts)
+        re = float(req.end_ts)
+        cat = (getattr(req, "category", None) or "neutral").strip().lower()
+        if cat not in ("productive", "unproductive", "neutral"):
+            cat = "neutral"
+        for seg in segments:
+            s = float(seg.get("start") or 0)
+            e = float(seg.get("end") or s)
+            if s >= re or e <= rs:
+                continue
+            seg["fillable"] = False
+            seg["gap_start"] = None
+            seg["gap_end"] = None
+            seg["requested"] = True
+            seg["request_status"] = status
+            seg["request_category"] = cat
+            seg["request_id"] = int(getattr(req, "id", 0) or 0)
+    return segments
+
+
+def annotate_pending_offline_requests(
+    segments: list[dict],
+    pending_requests: list,
+) -> list[dict]:
+    """Grey bar placeholders on the productivity chart for pending offline fills."""
+    return _annotate_offline_request_status(segments, pending_requests, status="pending")
+
+
+def annotate_rejected_offline_requests(
+    segments: list[dict],
+    rejected_requests: list,
+) -> list[dict]:
+    """Bar placeholders for rejected offline fills (still visible, re-fillable)."""
+    return _annotate_offline_request_status(segments, rejected_requests, status="rejected")
 
 
 def merge_bar_segments(segments: list[dict]) -> list[dict]:
@@ -891,6 +1058,10 @@ def bar_view_hours(
 __all__ = [
     "Summary",
     "AppSummary",
+    "DayMetrics",
+    "compute_day_metrics",
+    "exclusive_manual_seconds",
+    "manual_total_seconds",
     "summarize",
     "summarize_day",
     "day_bounds",
@@ -905,6 +1076,8 @@ __all__ = [
     "idle_gap_list",
     "merge_nearby_gaps",
     "suppress_covered_gaps",
+    "annotate_pending_offline_requests",
+    "annotate_rejected_offline_requests",
     "merge_bar_segments",
     "prepare_activities",
     "activity_timeline",

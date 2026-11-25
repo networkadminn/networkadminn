@@ -304,6 +304,7 @@ def ensure_schema() -> None:
     alters: list[tuple[str, str, str]] = [
         ("users", "team_id", "INTEGER"),
         ("users", "private_time_allowed", "BOOLEAN DEFAULT 1"),
+        ("users", "view_own_screenshots", "BOOLEAN DEFAULT 0"),
         ("users", "screenshots_enabled", "BOOLEAN"),
         ("users", "screenshot_interval", "INTEGER"),
         ("activities", "project_id", "INTEGER"),
@@ -343,6 +344,8 @@ def ensure_schema() -> None:
         ("users", "agent_version", "VARCHAR(32)"),
         ("users", "agent_platform", "VARCHAR(16)"),
         ("users", "token_issued_at", "REAL"),
+        ("users", "avatar_filename", "VARCHAR(120) DEFAULT ''"),
+        ("users", "avatar_updated_at", "REAL"),
         ("company_settings", "organization_id", "INTEGER DEFAULT 1"),
         ("users", "organization_id", "INTEGER DEFAULT 1"),
         ("teams", "organization_id", "INTEGER DEFAULT 1"),

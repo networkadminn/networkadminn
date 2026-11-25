@@ -42,10 +42,37 @@
 
   {% include "_day_metrics.html" %}
 
-  {% set clickable_gaps = false %}
+  {% set clickable_gaps = clickable_gaps|default(false) %}
   {% set compact = false %}
   {% set extra_hint = none %}
   {% include "_productivity_bar.html" %}
+
+  <section class="panel dash-panel" id="screenshots">
+    <div class="panel-head">
+      <h2>Screenshots</h2>
+      <span class="muted">
+        {{ screenshots|length }} captured
+        · <a href="{{ url_for('views.screenshots_browser', day=day, user_id=subject.id) }}">Open gallery</a>
+      </span>
+    </div>
+    {% if screenshots %}
+    <div class="gallery">
+      {% for s in screenshots[:12] %}
+      <a class="shot {% if s.is_unproductive %}is-unproductive{% endif %}" href="{{ url_for('views.screenshot', shot_id=s.id) }}" target="_blank"
+         title="{{ s.app }} — {{ s.title }}">
+        {% if s.is_unproductive %}<span class="shot-flag">Unproductive</span>{% endif %}
+        <img loading="lazy" src="{{ url_for('views.thumb', shot_id=s.id) }}" alt="screenshot at {{ s.ts|clock }}" />
+        <span class="shot-meta">
+          <span class="shot-time">{{ s.ts|clock }}</span>
+          <span class="shot-app">{{ s.app }}</span>
+        </span>
+      </a>
+      {% endfor %}
+    </div>
+    {% else %}
+    <p class="empty">No screenshots captured for this day.</p>
+    {% endif %}
+  </section>
 
   <section class="panel dash-panel ai-report-panel">
     <div class="panel-head">
@@ -288,33 +315,6 @@
       <canvas id="cats" height="140"></canvas>
     </section>
   </div>
-
-  <section class="panel dash-panel">
-    <div class="panel-head">
-      <h2>Screenshots</h2>
-      <span class="muted">
-        {{ screenshots|length }} captured
-        · <a href="{{ url_for('views.screenshots_browser', day=day, user_id=subject.id) }}">Open gallery</a>
-      </span>
-    </div>
-    {% if screenshots %}
-    <div class="gallery">
-      {% for s in screenshots[:12] %}
-      <a class="shot {% if s.is_unproductive %}is-unproductive{% endif %}" href="{{ url_for('views.screenshot', shot_id=s.id) }}" target="_blank"
-         title="{{ s.app }} — {{ s.title }}">
-        {% if s.is_unproductive %}<span class="shot-flag">Unproductive</span>{% endif %}
-        <img loading="lazy" src="{{ url_for('views.thumb', shot_id=s.id) }}" alt="screenshot at {{ s.ts|clock }}" />
-        <span class="shot-meta">
-          <span class="shot-time">{{ s.ts|clock }}</span>
-          <span class="shot-app">{{ s.app }}</span>
-        </span>
-      </a>
-      {% endfor %}
-    </div>
-    {% else %}
-    <p class="empty">No screenshots captured for this day.</p>
-    {% endif %}
-  </section>
 </div>
 {% endblock %}
 
@@ -359,7 +359,7 @@
 </script>
 <script src="{{ url_for('static', filename='ai-report-drawer.js') }}?v=2"></script>
 {% endif %}
-<script src="{{ url_for('static', filename='prod-bar.js') }}?v=19"></script>
+<script src="{{ url_for('static', filename='prod-bar.js') }}?v=40"></script>
 <script>
 (function () {
   var form = document.getElementById("admin-user-cat-form");

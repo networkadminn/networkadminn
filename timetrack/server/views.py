@@ -25,6 +25,7 @@ from flask_login import current_user, login_required
 from ..analytics import (
     activity_timeline,
     apps_with_share,
+    compute_day_metrics,
     day_bounds,
     format_clock,
     humanize,
@@ -34,6 +35,8 @@ from ..analytics import (
     productivity_bar_segments,
     bar_view_hours,
     summarize,
+    annotate_pending_offline_requests,
+    annotate_rejected_offline_requests,
     reconcile_fillable_gap_bounds,
     suppress_covered_gaps,
     timeline_buckets,
@@ -105,6 +108,21 @@ def _summarize_user_day(user_id: int, day: datetime):
     return summarize(_activities_for(user_id, day), start, end)
 
 
+def _day_metrics(
+    user_id: int,
+    day: datetime,
+    *,
+    acts: list | None = None,
+    manual: list | None = None,
+):
+    start, end = day_bounds(day, tz_name=_tz())
+    if acts is None:
+        acts = _activities_for(user_id, day)
+    if manual is None:
+        manual = _manual_for(user_id, day)
+    return compute_day_metrics(acts, manual, start, end, _expected_seconds())
+
+
 def _week_strip(user_id: int | None, day: datetime) -> list[dict]:
     """Mon–Sun strip with productivity for DeskTime-style week navigation."""
     monday = day.date() - timedelta(days=day.weekday())
@@ -117,15 +135,15 @@ def _week_strip(user_id: int | None, day: datetime) -> list[dict]:
             users = db.session.execute(db.select(User)).scalars().all()
             prods = []
             for u in users:
-                s = _summarize_user_day(u.id, d)
-                if s.active_seconds > 0:
-                    prods.append(s.desktime_productivity_pct)
+                dm = _day_metrics(u.id, d)
+                if dm.desktime_seconds > 0:
+                    prods.append(dm.dt_productivity)
             pct = round(sum(prods) / len(prods), 1) if prods else 0.0
-            seconds = sum(_summarize_user_day(u.id, d).active_seconds for u in users)
+            seconds = sum(_day_metrics(u.id, d).desktime_seconds for u in users)
         else:
-            s = _summarize_user_day(user_id, d)
-            pct = s.desktime_productivity_pct
-            seconds = s.active_seconds
+            dm = _day_metrics(user_id, d)
+            pct = dm.dt_productivity
+            seconds = dm.summary.active_seconds
         out.append(
             {
                 "day": d.strftime("%Y-%m-%d"),
@@ -142,6 +160,87 @@ def _week_strip(user_id: int | None, day: datetime) -> list[dict]:
     return out
 
 
+def _team_trend_days(users: list[User], day: datetime, range_days: int = 7) -> list[dict]:
+    """Daily team aggregates for admin visual dashboard."""
+    expected = _expected_seconds()
+    days: list[dict] = []
+    for i in range(range_days - 1, -1, -1):
+        d = day - timedelta(days=i)
+        dm_list = [_day_metrics(u.id, d) for u in users]
+        active = sum(dm.summary.active_seconds for dm in dm_list)
+        productive = sum(dm.summary.productive_seconds for dm in dm_list)
+        idle = sum(dm.summary.idle_seconds for dm in dm_list)
+        unproductive = sum(dm.summary.unproductive_seconds for dm in dm_list)
+        present = sum(1 for dm in dm_list if dm.summary.total_seconds > 0)
+        tracked_n = max(1, sum(1 for dm in dm_list if dm.desktime_seconds > 0))
+        pct = (
+            round(
+                sum(dm.dt_productivity for dm in dm_list if dm.desktime_seconds > 0)
+                / tracked_n,
+                1,
+            )
+            if any(dm.desktime_seconds > 0 for dm in dm_list)
+            else 0.0
+        )
+        eff = (
+            round(
+                sum(
+                    dm.dt_effectiveness
+                    for dm in dm_list
+                    if dm.desktime_seconds > 0
+                )
+                / tracked_n,
+                1,
+            )
+            if any(dm.desktime_seconds > 0 for dm in dm_list)
+            else 0.0
+        )
+        total_tracked = max(active + idle, 1.0)
+        neutral = max(0.0, active - productive - unproductive)
+        days.append(
+            {
+                "day": d.strftime("%Y-%m-%d"),
+                "label": d.strftime("%a"),
+                "label_full": d.strftime("%a %d"),
+                "active": active,
+                "productive": productive,
+                "idle": idle,
+                "unproductive": unproductive,
+                "present": present,
+                "pct": pct,
+                "eff": eff,
+                "stack_prod": round(100.0 * productive / total_tracked, 1),
+                "stack_unprod": round(100.0 * unproductive / total_tracked, 1),
+                "stack_neutral": round(100.0 * neutral / total_tracked, 1),
+                "stack_idle": round(100.0 * idle / total_tracked, 1),
+            }
+        )
+    return days
+
+
+def _category_conic_gradient(segments: list[dict]) -> str:
+    """CSS conic-gradient stops for time-split donut."""
+    colors = {
+        "productive": "#10B981",
+        "neutral": "#8B9AAB",
+        "unproductive": "#F43F5E",
+        "idle": "#C4D0DB",
+    }
+    cum = 0.0
+    parts: list[str] = []
+    for seg in segments:
+        pct = float(seg.get("pct") or 0)
+        if pct <= 0:
+            continue
+        end = min(100.0, cum + pct)
+        color = colors.get(seg.get("class") or "", "#94A3B8")
+        parts.append(f"{color} {cum}% {end}%")
+        cum = end
+    if not parts:
+        return "conic-gradient(#E2E8F0 0 100%)"
+    return f"conic-gradient({', '.join(parts)})"
+
+
 def _spark_polyline(values: list[float], *, width: float = 120.0, height: float = 40.0) -> tuple[str, str]:
     """Build SVG polyline + area polygon points for week productivity sparklines."""
     vals = list(values) or [0.0] * 7
@@ -156,6 +255,301 @@ def _spark_polyline(values: list[float], *, width: float = 120.0, height: float 
     line = " ".join(pts)
     area = f"0,{height:.0f} {line} {width:.0f},{height:.0f}"
     return line, area
+
+
+def _admin_team_day_state(
+    users: list[User],
+    day: datetime,
+    *,
+    now_ts: float,
+    online_window: float,
+) -> tuple[list[dict], dict, list[dict], float, float, bool]:
+    """Per-day team rows, aggregates, and top apps (admin dashboard + reports viz)."""
+    expected = _expected_seconds()
+    start, end = day_bounds(day, tz_name=_tz())
+    off_day = _is_off_day(day)
+    rows: list[dict] = []
+    team = {
+        "active": 0.0,
+        "productive": 0.0,
+        "idle": 0.0,
+        "unproductive": 0.0,
+        "online": 0,
+        "present": 0,
+        "late": 0,
+        "absent": 0,
+    }
+    for u in users:
+        acts = _activities_for(u.id, day)
+        manual = _manual_for(u.id, day)
+        dm = compute_day_metrics(acts, manual, start, end, expected)
+        s = dm.summary
+        manual_seconds = dm.manual_total_seconds
+        desktime_seconds = dm.desktime_seconds
+        last = _last_seen(u.id)
+        online = _is_online(u, last, now_ts, online_window)
+        late = _is_late(s.arrival_ts, day)
+        absent = (not off_day) and s.total_seconds <= 0 and manual_seconds <= 0
+        live = _live_snapshot(u.id, now_ts=now_ts, online_window=online_window)
+        if not online and isinstance(live, dict):
+            live["fresh"] = False
+        row = {
+            "user": u,
+            "summary": s,
+            "manual_seconds": manual_seconds,
+            "desktime_seconds": desktime_seconds,
+            "online": online,
+            "last_seen": last,
+            "live": live,
+            "shots": db.session.execute(
+                db.select(db.func.count(Screenshot.id)).filter(
+                    Screenshot.user_id == u.id,
+                    Screenshot.ts >= start,
+                    Screenshot.ts < end,
+                )
+            ).scalar_one(),
+            "arrived": format_clock(s.arrival_ts, tz_name=_tz()),
+            "left": format_clock(s.last_seen_ts, tz_name=_tz()),
+            "late": late and not absent,
+            "early": _is_early(s.arrival_ts, day) and not absent,
+            "absent": absent,
+            "dt_productivity": dm.dt_productivity,
+            "dt_effectiveness": dm.dt_effectiveness,
+        }
+        rows.append(row)
+        team["active"] += s.active_seconds
+        team["productive"] += s.productive_seconds
+        team["idle"] += s.idle_seconds
+        team["unproductive"] += s.unproductive_seconds
+        team["online"] += 1 if online else 0
+        if absent:
+            team["absent"] += 1
+        else:
+            team["present"] += 1
+            if late:
+                team["late"] += 1
+
+    app_totals: dict[str, dict] = {}
+    for r in rows:
+        for a in r["summary"].apps:
+            slot = app_totals.setdefault(
+                a.app, {"app": a.app, "category": a.category, "seconds": 0.0}
+            )
+            slot["seconds"] += a.seconds
+            if slot["category"] == "neutral" and a.category != "neutral":
+                slot["category"] = a.category
+    team_apps = sorted(app_totals.values(), key=lambda x: x["seconds"], reverse=True)[:12]
+    active_base = team["active"] or 1.0
+    for a in team_apps:
+        a["pct"] = round(100.0 * a["seconds"] / active_base, 1)
+
+    tracked = [r for r in rows if not r["absent"]]
+    avg_prod = (
+        round(sum(r["dt_productivity"] for r in tracked) / len(tracked), 1)
+        if tracked
+        else 0.0
+    )
+    avg_eff = (
+        round(sum(r["dt_effectiveness"] for r in tracked) / len(tracked), 1)
+        if tracked
+        else 0.0
+    )
+    return rows, team, team_apps, avg_prod, avg_eff, off_day
+
+
+def _team_visual_viz_context(
+    *,
+    users: list[User],
+    rows: list[dict],
+    team: dict,
+    team_apps: list[dict],
+    day: datetime,
+    avg_prod: float,
+    avg_eff: float,
+    off_day: bool,
+    expected_hours: float,
+    trend_range: int = 7,
+    team_id: int | None = None,
+    viz_day_query: str = "",
+    viz_apps_anchor: str = "#team-apps",
+    viz_emp_anchor: str = "#team-table",
+) -> dict:
+    """Template context for _admin_visual_grid.html (team analytics charts)."""
+    day_str = day.strftime("%Y-%m-%d")
+    trend_days = _team_trend_days(users, day, trend_range)
+    trend_max_pct = max((d["pct"] for d in trend_days), default=1.0) or 1.0
+    trend_max_active = max((d["active"] for d in trend_days), default=1.0) or 1.0
+    prod_spark_line, prod_spark_area = _spark_polyline(
+        [d["pct"] for d in trend_days], width=240.0, height=56.0
+    )
+    active_norm = [
+        round(100.0 * d["active"] / trend_max_active, 1) for d in trend_days
+    ]
+    active_spark_line, active_spark_area = _spark_polyline(
+        active_norm, width=240.0, height=56.0
+    )
+    eff_spark_line, eff_spark_area = _spark_polyline(
+        [d["eff"] for d in trend_days], width=240.0, height=56.0
+    )
+    present_max = max((d["present"] for d in trend_days), default=1) or 1
+    present_norm = [
+        round(100.0 * d["present"] / present_max, 1) for d in trend_days
+    ]
+    present_spark_line, present_spark_area = _spark_polyline(
+        present_norm, width=240.0, height=56.0
+    )
+    trend_stack_max = max(
+        (d["active"] + d["idle"] for d in trend_days), default=1.0
+    ) or 1.0
+    emp_n = max(len(users), 1)
+    attendance_viz = [
+        {
+            "key": "online",
+            "label": "Online",
+            "n": team["online"],
+            "pct": round(100.0 * team["online"] / emp_n, 1),
+        },
+        {
+            "key": "present",
+            "label": "Present",
+            "n": team["present"],
+            "pct": round(100.0 * team["present"] / emp_n, 1),
+        },
+        {
+            "key": "late",
+            "label": "Late",
+            "n": team["late"],
+            "pct": round(100.0 * team["late"] / emp_n, 1),
+        },
+        {
+            "key": "absent",
+            "label": "Absent",
+            "n": team["absent"],
+            "pct": round(100.0 * team["absent"] / emp_n, 1),
+        },
+    ]
+    neutral_seconds = max(
+        0.0, team["active"] - team["productive"] - team["unproductive"]
+    )
+    cat_total = max(team["active"] + team["idle"], 1.0)
+    category_viz = [
+        {
+            "label": "Productive",
+            "class": "productive",
+            "seconds": team["productive"],
+            "pct": round(100.0 * team["productive"] / cat_total, 1),
+        },
+        {
+            "label": "Neutral",
+            "class": "neutral",
+            "seconds": neutral_seconds,
+            "pct": round(100.0 * neutral_seconds / cat_total, 1),
+        },
+        {
+            "label": "Unproductive",
+            "class": "unproductive",
+            "seconds": team["unproductive"],
+            "pct": round(100.0 * team["unproductive"] / cat_total, 1),
+        },
+        {
+            "label": "Idle",
+            "class": "idle",
+            "seconds": team["idle"],
+            "pct": round(100.0 * team["idle"] / cat_total, 1),
+        },
+    ]
+    treemap_apps = team_apps[:8]
+    category_conic = _category_conic_gradient(category_viz)
+    employee_viz = sorted(
+        [
+            {
+                "id": r["user"].id,
+                "name": r["user"].name,
+                "pct": r["dt_productivity"],
+                "eff": r["dt_effectiveness"],
+            }
+            for r in rows
+            if not r["absent"]
+        ],
+        key=lambda x: x["pct"],
+        reverse=True,
+    )[:10]
+    emp_max_pct = max((e["pct"] for e in employee_viz), default=1.0) or 1.0
+    app_category_totals: dict[str, float] = {
+        "productive": 0.0,
+        "neutral": 0.0,
+        "unproductive": 0.0,
+    }
+    for a in team_apps:
+        cat = a.get("category") or "neutral"
+        if cat in app_category_totals:
+            app_category_totals[cat] += a["seconds"]
+    app_cat_sum = sum(app_category_totals.values()) or 1.0
+    app_category_viz = [
+        {
+            "label": k.capitalize(),
+            "class": k,
+            "seconds": v,
+            "pct": round(100.0 * v / app_cat_sum, 1),
+        }
+        for k, v in app_category_totals.items()
+        if v > 0
+    ]
+    app_category_conic = _category_conic_gradient(app_category_viz)
+
+    total_desktime = team["active"]
+    total_idle = team["idle"]
+    total_all = max(total_desktime + total_idle, 1.0)
+
+    return {
+        "day": day_str,
+        "avg_prod": avg_prod,
+        "avg_eff": avg_eff,
+        "humanize": humanize,
+        "employee_count": len(users),
+        "off_day": off_day,
+        "trend_days": trend_days,
+        "trend_max_pct": trend_max_pct,
+        "trend_max_active": trend_max_active,
+        "trend_range": trend_range,
+        "prod_spark_line": prod_spark_line,
+        "prod_spark_area": prod_spark_area,
+        "active_spark_line": active_spark_line,
+        "active_spark_area": active_spark_area,
+        "eff_spark_line": eff_spark_line,
+        "eff_spark_area": eff_spark_area,
+        "present_spark_line": present_spark_line,
+        "present_spark_area": present_spark_area,
+        "trend_stack_max": trend_stack_max,
+        "attendance_viz": attendance_viz,
+        "category_viz": category_viz,
+        "category_conic": category_conic,
+        "app_category_viz": app_category_viz,
+        "app_category_conic": app_category_conic,
+        "employee_viz": employee_viz,
+        "emp_max_pct": emp_max_pct,
+        "treemap_apps": treemap_apps,
+        "team_apps": team_apps,
+        "team": team,
+        "team_id": team_id,
+        "viz_day_query": viz_day_query,
+        "viz_apps_anchor": viz_apps_anchor,
+        "viz_emp_anchor": viz_emp_anchor,
+        "expected_hours": expected_hours,
+        "split_prod": round(100.0 * team["productive"] / total_all, 1),
+        "split_unprod": round(100.0 * team["unproductive"] / total_all, 1),
+        "split_neutral": round(
+            100.0
+            * max(0.0, team["active"] - team["productive"] - team["unproductive"])
+            / total_all,
+            1,
+        ),
+        "split_idle": round(100.0 * team["idle"] / total_all, 1),
+        "total_desktime": team["active"],
+        "total_productive": team["productive"],
+        "total_unproductive": team["unproductive"],
+        "total_idle": team["idle"],
+    }
 
 
 def _manual_for(user_id: int, day: datetime) -> list[ManualEntry]:
@@ -347,6 +741,14 @@ def _dominant_category(
     return max(scores, key=scores.get)
 
 
+def _bar_stack_slice_pct(seconds: float, bucket_seconds: float, *, min_pct: float = 5.0) -> float:
+    """Stack segment size for the bar chart; omit tiny slices (tooltip still has exact times)."""
+    if seconds <= 0 or bucket_seconds <= 0:
+        return 0.0
+    pct = 100.0 * seconds / bucket_seconds
+    return round(pct, 2) if pct >= min_pct else 0.0
+
+
 def _overlaps_range(s: float, e: float, ranges: list[tuple[float, float]]) -> bool:
     for rs, re in ranges:
         if s < re and e > rs:
@@ -394,28 +796,41 @@ def _bar_stack_columns(
         active = (prod + unprod + neut) > 0
         show_idle = False
         is_fill = bool(seg.get("fillable"))
-        is_requested = bool(seg.get("requested"))
+        req_status = (seg.get("request_status") or "").strip().lower()
+        is_offline_req = bool(seg.get("requested")) and req_status in ("pending", "rejected")
+        is_pending = req_status == "pending"
+        is_rejected = req_status == "rejected"
         orig_start = float(seg.get("start") or 0)
         orig_end = float(seg.get("end") or (orig_start + bucket_seconds))
-        if gap_ranges and _overlaps_range(orig_start, orig_end, gap_ranges):
+        if gap_ranges and not is_offline_req and _overlaps_range(orig_start, orig_end, gap_ranges):
             continue
-        if is_fill or seg.get("kind") in ("idle", "empty"):
+        if not is_offline_req:
+            if is_fill or seg.get("kind") in ("idle", "empty"):
+                continue
+        if not active and not is_offline_req:
             continue
-        if not active and not is_requested:
-            continue
-        if tracked <= 0 and not is_requested:
+        if tracked <= 0 and not is_offline_req:
             continue
         left = width = 0.0
         if span > 0 and view_start is not None:
             slot = max(0.0, min(100.0, (total / span) * 100.0))
-            width = max(0.2, slot * 0.96)
-            left = max(0.0, min(100.0 - width, ((orig_start - view_start) / span) * 100.0))
+            # Narrower than the bucket + centered so adjacent columns don't bleed together
+            # on sub-pixel layout (office/lunch/presence bands still use full timestamps).
+            width = max(0.15, slot * 0.66)
+            bucket_left = max(
+                0.0, min(100.0, ((orig_start - view_start) / span) * 100.0)
+            )
+            inset = max(0.0, (slot - width) / 2.0)
+            left = max(0.0, min(100.0 - width, bucket_left + inset))
 
         active_sec = prod + unprod + neut
         qual = round(100.0 * prod / active_sec, 1) if active_sec > 0 else 0.0
         category = _dominant_category(prod, neut, unprod, idle, show_idle=show_idle)
-        if is_requested and tracked <= 0:
-            category = "requested"
+        request_category = (seg.get("request_category") or "neutral").strip().lower()
+        if is_pending:
+            category = "pending"
+        elif is_rejected:
+            category = "rejected"
 
         active_sec_only = prod + unprod + neut
         fill = (
@@ -423,10 +838,26 @@ def _bar_stack_columns(
             if active_sec_only > 0
             else 0.0
         )
-        if fill > 0:
+        if is_offline_req:
+            height = 100.0
+        elif fill > 0:
             height = round(max(fill, 8.0), 1)
         else:
             height = 0.0
+
+        stack_p = _bar_stack_slice_pct(prod, total)
+        stack_n = _bar_stack_slice_pct(neut, total)
+        stack_u = _bar_stack_slice_pct(unprod, total)
+        if is_offline_req:
+            stack_p = stack_n = stack_u = 0.0
+        elif active and (stack_p + stack_n + stack_u) <= 0 and active_sec_only > 0:
+            dominant_pct = round(100.0 * active_sec_only / total, 2)
+            if category == "productive":
+                stack_p = dominant_pct
+            elif category == "neutral":
+                stack_n = dominant_pct
+            elif category == "unproductive":
+                stack_u = dominant_pct
 
         cols.append(
             {
@@ -436,23 +867,26 @@ def _bar_stack_columns(
                 "width": round(width, 4),
                 "quality": qual,
                 "productivity": qual,
-                "height_pct": height if active else 0.0,
-                "stack_p": round(100.0 * prod / total, 2) if prod else 0.0,
-                "stack_n": round(100.0 * neut / total, 2) if neut else 0.0,
-                "stack_u": round(100.0 * unprod / total, 2) if unprod else 0.0,
+                "height_pct": height if (active or is_offline_req) else 0.0,
+                "stack_p": stack_p,
+                "stack_n": stack_n,
+                "stack_u": stack_u,
                 "stack_i": 0.0,
                 "category": category,
                 "label": seg.get("label") or "",
                 "label_end": seg.get("label_end") or seg.get("label") or "",
                 "fillable": False,
-                "requested": is_requested,
+                "requested": is_offline_req,
+                "request_status": req_status,
+                "request_category": request_category if is_offline_req else "",
+                "request_id": seg.get("request_id"),
                 "gap_start": seg.get("gap_start"),
                 "gap_end": seg.get("gap_end"),
                 "productive_m": round(prod / 60.0, 1),
                 "neutral_m": round(neut / 60.0, 1),
                 "unproductive_m": round(unprod / 60.0, 1),
                 "idle_m": round(idle / 60.0, 1),
-                "active": active,
+                "active": active and not is_offline_req,
                 "top_app": seg.get("top_app") or "",
                 "top_domain": seg.get("top_domain") or "",
             }
@@ -553,16 +987,104 @@ def _intervals_minus_gaps(
     return [(a, b) for a, b in pieces if b - a > 0.01]
 
 
+def _presence_offline_tracks(
+    offline_requests: list,
+    view_start: float,
+    view_end: float,
+    *,
+    tz_name: str,
+) -> list[dict]:
+    """Dashed presence rail for approved manual / offline fills."""
+    from ..tzutil import format_datetime_local
+
+    span = max(1.0, view_end - view_start)
+    tracks: list[dict] = []
+    for req in offline_requests:
+        if getattr(req, "status", None) != "approved":
+            continue
+        s = max(float(req.start_ts), view_start)
+        e = min(float(req.end_ts), view_end)
+        if e <= s:
+            continue
+        left = max(0.0, ((s - view_start) / span) * 100.0)
+        width = max(0.15, min(100.0 - left, ((e - s) / span) * 100.0))
+        tracks.append(
+            {
+                "left": round(left, 3),
+                "width": round(width, 3),
+                "id": int(req.id),
+                "range_label": (
+                    f"{format_clock(req.start_ts, tz_name=tz_name)} – "
+                    f"{format_clock(req.end_ts, tz_name=tz_name)}"
+                ),
+                "note": (req.note or "").strip(),
+                "category": (req.category or "neutral").strip().lower(),
+                "duration_label": humanize(float(req.duration or (e - s))),
+                "prefill_start": format_datetime_local(float(req.start_ts), tz_name),
+                "prefill_end": format_datetime_local(float(req.end_ts), tz_name),
+            }
+        )
+    return tracks
+
+
+def _presence_pending_tracks(
+    pending_requests: list,
+    view_start: float,
+    view_end: float,
+    *,
+    tz_name: str,
+) -> list[dict]:
+    """Grey presence rail for offline fills awaiting approval (clickable)."""
+    from ..tzutil import format_datetime_local
+
+    span = max(1.0, view_end - view_start)
+    tracks: list[dict] = []
+    for req in pending_requests:
+        s = max(float(req.start_ts), view_start)
+        e = min(float(req.end_ts), view_end)
+        if e <= s:
+            continue
+        left = max(0.0, ((s - view_start) / span) * 100.0)
+        width = max(0.15, min(100.0 - left, ((e - s) / span) * 100.0))
+        tracks.append(
+            {
+                "left": round(left, 3),
+                "width": round(width, 3),
+                "id": int(req.id),
+                "range_label": (
+                    f"{format_clock(req.start_ts, tz_name=tz_name)} – "
+                    f"{format_clock(req.end_ts, tz_name=tz_name)}"
+                ),
+                "note": (req.note or "").strip(),
+                "category": (req.category or "neutral").strip().lower(),
+                "duration_label": humanize(float(req.duration or (e - s))),
+                "prefill_start": format_datetime_local(float(req.start_ts), tz_name),
+                "prefill_end": format_datetime_local(float(req.end_ts), tz_name),
+                "status": "pending",
+            }
+        )
+    return tracks
+
+
 def _presence_tracks(
     segments: list[dict],
     view_start: float,
     view_end: float,
     *,
+    tz_name: str,
     display_gaps: list[dict] | None = None,
+    pending_ranges: list[tuple[float, float]] | None = None,
+    offline_ranges: list[tuple[float, float]] | None = None,
 ) -> list[dict]:
+    from ..tzutil import format_datetime_local
     span = max(1.0, view_end - view_start)
     tracks: list[dict] = []
     gap_ranges = [(float(g["start"]), float(g["end"])) for g in (display_gaps or [])]
+    mask_ranges = list(gap_ranges)
+    if pending_ranges:
+        mask_ranges.extend(pending_ranges)
+    if offline_ranges:
+        mask_ranges.extend(offline_ranges)
     i, n = 0, len(segments)
 
     def _tracked(seg: dict) -> bool:
@@ -583,12 +1105,84 @@ def _presence_tracks(
             i = j
             continue
         s, e = max(s, view_start), min(e, view_end)
-        for ps, pe in _intervals_minus_gaps(s, e, gap_ranges):
+        for ps, pe in _intervals_minus_gaps(s, e, mask_ranges):
             left = max(0.0, ((ps - view_start) / span) * 100.0)
             width = max(0.15, min(100.0 - left, ((pe - ps) / span) * 100.0))
-            tracks.append({"left": round(left, 3), "width": round(width, 3)})
+            tracks.append(
+                {
+                    "left": round(left, 3),
+                    "width": round(width, 3),
+                    "start": ps,
+                    "end": pe,
+                    "range_label": (
+                        f"{format_clock(ps, tz_name=tz_name)} – "
+                        f"{format_clock(pe, tz_name=tz_name)}"
+                    ),
+                    "prefill_start": format_datetime_local(ps, tz_name),
+                    "prefill_end": format_datetime_local(pe, tz_name),
+                }
+            )
         i = j
     return tracks
+
+
+def _enrich_bar_column_tracked_prefill(cols: list[dict], tz_name: str) -> None:
+    from ..tzutil import format_datetime_local
+
+    for col in cols:
+        if not col.get("active"):
+            continue
+        s, e = float(col["start"]), float(col["end"])
+        col["prefill_start"] = format_datetime_local(s, tz_name)
+        col["prefill_end"] = format_datetime_local(e, tz_name)
+
+
+def _enrich_tracked_presence_prefill(tracks: list[dict], acts: list[Activity]) -> None:
+    import re
+
+    for t in tracks:
+        ps, pe = float(t["start"]), float(t["end"])
+        overlapping = [
+            a
+            for a in acts
+            if not a.idle
+            and a.app != "offline"
+            and float(a.start_ts) < pe
+            and float(a.end_ts) > ps
+        ]
+        if not overlapping:
+            t["project_name"] = ""
+            t["task_name"] = ""
+            continue
+        main = max(overlapping, key=lambda a: float(a.duration))
+        text = main.title or ""
+        project = task = ""
+        m = re.search(r"Project:\s*([^,)]+)", text, re.I)
+        if m:
+            project = m.group(1).strip()
+        m = re.search(r"Task:\s*([^,)]+)", text, re.I)
+        if m:
+            task = m.group(1).strip()
+        t["project_name"] = project
+        t["task_name"] = task
+
+
+def _enrich_gap_prefills(gaps: list[dict], tz_name: str) -> None:
+    from datetime import datetime
+    from zoneinfo import ZoneInfo
+
+    from ..tzutil import format_datetime_local
+
+    tz = ZoneInfo(tz_name)
+    for g in gaps:
+        s, e = float(g["start"]), float(g["end"])
+        g["prefill_start"] = format_datetime_local(s, tz_name)
+        g["prefill_end"] = format_datetime_local(e, tz_name)
+        ls = datetime.fromtimestamp(s, tz=tz)
+        le = datetime.fromtimestamp(e, tz=tz)
+        g["gap_date"] = ls.strftime("%Y-%m-%d")
+        g["start_min"] = int(ls.hour * 60 + ls.minute)
+        g["end_min"] = int(le.hour * 60 + le.minute)
 
 
 def _presence_fill_gaps(
@@ -615,6 +1209,11 @@ def _presence_fill_gaps(
                 "end": e,
                 "label": f"{g.get('label_start', '')}–{g.get('label_end', '')}",
                 "duration_label": humanize(dur),
+                "prefill_start": g.get("prefill_start") or "",
+                "prefill_end": g.get("prefill_end") or "",
+                "gap_date": g.get("gap_date") or "",
+                "start_min": int(g.get("start_min") or 0),
+                "end_min": int(g.get("end_min") or 0),
             }
         )
     return out
@@ -693,9 +1292,15 @@ def _timeline_payload(
     }
 
 
-def _chart_payload(activities: list[Activity], day: datetime) -> dict:
+def _chart_payload(
+    activities: list[Activity],
+    day: datetime,
+    manual_entries: list | None = None,
+) -> dict:
     start, end = day_bounds(day, tz_name=_tz())
-    summary = summarize(activities, start, end)
+    manual = manual_entries or []
+    dm = compute_day_metrics(activities, manual, start, end, _expected_seconds())
+    summary = dm.summary
     buckets = timeline_buckets(activities, start, end, bucket_seconds=3600.0)
     labels = []
     tz = zone(_tz())
@@ -810,8 +1415,8 @@ def _chart_payload(activities: list[Activity], day: datetime) -> dict:
             "labels": [a.app for a in summary.apps[:8]],
             "minutes": [round(a.seconds / 60.0, 1) for a in summary.apps[:8]],
         },
-        "desktime_productivity": summary.desktime_productivity_pct,
-        "desktime_effectiveness": summary.desktime_effectiveness_pct(expected),
+        "desktime_productivity": dm.dt_productivity,
+        "desktime_effectiveness": dm.dt_effectiveness,
     }
 
 
@@ -854,11 +1459,12 @@ def _project_timeline(
 def _employee_day_context(user: User, day: datetime, *, is_self: bool) -> dict:
     acts = _activities_for(user.id, day)
     start, end = day_bounds(day, tz_name=_tz())
-    summary = summarize(acts, start, end)
     expected = _expected_seconds()
     manual = _manual_for(user.id, day)
-    manual_seconds = sum(m.duration for m in manual)
-    desktime_seconds = summary.desktime_seconds(manual_seconds)
+    dm = compute_day_metrics(acts, manual, start, end, expected)
+    summary = dm.summary
+    manual_seconds = dm.manual_total_seconds
+    desktime_seconds = dm.desktime_seconds
     cfg = current_app.config["TIMETRACK_SERVER_CONFIG"]
     settings = get_settings()
     last = _last_seen(user.id)
@@ -919,16 +1525,37 @@ def _employee_day_context(user: User, day: datetime, *, is_self: bool) -> dict:
             )
         ).scalars()
     )
-    covered_ranges = [(float(r.start_ts), float(r.end_ts)) for r in covered_reqs]
+    covered_ranges = [
+        (float(r.start_ts), float(r.end_ts))
+        for r in covered_reqs
+        if r.status == "approved"
+    ]
+    pending_offline = [r for r in covered_reqs if r.status == "pending"]
+    approved_offline = [r for r in covered_reqs if r.status == "approved"]
+    rejected_offline = list(
+        db.session.execute(
+            db.select(OfflineRequest)
+            .filter(
+                OfflineRequest.user_id == user.id,
+                OfflineRequest.status == "rejected",
+                OfflineRequest.end_ts > day_start,
+                OfflineRequest.start_ts < day_end,
+            )
+        ).scalars()
+    )
+    pending_ranges = [(float(r.start_ts), float(r.end_ts)) for r in pending_offline]
+    offline_ranges = [(float(r.start_ts), float(r.end_ts)) for r in approved_offline]
     bar_raw = suppress_covered_gaps(bar_raw, covered_ranges)
+    bar_raw = annotate_pending_offline_requests(bar_raw, pending_offline)
+    bar_raw = annotate_rejected_offline_requests(bar_raw, rejected_offline)
     bar_raw = reconcile_fillable_gap_bounds(bar_raw)
     bar = merge_bar_segments(bar_raw)
 
     # Auto-fit bar: office band (~8 AM–8 PM for 9:30–6:30 settings) plus user activity.
     # ?bar=day shows midnight to midnight.
-    bar_mode = (request.args.get("bar") or ("work" if is_self else "day")).strip().lower()
+    bar_mode = (request.args.get("bar") or "work").strip().lower()
     if bar_mode not in ("work", "day"):
-        bar_mode = "work" if is_self else "day"
+        bar_mode = "work"
     manual_ranges = [(float(m.start_ts), float(m.end_ts)) for m in manual]
     view_start_h, view_end_h = bar_view_hours(
         office_start_h=office_start,
@@ -958,6 +1585,8 @@ def _employee_day_context(user: User, day: datetime, *, is_self: bool) -> dict:
         min_gap_seconds=idle_gap_min,
     )
     bar_display = suppress_covered_gaps(bar_display, covered_ranges)
+    bar_display = annotate_pending_offline_requests(bar_display, pending_offline)
+    bar_display = annotate_rejected_offline_requests(bar_display, rejected_offline)
     bar_display = reconcile_fillable_gap_bounds(bar_display)
     gaps_raw = idle_gap_list(bar_display, tz_name=_tz())
     gaps = merge_nearby_gaps(
@@ -965,7 +1594,16 @@ def _employee_day_context(user: User, day: datetime, *, is_self: bool) -> dict:
         bridge_seconds=max(600.0, float(idle_gap_min)),
         tz_name=_tz(),
     )
+    _enrich_gap_prefills(gaps, _tz())
     gap_seconds = sum(g["duration"] for g in gaps)
+    pending_offline_seconds = sum(
+        float(r.duration or max(0.0, float(r.end_ts) - float(r.start_ts)))
+        for r in pending_offline
+    )
+    # Idle KPI: agent idle + unfilled gaps + offline awaiting approval.
+    idle_display_seconds = (
+        float(summary.idle_seconds) + gap_seconds + pending_offline_seconds
+    )
     bar_columns = _bar_stack_columns(
         bar_display,
         bucket_seconds=bucket_seconds,
@@ -973,8 +1611,27 @@ def _employee_day_context(user: User, day: datetime, *, is_self: bool) -> dict:
         view_end=view_end,
         display_gaps=gaps,
     )
+    _enrich_bar_column_tracked_prefill(bar_columns, _tz())
     presence_tracks = _presence_tracks(
-        bar_display, view_start, view_end, display_gaps=gaps
+        bar_display,
+        view_start,
+        view_end,
+        tz_name=_tz(),
+        display_gaps=gaps,
+        pending_ranges=pending_ranges,
+        offline_ranges=offline_ranges,
+    )
+    _enrich_tracked_presence_prefill(presence_tracks, acts)
+    presence_pending_tracks = _presence_pending_tracks(
+        pending_offline, view_start, view_end, tz_name=_tz()
+    )
+    presence_rejected_tracks = _presence_pending_tracks(
+        rejected_offline, view_start, view_end, tz_name=_tz()
+    )
+    for t in presence_rejected_tracks:
+        t["status"] = "rejected"
+    presence_offline_tracks = _presence_offline_tracks(
+        approved_offline, view_start, view_end, tz_name=_tz()
     )
     presence_fill_gaps = _presence_fill_gaps(gaps, view_start, view_end)
     bar_hour_ticks = _bar_hour_ticks(view_start, view_end, _tz())
@@ -1038,14 +1695,23 @@ def _employee_day_context(user: User, day: datetime, *, is_self: bool) -> dict:
         data_dir = getattr(cfg, "data_dir", None) if cfg else None
         gemini_configured = bool(load_gemini_api_key(data_dir))
         ai_report = get_day_report(user.id, day.strftime("%Y-%m-%d"))
+    bar_interactive = is_self or (
+        current_user.is_authenticated and current_user.is_admin
+    )
     return {
         "subject": user,
         "is_self": is_self,
+        "clickable_gaps": bar_interactive,
         **_day_nav(day),
         "day_label": day.strftime("%a, %B %d, %Y").replace(" 0", " "),
         "summary": summary,
-        "screenshots": _screenshots_for(user.id, day),
-        "charts": _chart_payload(acts, day),
+        "screenshots": (
+            _screenshots_for(user.id, day)
+            if (not is_self or user.view_own_screenshots)
+            else []
+        ),
+        "show_own_screenshots": is_self and bool(user.view_own_screenshots),
+        "charts": _chart_payload(acts, day, manual),
         "apps": apps_with_share(summary),
         "sites": top_sites(acts),
         "url_visits": list(reversed(website_report(acts, start, end)["visits"]))[:15],
@@ -1055,6 +1721,9 @@ def _employee_day_context(user: User, day: datetime, *, is_self: bool) -> dict:
         "bar_hour_ticks": bar_hour_ticks,
         "bar_away_regions": bar_away_regions,
         "presence_tracks": presence_tracks,
+        "presence_pending_tracks": presence_pending_tracks,
+        "presence_rejected_tracks": presence_rejected_tracks,
+        "presence_offline_tracks": presence_offline_tracks,
         "presence_fill_gaps": presence_fill_gaps,
         "timeline_chart": timeline_chart,
         "view_start_ts": view_start,
@@ -1063,6 +1732,7 @@ def _employee_day_context(user: User, day: datetime, *, is_self: bool) -> dict:
         "bar_mode": bar_mode,
         "gaps": gaps,
         "gap_seconds": gap_seconds,
+        "idle_display_seconds": idle_display_seconds,
         "my_requests": my_requests,
         "idle_threshold": int(settings.idle_threshold or 180),
         "arrived": format_clock(summary.arrival_ts, tz_name=_tz()),
@@ -1085,17 +1755,21 @@ def _employee_day_context(user: User, day: datetime, *, is_self: bool) -> dict:
         "office_left_pct": office_left,
         "office_width_pct": office_width,
         "now_pct": now_pct,
-        "dt_productivity": summary.desktime_productivity_pct,
-        "dt_effectiveness": summary.desktime_effectiveness_pct(expected),
+        "dt_productivity": dm.dt_productivity,
+        "dt_effectiveness": dm.dt_effectiveness,
         "expected_hours": expected / 3600.0,
         "desktime_seconds": desktime_seconds,
         "humanize": humanize,
+        "fill_requires_approval": (not user.is_admin) or bool(
+            settings.offline_requires_approval
+        ),
         "week": week,
         "spark": spark,
         "spark_line": spark_line,
         "spark_area": spark_area,
         "manual": manual,
         "manual_seconds": manual_seconds,
+        "manual_extra_seconds": dm.manual_extra_seconds,
         "project_timeline": _project_timeline(
             manual, day, view_start=view_start, view_end=view_end
         ),
@@ -1116,11 +1790,11 @@ def tray_day_json_for_user(user: User) -> dict:
     day = _parse_day(None)
     start, end = day_bounds(day, tz_name=_tz())
     acts = _activities_for(user.id, day)
-    summary = summarize(acts, start, end)
     manual = _manual_for(user.id, day)
-    manual_seconds = sum(m.duration for m in manual)
-    desktime_seconds = summary.desktime_seconds(manual_seconds)
     expected = _expected_seconds()
+    dm = compute_day_metrics(acts, manual, start, end, expected)
+    summary = dm.summary
+    desktime_seconds = dm.desktime_seconds
     settings = get_settings(user.organization_id or 1)
     cfg = current_app.config["TIMETRACK_SERVER_CONFIG"]
     now_ts = datetime.now().timestamp()
@@ -1203,8 +1877,8 @@ def tray_day_json_for_user(user: User) -> dict:
         "span_seconds": summary.span_seconds,
         "idle_seconds": summary.idle_seconds,
         "private_seconds": private_seconds,
-        "dt_productivity": summary.desktime_productivity_pct,
-        "dt_effectiveness": summary.desktime_effectiveness_pct(expected),
+        "dt_productivity": dm.dt_productivity,
+        "dt_effectiveness": dm.dt_effectiveness,
         "expected_seconds": expected,
         "office_hours_label": office_label,
         "is_online": is_online,
@@ -1293,6 +1967,9 @@ def me():
     ctx["month_attendance"] = month_summary(
         current_user.id, month_start.year, month_start.month, tz_name=_tz()
     )
+    from .daily_quotes import daily_motivation_quote
+
+    ctx["daily_quote"] = daily_motivation_quote(day, current_user.id)
     return render_template("employee_status.html", **ctx)
 
 
@@ -1384,7 +2061,6 @@ def admin():
     now_ts = datetime.now().timestamp()
     expected = _expected_seconds()
     start, end = day_bounds(day, tz_name=_tz())
-    off_day = _is_off_day(day)
 
     from .models import Team
     from .tenancy import current_org_id, teams_in_org_query, users_in_org_query
@@ -1404,77 +2080,14 @@ def admin():
     if team_id:
         users = [u for u in users if u.team_id == team_id]
 
-    rows = []
-    team = {
-        "active": 0.0,
-        "productive": 0.0,
-        "idle": 0.0,
-        "unproductive": 0.0,
-        "online": 0,
-        "present": 0,
-        "late": 0,
-        "absent": 0,
-    }
-    for u in users:
-        acts = _activities_for(u.id, day)
-        s = summarize(acts, start, end)
-        manual = _manual_for(u.id, day)
-        manual_seconds = sum(m.duration for m in manual)
-        desktime_seconds = s.desktime_seconds(manual_seconds)
-        last = _last_seen(u.id)
-        online = _is_online(u, last, now_ts, cfg.online_window)
-        late = _is_late(s.arrival_ts, day)
-        absent = (not off_day) and s.total_seconds <= 0 and manual_seconds <= 0
-        live = _live_snapshot(u.id, now_ts=now_ts, online_window=cfg.online_window)
-        if not online and isinstance(live, dict):
-            live["fresh"] = False
-        row = {
-            "user": u,
-            "summary": s,
-            "manual_seconds": manual_seconds,
-            "desktime_seconds": desktime_seconds,
-            "online": online,
-            "last_seen": last,
-            "live": live,
-            "shots": db.session.execute(
-                db.select(db.func.count(Screenshot.id)).filter(
-                    Screenshot.user_id == u.id,
-                    Screenshot.ts >= start,
-                    Screenshot.ts < end,
-                )
-            ).scalar_one(),
-            "arrived": format_clock(s.arrival_ts, tz_name=_tz()),
-            "left": format_clock(s.last_seen_ts, tz_name=_tz()),
-            "late": late and not absent,
-            "early": _is_early(s.arrival_ts, day) and not absent,
-            "absent": absent,
-            "dt_productivity": s.desktime_productivity_pct,
-            "dt_effectiveness": s.desktime_effectiveness_pct(expected),
-        }
-        rows.append(row)
-        team["active"] += s.active_seconds
-        team["productive"] += s.productive_seconds
-        team["idle"] += s.idle_seconds
-        team["unproductive"] += s.unproductive_seconds
-        team["online"] += 1 if online else 0
-        if absent:
-            team["absent"] += 1
-        else:
-            team["present"] += 1
-            if late:
-                team["late"] += 1
+    rows, team, team_apps, avg_prod, avg_eff, off_day = _admin_team_day_state(
+        users,
+        day,
+        now_ts=now_ts,
+        online_window=cfg.online_window,
+    )
 
     tracked = [r for r in rows if not r["absent"]]
-    avg_prod = (
-        round(sum(r["dt_productivity"] for r in tracked) / len(tracked), 1)
-        if tracked
-        else 0.0
-    )
-    avg_eff = (
-        round(sum(r["dt_effectiveness"] for r in tracked) / len(tracked), 1)
-        if tracked
-        else 0.0
-    )
     top_productive = sorted(
         tracked, key=lambda r: r["summary"].productive_seconds, reverse=True
     )[:5]
@@ -1489,23 +2102,10 @@ def admin():
         key=lambda r: r["summary"].arrival_ts or 0.0,
         reverse=True,
     )[:5]
-
-    # Team-wide app usage for the day
-    app_totals: dict[str, dict] = {}
-    for r in rows:
-        for a in r["summary"].apps:
-            slot = app_totals.setdefault(
-                a.app, {"app": a.app, "category": a.category, "seconds": 0.0}
-            )
-            slot["seconds"] += a.seconds
-            if slot["category"] == "neutral" and a.category != "neutral":
-                slot["category"] = a.category
-    team_apps = sorted(app_totals.values(), key=lambda x: x["seconds"], reverse=True)[
-        :12
-    ]
-    active_base = team["active"] or 1.0
-    for a in team_apps:
-        a["pct"] = round(100.0 * a["seconds"] / active_base, 1)
+    top_absent = sorted(
+        [r for r in rows if r["absent"]],
+        key=lambda r: (r["user"].name or r["user"].username).lower(),
+    )[:5]
 
     flagged_shots = list(
         db.session.execute(
@@ -1520,13 +2120,24 @@ def admin():
         member_ids = {u.id for u in users}
         flagged_shots = [s for s in flagged_shots if s.user_id in member_ids]
 
-    total_desktime = team["active"]
-    total_idle = team["idle"]
-    total_all = max(total_desktime + total_idle, 1.0)
+    from .releases import is_outdated as client_outdated
+
+    if request.args.get("partial") == "live":
+        return render_template(
+            "_admin_live_partial.html",
+            rows=rows,
+            team=team,
+            day=day,
+            off_day=off_day,
+            online_window=int(cfg.online_window),
+            humanize=humanize,
+            client_outdated=client_outdated,
+        )
 
     return render_template(
         "admin.html",
         **_day_nav(day),
+        client_outdated=client_outdated,
         rows=rows,
         team=team,
         avg_prod=avg_prod,
@@ -1535,28 +2146,15 @@ def admin():
         top_effective=top_effective,
         top_unproductive=top_unproductive,
         top_late=top_late,
+        top_absent=top_absent,
         team_apps=team_apps,
         flagged_shots=flagged_shots,
         expected_hours=expected / 3600.0,
         humanize=humanize,
         employee_count=len(users),
         off_day=off_day,
-        week=_week_strip(None, day),
         teams=teams,
         team_id=team_id,
-        split_prod=round(100.0 * team["productive"] / total_all, 1),
-        split_unprod=round(100.0 * team["unproductive"] / total_all, 1),
-        split_neutral=round(
-            100.0
-            * max(0.0, team["active"] - team["productive"] - team["unproductive"])
-            / total_all,
-            1,
-        ),
-        split_idle=round(100.0 * team["idle"] / total_all, 1),
-        total_desktime=team["active"],
-        total_productive=team["productive"],
-        total_unproductive=team["unproductive"],
-        total_idle=team["idle"],
         online_window=int(cfg.online_window),
     )
 
@@ -1619,14 +2217,46 @@ def admin_user_websites(user_id: int):
     )
 
 
+_SCREENSHOTS_PER_PAGE = 50
+
+
+def _shot_page_numbers(page: int, pages: int, *, max_buttons: int = 9) -> list[int | None]:
+    """Page numbers for screenshot pager; None = ellipsis gap."""
+    if pages <= max_buttons:
+        return list(range(1, pages + 1))
+    nums: list[int | None] = [1]
+    lo = max(2, page - 2)
+    hi = min(pages - 1, page + 2)
+    if lo > 2:
+        nums.append(None)
+    for p in range(lo, hi + 1):
+        nums.append(p)
+    if hi < pages - 1:
+        nums.append(None)
+    nums.append(pages)
+    return nums
+
+
 @views_bp.route("/admin/user/<int:user_id>")
 @admin_required
 def admin_user(user_id: int):
     user = _org_user_or_404(user_id)
     day = _parse_day(request.args.get("day"))
-    return render_template(
-        "user.html", **_employee_day_context(user, day, is_self=False)
-    )
+    ctx = _employee_day_context(user, day, is_self=False)
+    all_shots = ctx["screenshots"]
+    total = len(all_shots)
+    pages = max(1, (total + _SCREENSHOTS_PER_PAGE - 1) // _SCREENSHOTS_PER_PAGE) if total else 1
+    page = request.args.get("shot_page", type=int) or 1
+    page = max(1, min(page, pages))
+    start = (page - 1) * _SCREENSHOTS_PER_PAGE
+    ctx["screenshots"] = all_shots[start : start + _SCREENSHOTS_PER_PAGE]
+    ctx["shot_page"] = page
+    ctx["shot_pages"] = pages
+    ctx["shot_total"] = total
+    ctx["shot_page_numbers"] = _shot_page_numbers(page, pages)
+    if request.args.get("partial") == "screenshots":
+        return render_template("_admin_user_screenshots.html", **ctx)
+    return render_template("user.html", **ctx)
 
 
 @views_bp.route("/admin/user/<int:user_id>/categories", methods=["POST"])
@@ -1835,6 +2465,18 @@ def settings_rules():
 # ----- Employees (admin) -----
 
 
+def _employees_return_url() -> str:
+    args: dict[str, str | int] = {}
+    for key in ("day", "q"):
+        val = (request.form.get(key) or request.args.get(key) or "").strip()
+        if val:
+            args[key] = val
+    tid = request.form.get("team_id", type=int) or request.args.get("team_id", type=int)
+    if tid:
+        args["team_id"] = tid
+    return url_for("views.employees", **args)
+
+
 @views_bp.route("/employees", methods=["GET", "POST"])
 @admin_required
 def employees():
@@ -1905,6 +2547,15 @@ def employees():
             db.session.commit()
             flash(
                 f"Private Time {'allowed' if user.private_time_allowed else 'disabled'} for {user.username}.",
+                "info",
+            )
+        elif action == "view_own_shots":
+            uid = request.form.get("user_id", type=int)
+            user = db.session.get(User, uid) or abort(404)
+            user.view_own_screenshots = not user.view_own_screenshots
+            db.session.commit()
+            flash(
+                f"My screenshots {'on' if user.view_own_screenshots else 'off'} for {user.username}.",
                 "info",
             )
         elif action == "team":
@@ -1985,10 +2636,16 @@ def employees():
             else:
                 delete_user_account(user)
                 flash(f"Deleted user {user.username}.", "info")
-        return redirect(url_for("views.employees"))
+        return redirect(_employees_return_url())
 
     from .models import Team
-    from .tenancy import current_org_id, users_in_org_query
+    from .tenancy import current_org_id, teams_in_org_query, users_in_org_query
+
+    day = _parse_day(request.args.get("day"))
+    team_id = request.args.get("team_id", type=int)
+    start, end = day_bounds(day, tz_name=_tz())
+    off_day = _is_off_day(day)
+    expected = _expected_seconds()
 
     q = request.args.get("q", "").strip().lower()
     users = list(
@@ -1996,6 +2653,8 @@ def employees():
             users_in_org_query(current_org_id()).order_by(User.role.desc(), User.username)
         ).scalars()
     )
+    if team_id:
+        users = [u for u in users if u.team_id == team_id]
     if q:
         users = [
             u
@@ -2004,21 +2663,67 @@ def employees():
             or q in (u.display_name or "").lower()
             or q in (u.email or "").lower()
         ]
-    teams = list(db.session.execute(db.select(Team).order_by(Team.name)).scalars())
+    teams = list(
+        db.session.execute(
+            teams_in_org_query(current_org_id()).order_by(Team.name)
+        ).scalars()
+    )
     now_ts = datetime.now().timestamp()
     cfg = current_app.config["TIMETRACK_SERVER_CONFIG"]
     rows = []
+    metrics_by_id: dict[int, dict] = {}
     for u in users:
         last = _last_seen(u.id)
+        online = _is_online(u, last, now_ts, cfg.online_window)
         rows.append(
             {
                 "user": u,
-                "online": _is_online(u, last, now_ts, cfg.online_window),
+                "online": online,
                 "last_seen": last,
             }
         )
+        acts = _activities_for(u.id, day)
+        manual = _manual_for(u.id, day)
+        dm = compute_day_metrics(acts, manual, start, end, expected)
+        s = dm.summary
+        manual_seconds = dm.manual_total_seconds
+        desktime_seconds = dm.desktime_seconds
+        late = _is_late(s.arrival_ts, day)
+        absent = (not off_day) and s.total_seconds <= 0 and manual_seconds <= 0
+        live = _live_snapshot(u.id, now_ts=now_ts, online_window=cfg.online_window)
+        if not online and isinstance(live, dict):
+            live["fresh"] = False
+        metrics_by_id[u.id] = {
+            "summary": s,
+            "desktime_seconds": desktime_seconds,
+            "online": online,
+            "live": live,
+            "shots": db.session.execute(
+                db.select(db.func.count(Screenshot.id)).filter(
+                    Screenshot.user_id == u.id,
+                    Screenshot.ts >= start,
+                    Screenshot.ts < end,
+                )
+            ).scalar_one(),
+            "arrived": format_clock(s.arrival_ts, tz_name=_tz()),
+            "left": format_clock(s.last_seen_ts, tz_name=_tz()),
+            "late": late and not absent,
+            "early": _is_early(s.arrival_ts, day) and not absent,
+            "absent": absent,
+            "dt_productivity": dm.dt_productivity,
+            "dt_effectiveness": dm.dt_effectiveness,
+        }
     return render_template(
-        "employees.html", users=users, teams=teams, rows=rows, q=q, humanize=humanize
+        "employees.html",
+        users=users,
+        teams=teams,
+        rows=rows,
+        q=q,
+        humanize=humanize,
+        team_id=team_id,
+        off_day=off_day,
+        metrics_by_id=metrics_by_id,
+        **_day_nav(day),
     )
 
 
@@ -2188,9 +2893,12 @@ def reports():
         flash("Reports are for admins only.", "info")
         return redirect(url_for("views.me"))
     day = _parse_day(request.args.get("day"))
-    scope = request.args.get("scope") or "me"
+    scope = request.args.get("scope") or "team"
     selected_user = request.args.get("user_id", type=int)
+    team_id = request.args.get("team_id", type=int)
     expected = _expected_seconds()
+    cfg = current_app.config["TIMETRACK_SERVER_CONFIG"]
+    now_ts = datetime.now().timestamp()
     try:
         range_days = int(request.args.get("range") or 7)
     except (TypeError, ValueError):
@@ -2211,38 +2919,40 @@ def reports():
                     .filter(User.enabled.is_(True))
                 ).scalars()
             )
-            s_list = [_summarize_user_day(u.id, d) for u in users_q]
-            active = sum(s.active_seconds for s in s_list)
-            productive = sum(s.productive_seconds for s in s_list)
-            idle = sum(s.idle_seconds for s in s_list)
-            unproductive = sum(s.unproductive_seconds for s in s_list)
-            present = sum(1 for s in s_list if s.total_seconds > 0)
+            if team_id:
+                users_q = [u for u in users_q if u.team_id == team_id]
+            dm_list = [_day_metrics(u.id, d) for u in users_q]
+            active = sum(dm.summary.active_seconds for dm in dm_list)
+            productive = sum(dm.summary.productive_seconds for dm in dm_list)
+            idle = sum(dm.summary.idle_seconds for dm in dm_list)
+            unproductive = sum(dm.summary.unproductive_seconds for dm in dm_list)
+            present = sum(1 for dm in dm_list if dm.summary.total_seconds > 0)
             late = sum(
                 1
-                for s in s_list
-                if s.total_seconds > 0 and _is_late(s.arrival_ts, d)
+                for dm in dm_list
+                if dm.summary.total_seconds > 0 and _is_late(dm.summary.arrival_ts, d)
             )
-            tracked_n = max(1, sum(1 for s in s_list if s.active_seconds))
+            tracked_n = max(1, sum(1 for dm in dm_list if dm.desktime_seconds > 0))
             pct = (
                 round(
-                    sum(s.desktime_productivity_pct for s in s_list if s.active_seconds)
+                    sum(dm.dt_productivity for dm in dm_list if dm.desktime_seconds > 0)
                     / tracked_n,
                     1,
                 )
-                if any(s.active_seconds for s in s_list)
+                if any(dm.desktime_seconds > 0 for dm in dm_list)
                 else 0.0
             )
             eff = (
                 round(
                     sum(
-                        s.desktime_effectiveness_pct(expected)
-                        for s in s_list
-                        if s.active_seconds
+                        dm.dt_effectiveness
+                        for dm in dm_list
+                        if dm.desktime_seconds > 0
                     )
                     / tracked_n,
                     1,
                 )
-                if any(s.active_seconds for s in s_list)
+                if any(dm.desktime_seconds > 0 for dm in dm_list)
                 else 0.0
             )
             row = {
@@ -2262,7 +2972,8 @@ def reports():
             uid = current_user.id
             if current_user.is_admin and selected_user:
                 uid = selected_user
-            s = _summarize_user_day(uid, d)
+            dm = _day_metrics(uid, d)
+            s = dm.summary
             row = {
                 "day": d.strftime("%Y-%m-%d"),
                 "label": d.strftime("%a %d"),
@@ -2270,8 +2981,8 @@ def reports():
                 "productive": s.productive_seconds,
                 "idle": s.idle_seconds,
                 "unproductive": s.unproductive_seconds,
-                "pct": s.desktime_productivity_pct,
-                "eff": s.desktime_effectiveness_pct(expected),
+                "pct": dm.dt_productivity,
+                "eff": dm.dt_effectiveness,
                 "present": 1 if s.total_seconds > 0 else 0,
                 "late": 1 if s.total_seconds > 0 and _is_late(s.arrival_ts, d) else 0,
                 "absent": 0 if s.total_seconds > 0 else 1,
@@ -2299,14 +3010,18 @@ def reports():
         if current_user.is_admin and scope == "team":
             from .tenancy import users_in_org_query
 
-            ids = [
-                u.id
-                for u in db.session.execute(
+            team_users_for_apps = list(
+                db.session.execute(
                     users_in_org_query(current_user.organization_id or 1)
                     .filter(User.role != ROLE_ADMIN)
                     .filter(User.enabled.is_(True))
                 ).scalars()
-            ]
+            )
+            if team_id:
+                team_users_for_apps = [
+                    u for u in team_users_for_apps if u.team_id == team_id
+                ]
+            ids = [u.id for u in team_users_for_apps]
         else:
             uid = selected_user if (current_user.is_admin and selected_user) else current_user.id
             ids = [uid]
@@ -2324,37 +3039,93 @@ def reports():
         a["pct"] = round(100.0 * a["seconds"] / base, 1)
 
     users = []
+    teams: list = []
+    team_viz: dict | None = None
     if current_user.is_admin:
-        from .tenancy import users_in_org_query
+        from .models import Team
+        from .tenancy import current_org_id, teams_in_org_query, users_in_org_query
 
+        teams = list(
+            db.session.execute(
+                teams_in_org_query(current_org_id()).order_by(Team.name)
+            ).scalars()
+        )
         users = list(
             db.session.execute(
-                users_in_org_query(current_user.organization_id or 1)
+                users_in_org_query(current_org_id())
                 .filter(User.role != ROLE_ADMIN)
                 .order_by(User.username)
             ).scalars()
         )
 
+    if scope == "team":
+        from .tenancy import current_org_id, users_in_org_query
+
+        team_users = list(
+            db.session.execute(
+                users_in_org_query(current_org_id())
+                .filter(User.role != ROLE_ADMIN)
+                .filter(User.enabled.is_(True))
+                .order_by(User.username.asc())
+            ).scalars()
+        )
+        if team_id:
+            team_users = [u for u in team_users if u.team_id == team_id]
+        rows, team_agg, team_apps_day, day_avg_prod, day_avg_eff, off_day = (
+            _admin_team_day_state(
+                team_users,
+                day,
+                now_ts=now_ts,
+                online_window=cfg.online_window,
+            )
+        )
+        viz_q = f"&scope=team&range={range_days}"
+        if team_id:
+            viz_q += f"&team_id={team_id}"
+        team_viz = _team_visual_viz_context(
+            users=team_users,
+            rows=rows,
+            team=team_agg,
+            team_apps=team_apps_day,
+            day=day,
+            avg_prod=day_avg_prod,
+            avg_eff=day_avg_eff,
+            off_day=off_day,
+            expected_hours=expected / 3600.0,
+            trend_range=range_days,
+            team_id=team_id,
+            viz_day_query=viz_q,
+            viz_apps_anchor="#report-top-apps",
+            viz_emp_anchor="#report-daily-breakdown",
+        )
+        if request.args.get("partial") == "viz":
+            return render_template("_admin_visual_grid.html", **team_viz)
+
     export_uid = selected_user or current_user.id
-    return render_template(
-        "reports.html",
-        days=days,
-        max_pct=max_pct,
+    report_ctx: dict = {
+        "days": days,
+        "max_pct": max_pct,
         **_day_nav(day),
-        humanize=humanize,
-        users=users,
-        scope=scope,
-        selected_user=selected_user,
-        week_productive=week_productive,
-        week_active=week_active,
-        week_idle=week_idle,
-        avg_prod=avg_prod,
-        avg_eff=avg_eff,
-        top_apps=top_apps,
-        export_uid=export_uid,
-        expected_hours=expected / 3600.0,
-        range_days=range_days,
-    )
+        "humanize": humanize,
+        "users": users,
+        "teams": teams,
+        "team_id": team_id,
+        "scope": scope,
+        "selected_user": selected_user,
+        "week_productive": week_productive,
+        "week_active": week_active,
+        "week_idle": week_idle,
+        "avg_prod": avg_prod,
+        "avg_eff": avg_eff,
+        "top_apps": top_apps,
+        "export_uid": export_uid,
+        "expected_hours": expected / 3600.0,
+        "range_days": range_days,
+        "team_viz": team_viz,
+    }
+    if team_viz:
+        report_ctx.update(team_viz)
+    return render_template("reports.html", **report_ctx)
 
 
 @views_bp.route("/data/charts")
@@ -2364,7 +3135,13 @@ def data_charts():
     if user_id != current_user.id and not current_user.is_admin:
         abort(403)
     day = _parse_day(request.args.get("day"))
-    return jsonify(_chart_payload(_activities_for(user_id, day), day))
+    return jsonify(
+        _chart_payload(
+            _activities_for(user_id, day),
+            day,
+            _manual_for(user_id, day),
+        )
+    )
 
 
 def _serve_shot(shot_id: int, thumb: bool):

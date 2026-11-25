@@ -3,14 +3,22 @@
 {% set bar_away_regions = bar_away_regions|default([]) %}
 {% set presence_tracks = presence_tracks|default([]) %}
 {% set presence_fill_gaps = presence_fill_gaps|default([]) %}
+{% set presence_pending_tracks = presence_pending_tracks|default([]) %}
+{% set presence_offline_tracks = presence_offline_tracks|default([]) %}
+{% set presence_rejected_tracks = presence_rejected_tracks|default([]) %}
 {% set bar_hour_ticks = bar_hour_ticks|default([]) %}
 {% set bar_mode = bar_mode|default('day') %}
 <section class="panel prod-bar-v7{% if compact %} is-compact{% endif %}{% if clickable_gaps %} is-self{% endif %}"
          id="prodBarPanel"
          data-clickable="{{ '1' if clickable_gaps else '0' }}"
          data-gap-base="{{ url_for('desk.offline_fill', day=day) }}"
+         data-day="{{ day }}"
+         data-tz="{{ tz_name|default('UTC') }}"
          data-now-pct="{{ now_pct if now_pct is not none else '' }}"
-         data-bar-mode="{{ bar_mode }}">
+         data-bar-mode="{{ bar_mode }}"
+         data-offline-delete-url="{{ url_for('desk.offline_delete', rid=0) }}"
+         data-tracked-edit-url="{{ url_for('desk.tracked_edit') }}"
+         data-tracked-delete-url="{{ url_for('desk.tracked_delete') }}">
   <div class="pb7-head">
     <div class="pb7-head-left">
       <h2>Productivity bar</h2>
@@ -24,12 +32,6 @@
            href="?day={{ day }}&bar=day"
            title="Show midnight to midnight">Full day</a>
       </div>
-      <ul class="pb7-legend" aria-label="Activity types">
-        <li><i class="productive"></i> Productive</li>
-        <li><i class="neutral"></i> Neutral</li>
-        <li><i class="unproductive"></i> Low</li>
-        <li><i class="idle"></i> Idle</li>
-      </ul>
     </div>
   </div>
 
@@ -61,36 +63,35 @@
             {% if is_today and now_pct is not none %}
             <div class="pb7-now" style="left:{{ now_pct }}%"><span>Now</span></div>
             {% endif %}
-            {% if presence_tracks or (clickable_gaps and presence_fill_gaps) %}
-            <div class="pb7-presence"{% if not clickable_gaps %} aria-hidden="true"{% endif %}
-                 title="{% if clickable_gaps %}Blue = tracked · striped gaps = click to fill offline time{% else %}Times with tracked activity{% endif %}">
-              {% for t in presence_tracks %}
-              <i class="pb7-presence-active" style="left:{{ t.left }}%;width:{{ t.width }}%"></i>
-              {% endfor %}
-              {% if clickable_gaps %}
-              {% for g in presence_fill_gaps %}
-              <a class="pb7-presence-gap" style="left:{{ g.left }}%;width:{{ g.width }}%"
-                 href="{{ url_for('desk.offline_fill', day=day, start=g.start, end=g.end) }}"
-                 title="Idle time, {{ g.duration_label|default('') }} · {{ g.label }} — click to fill"
-                 aria-label="Idle gap {{ g.label }}"></a>
-              {% endfor %}
-              {% endif %}
-            </div>
-            {% endif %}
             <div class="pb7-cols">
               {% for col in bar_columns %}
               {% set tip_time = col.label ~ ('–' ~ col.label_end if col.label_end and col.label_end != col.label else '') %}
-              {% if col.requested and not col.active %}
-              <div class="pb7-col requested" style="left:{{ col.left }}%;width:{{ col.width }}%;--i:{{ loop.index0 }}"
-                   data-tip="{{ tip_time }}|requested"
-                   title="Time request submitted"></div>
-              {% elif col.active %}
-              <div class="pb7-col cat-{{ col.category }}"
+              {% if col.requested and not col.active and col.request_status == 'rejected' %}
+              <div class="pb7-col requested is-rejected"
                    style="left:{{ col.left }}%;width:{{ col.width }}%;--i:{{ loop.index0 }}"
+                   data-tip="{{ tip_time }}|rejected|{{ col.request_category|default('neutral') }}"
+                   title="Rejected — {{ col.request_category|default('neutral') }}">
+                <span class="pb7-stack pb7-rejected-fill" style="height:{{ col.height_pct|default(100) }}%" aria-hidden="true"></span>
+              </div>
+              {% elif col.requested and not col.active %}
+              <div class="pb7-col requested is-pending"
+                   style="left:{{ col.left }}%;width:{{ col.width }}%;--i:{{ loop.index0 }}"
+                   data-tip="{{ tip_time }}|requested|{{ col.request_category|default('neutral') }}"
+                   title="Pending approval — {{ col.request_category|default('neutral') }}">
+                <span class="pb7-stack pb7-pending-fill" style="height:{{ col.height_pct|default(100) }}%" aria-hidden="true"></span>
+              </div>
+              {% elif col.active %}
+              <div class="pb7-col cat-{{ col.category }}{% if clickable_gaps %} js-tracked-col{% endif %}"
+                   style="left:{{ col.left }}%;width:{{ col.width }}%;--i:{{ loop.index0 }}"
+                   {% if clickable_gaps %}
+                   data-track-start="{{ col.start }}"
+                   data-track-end="{{ col.end }}"
+                   data-prefill-start="{{ col.prefill_start|default('') }}"
+                   data-prefill-end="{{ col.prefill_end|default('') }}"
+                   {% endif %}
                    data-tip="{{ tip_time }}|{{ col.productive_m }}|{{ col.neutral_m }}|{{ col.unproductive_m }}|{{ col.idle_m }}|{{ col.productivity|default(col.quality) }}|{{ col.category }}|{{ col.top_app|default('') }}|{{ col.top_domain|default('') }}">
                 {% if col.height_pct|default(0) > 0 %}
                 <span class="pb7-stack" style="height:{{ col.height_pct }}%" aria-hidden="true">
-                  {% if col.stack_i > 0 %}<i class="idle" style="flex:{{ col.stack_i }}"></i>{% endif %}
                   {% if col.stack_u > 0 %}<i class="u" style="flex:{{ col.stack_u }}"></i>{% endif %}
                   {% if col.stack_n > 0 %}<i class="n" style="flex:{{ col.stack_n }}"></i>{% endif %}
                   {% if col.stack_p > 0 %}<i class="p" style="flex:{{ col.stack_p }}"></i>{% endif %}
@@ -102,6 +103,93 @@
               <div class="pb7-empty">No activity yet — start the desktop agent to track your day.</div>
               {% endfor %}
             </div>
+            {% if presence_tracks or presence_pending_tracks or presence_rejected_tracks or presence_offline_tracks or (clickable_gaps and presence_fill_gaps) %}
+            <div class="pb7-presence"{% if not clickable_gaps %} aria-hidden="true"{% endif %}
+                 title="{% if clickable_gaps %}Blue = tracked · light blue = offline fill · grey = pending · striped = click to fill{% else %}Times with tracked activity{% endif %}">
+              {% for t in presence_tracks %}
+              {% if clickable_gaps %}
+              <button type="button" class="pb7-presence-active js-tracked-entry"
+                      style="left:{{ t.left }}%;width:{{ t.width }}%"
+                      data-track-start="{{ t.start }}"
+                      data-track-end="{{ t.end }}"
+                      data-track-range="{{ t.range_label }}"
+                      data-prefill-start="{{ t.prefill_start }}"
+                      data-prefill-end="{{ t.prefill_end }}"
+                      data-project-name="{{ t.project_name|default('')|e }}"
+                      data-task-name="{{ t.task_name|default('')|e }}"
+                      title="Tracked {{ t.range_label }} — click to edit"
+                      aria-label="Tracked time {{ t.range_label }}"></button>
+              {% else %}
+              <i class="pb7-presence-active" style="left:{{ t.left }}%;width:{{ t.width }}%"></i>
+              {% endif %}
+              {% endfor %}
+              {% if clickable_gaps %}
+              {% for t in presence_pending_tracks %}
+              <button type="button" class="pb7-presence-pending js-offline-entry"
+                      style="left:{{ t.left }}%;width:{{ t.width }}%"
+                      data-offline-id="{{ t.id }}"
+                      data-offline-range="{{ t.range_label }}"
+                      data-offline-duration="{{ t.duration_label }}"
+                      data-offline-note="{{ t.note|e }}"
+                      data-offline-category="{{ t.category }}"
+                      data-offline-status="pending"
+                      data-prefill-start="{{ t.prefill_start }}"
+                      data-prefill-end="{{ t.prefill_end }}"
+                      title="Pending {{ t.range_label }} — click to view or cancel"
+                      aria-label="Pending offline {{ t.range_label }}"></button>
+              {% endfor %}
+              {% for t in presence_rejected_tracks %}
+              <button type="button" class="pb7-presence-rejected js-offline-entry"
+                      style="left:{{ t.left }}%;width:{{ t.width }}%"
+                      data-offline-id="{{ t.id }}"
+                      data-offline-range="{{ t.range_label }}"
+                      data-offline-duration="{{ t.duration_label }}"
+                      data-offline-note="{{ t.note|e }}"
+                      data-offline-category="{{ t.category }}"
+                      data-offline-status="rejected"
+                      data-prefill-start="{{ t.prefill_start }}"
+                      data-prefill-end="{{ t.prefill_end }}"
+                      title="Rejected {{ t.range_label }} — click to edit or refill"
+                      aria-label="Rejected offline {{ t.range_label }}"></button>
+              {% endfor %}
+              {% else %}
+              {% for t in presence_pending_tracks %}
+              <i class="pb7-presence-pending" style="left:{{ t.left }}%;width:{{ t.width }}%"></i>
+              {% endfor %}
+              {% endif %}
+              {% if clickable_gaps %}
+              {% for t in presence_offline_tracks %}
+              <button type="button" class="pb7-presence-offline js-offline-entry"
+                      style="left:{{ t.left }}%;width:{{ t.width }}%"
+                      data-offline-id="{{ t.id }}"
+                      data-offline-range="{{ t.range_label }}"
+                      data-offline-duration="{{ t.duration_label }}"
+                      data-offline-note="{{ t.note|e }}"
+                      data-offline-category="{{ t.category }}"
+                      data-prefill-start="{{ t.prefill_start }}"
+                      data-prefill-end="{{ t.prefill_end }}"
+                      data-offline-status="approved"
+                      title="Offline time {{ t.range_label }} — click to view or delete"
+                      aria-label="Offline fill {{ t.range_label }}"></button>
+              {% endfor %}
+              {% endif %}
+              {% if clickable_gaps %}
+              {% for g in presence_fill_gaps %}
+              <a class="pb7-presence-gap js-gap-fill" style="left:{{ g.left }}%;width:{{ g.width }}%"
+                 href="{{ url_for('desk.offline_fill', day=day, start=g.start, end=g.end) }}"
+                 data-gap-range="{{ g.label }}"
+                 data-gap-duration="{{ g.duration_label|default('') }}"
+                 data-prefill-start="{{ g.prefill_start|default('') }}"
+                 data-prefill-end="{{ g.prefill_end|default('') }}"
+                 data-gap-date="{{ g.gap_date|default(day) }}"
+                 data-gap-start-min="{{ g.start_min|default(0) }}"
+                 data-gap-end-min="{{ g.end_min|default(0) }}"
+                 title="Unfilled gap {{ g.duration_label|default('') }} · {{ g.label }} — click to fill"
+                 aria-label="Fillable gap {{ g.label }}"></a>
+              {% endfor %}
+              {% endif %}
+            </div>
+            {% endif %}
           </div>
 
           <div class="pb7-footer">
@@ -125,11 +213,101 @@
 
   <div class="pb7-tip" id="prodFloatTip" hidden></div>
 
+  {% if clickable_gaps %}
+  <div class="pb7-offline-dialog" id="pb7FillModal" hidden aria-hidden="true">
+    <div class="pb7-offline-dialog-backdrop" data-fill-modal-close tabindex="-1"></div>
+    <div class="pb7-offline-dialog-panel" role="dialog" aria-modal="true" aria-labelledby="pb7FillModalTitle">
+      <header class="pb7-offline-dialog-head">
+        <h2 id="pb7FillModalTitle">Offline time</h2>
+        <button type="button" class="pb7-offline-dialog-close" data-fill-modal-close aria-label="Close">×</button>
+      </header>
+      <form method="post" action="{{ url_for('desk.offline_fill', day=day) }}" class="pb7-offline-dialog-form" id="pb7FillForm">
+        <input type="hidden" name="day" value="{{ day }}" />
+        {% if subject is defined and not is_self|default(true) %}
+        <input type="hidden" name="user_id" value="{{ subject.id }}" />
+        {% endif %}
+        <input type="hidden" name="request_id" id="pb7FillRequestId" value="" />
+        <input type="hidden" name="fill_kind" value="offline" />
+        <input type="hidden" name="start" id="pb7FillStart" required />
+        <input type="hidden" name="end" id="pb7FillEnd" required />
+        <input type="hidden" name="orig_start" id="pb7FillOrigStart" value="" />
+        <input type="hidden" name="orig_end" id="pb7FillOrigEnd" value="" />
+        <p class="pb7-offline-dialog-lead" id="pb7FillModalLead">
+          Adjust, specify or delete the whole tracked time period or parts of it.
+        </p>
+        <div class="pb7-offline-times">
+          <input type="time" id="pb7FillTimeStart" required aria-label="Start time" />
+          <span aria-hidden="true">–</span>
+          <input type="time" id="pb7FillTimeEnd" required aria-label="End time" />
+        </div>
+        <div class="pb7-offline-slider" id="pb7GapSlider">
+          <div class="pb7-offline-slider-track" aria-hidden="true"></div>
+          <div class="pb7-offline-slider-fill" id="pb7GapSliderFill" aria-hidden="true"></div>
+          <input type="range" id="pb7GapRangeStart" class="pb7-gap-range" min="0" max="1439" value="0" aria-label="Adjust start" />
+          <input type="range" id="pb7GapRangeEnd" class="pb7-gap-range" min="0" max="1439" value="0" aria-label="Adjust end" />
+        </div>
+        <label class="pb7-offline-field">
+          <span>Description</span>
+          <input name="note" maxlength="500" placeholder="Description" />
+        </label>
+        <div class="pb7-offline-field-row">
+          <label class="pb7-offline-field">
+            <span>Project name</span>
+            <input name="project_name" maxlength="120" placeholder="Project name" />
+          </label>
+          <label class="pb7-offline-field">
+            <span>Task name</span>
+            <input name="task_name" maxlength="120" placeholder="Task name" />
+          </label>
+        </div>
+        <fieldset class="pb7-prod-pick">
+          <legend>Productivity</legend>
+          <div class="pb7-prod-pick-options" role="radiogroup">
+            <label class="pb7-prod-opt">
+              <input type="radio" name="category" value="productive" checked />
+              <span>Productive</span>
+            </label>
+            <label class="pb7-prod-opt">
+              <input type="radio" name="category" value="unproductive" />
+              <span>Unproductive</span>
+            </label>
+            <label class="pb7-prod-opt">
+              <input type="radio" name="category" value="neutral" />
+              <span>Neutral</span>
+            </label>
+          </div>
+        </fieldset>
+        <footer class="pb7-offline-dialog-foot">
+          <button type="button" class="pb7-offline-btn danger" id="pb7FillDeleteBtn" hidden>Delete</button>
+          <span class="pb7-offline-dialog-foot-spacer" aria-hidden="true"></span>
+          <button type="button" class="pb7-offline-btn ghost" data-fill-modal-close>Close</button>
+          <button type="submit" class="pb7-offline-btn primary" id="pb7FillSaveBtn">Save</button>
+        </footer>
+      </form>
+      <form method="post" id="pb7FillDeleteForm" class="pb7-offline-delete-form" hidden aria-hidden="true">
+        {% if subject is defined and not is_self|default(true) %}
+        <input type="hidden" name="user_id" value="{{ subject.id }}" />
+        {% endif %}
+        <input type="hidden" name="day" id="pb7FillDeleteDay" value="" />
+        <input type="hidden" name="start" id="pb7FillDeleteStart" value="" />
+        <input type="hidden" name="end" id="pb7FillDeleteEnd" value="" />
+      </form>
+    </div>
+  </div>
+  {% endif %}
+
   {% if gaps and clickable_gaps %}
   <div class="gap-chips pb7-gaps" aria-label="Fillable gaps">
-    <p class="pb7-gaps-label">Click a gap (or chip) to request offline / idle time</p>
+    <p class="pb7-gaps-label">Click a gap (or chip) to request offline time</p>
     {% for g in gaps %}
-    <a class="gap-chip" href="{{ url_for('desk.offline_fill', day=day, start=g.start, end=g.end) }}">
+    <a class="gap-chip js-gap-fill" href="{{ url_for('desk.offline_fill', day=day, start=g.start, end=g.end) }}"
+       data-gap-range="{{ g.label_start }}–{{ g.label_end }}"
+       data-gap-duration="{{ humanize(g.duration) }}"
+       data-prefill-start="{{ g.prefill_start|default('') }}"
+       data-prefill-end="{{ g.prefill_end|default('') }}"
+       data-gap-date="{{ g.gap_date|default(day) }}"
+       data-gap-start-min="{{ g.start_min|default(0) }}"
+       data-gap-end-min="{{ g.end_min|default(0) }}">
       <strong>{{ g.label_start }}–{{ g.label_end }}</strong>
       <span>{{ humanize(g.duration) }}</span>
       <em>Fill</em>
