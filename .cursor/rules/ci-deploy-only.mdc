@@ -8,8 +8,9 @@ alwaysApply: true
 When publishing **client builds** (`.deb`, Windows installer), **web/server code**, or uploading to **production**:
 
 - **Do** rely on **GitHub Actions**:
+  - Day-to-day work: push to `develop` → `auto-pr-develop.yml` opens/updates PR → `release/0.3.0`
+  - Web / `timetrack/` Python: merge that PR (or push `main` / `master` / `release/**`) → `deploy-web.yml` deploys production
   - Client installers: `client-release.yml` (tag `v*` or `workflow_dispatch`)
-  - Web / `timetrack/` Python: `deploy-web.yml` (push to `main` / `master` / `release/**` under `timetrack/**`, or `workflow_dispatch`)
 - **Do** deploy via the `PRODUCTION_SSH_KEY` secret on the runner.
 - **Do** fix the workflow and **re-run** the failed job (or `workflow_dispatch`) if deploy fails.
 
