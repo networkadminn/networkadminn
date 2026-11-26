@@ -24,6 +24,14 @@ from .buffer import AgentBuffer
 from .client import ServerClient
 from .config import AgentConfig, load_agent_config
 
+# Unsynced screenshots kept on disk while offline (oldest are dropped beyond this).
+MAX_PENDING_SHOTS = 300
+# Uploads hold back recent activity this long (capped) so time that turns out to
+# be idle can still be re-labelled before it reaches the server.
+MAX_IDLE_HOLDBACK = 900.0
+# Synced rows are pruned from the local buffer after this many seconds.
+SYNCED_RETENTION = 3 * 24 * 3600.0
+
 
 class Agent:
     def __init__(self, config: AgentConfig | None = None):
@@ -52,6 +60,8 @@ class Agent:
         self._idle_started_at: float | None = None
         self._idle_countdown_pending = False
         self._user_offline = False  # tray "Offline" after countdown
+        self._flush_lock = threading.Lock()
+        self._relogin_lock = threading.Lock()
 
     # --- public status helpers for tray ---
     @property
@@ -188,6 +198,8 @@ class Agent:
         if is_idle and not self._was_idle and not self._idle_countdown_pending:
             self._idle_countdown_pending = True
             self._idle_started_at = now - idle_seconds
+            # The threshold minutes before detection were logged as active: fix them.
+            self.buffer.mark_idle_since(self._idle_started_at)
             from .idle_ui import show_going_offline_countdown
 
             def _done() -> None:
@@ -243,7 +255,12 @@ class Agent:
         with open(path, "wb") as fh:
             fh.write(data)
         app, title = self._last_window
-        self.buffer.add_screenshot(now, path, app, title, width, height)
+        self.buffer.add_screenshot(now, path, app, title, width, height, blurred=self._shot_blur)
+        for old in self.buffer.trim_screenshots(MAX_PENDING_SHOTS):
+            try:
+                os.remove(old)
+            except OSError:
+                pass
         return True
 
     def next_shot_delay(self) -> float:
@@ -252,12 +269,36 @@ class Agent:
             return base * (0.35 + random.random() * 0.65)
         return base
 
-    def flush(self) -> tuple[int, int]:
+    def upload_holdback(self) -> float:
+        """Seconds of recent activity kept local so it can still become idle."""
+        return min(max(0.0, float(self.config.idle_threshold)), MAX_IDLE_HOLDBACK) + 2 * max(
+            1.0, float(self.config.poll_interval)
+        )
+
+    def flush(self, holdback: float = 0.0) -> tuple[int, int]:
+        """Upload buffered activity and screenshots; returns ``(activities, shots)``.
+
+        Serialised with a lock: the tray's "Sync now" and the tracking loop must
+        not upload the same unsynced rows twice. ``holdback`` keeps the most recent
+        seconds local (see :meth:`upload_holdback`); the final flush on exit sends all.
+        """
+        with self._flush_lock:
+            return self._flush_locked(holdback)
+
+    def _flush_locked(self, holdback: float) -> tuple[int, int]:
         acts_sent = 0
         shots_sent = 0
 
-        pending = self.buffer.unsynced_activities(self.config.batch_size)
-        while pending:
+        cutoff = None
+        if holdback > 0:
+            cutoff = time.time() - holdback
+            self.buffer.seal_before(cutoff)
+
+        limit = max(1, int(self.config.batch_size))
+        while True:
+            pending = self.buffer.unsynced_activities(limit, ended_before=cutoff)
+            if not pending:
+                break
             payload = [
                 {
                     "app": a.app,
@@ -271,13 +312,19 @@ class Agent:
                 }
                 for a in pending
             ]
-            if not self.client.post_activities(payload):
-                break
-            self.buffer.mark_activities_synced([a.id for a in pending])
-            acts_sent += len(pending)
-            if len(pending) < self.config.batch_size:
-                break
-            pending = self.buffer.unsynced_activities(self.config.batch_size)
+            if self.client.post_activities(payload):
+                acts_sent += len(pending)
+            else:
+                if not self.client.last_post_rejected:
+                    break  # offline, signed out, Private Time or server error: retry later
+                if len(pending) > 1:
+                    limit = max(1, len(pending) // 2)  # e.g. 413: retry in smaller batches
+                    continue
+                print(
+                    f"[esstracker] server rejected an activity "
+                    f"(HTTP {self.client.last_post_status}); dropping it"
+                )
+            self.buffer.mark_uploaded(pending)
 
         for shot in self.buffer.unsynced_screenshots():
             try:
@@ -292,24 +339,37 @@ class Agent:
                 "title": shot.title,
                 "width": str(shot.width),
                 "height": str(shot.height),
-                "blurred": "1" if self._shot_blur else "0",
+                "blurred": "1" if shot.blurred else "0",
             }
             if not self.client.post_screenshot(data, meta):
-                break
+                if not self.client.last_post_rejected:
+                    break
+                print(
+                    f"[esstracker] server rejected a screenshot "
+                    f"(HTTP {self.client.last_post_status}); dropping it"
+                )
+            else:
+                shots_sent += 1
             self.buffer.mark_screenshot_synced(shot.id)
             try:
                 os.remove(shot.path)
             except OSError:
                 pass
-            shots_sent += 1
 
         return acts_sent, shots_sent
 
     def run(self, *, tray: bool = True) -> None:
         self._running = True
         self._install_signal_handlers()
-        if sys.platform == "darwin" and self._shots_enabled:
-            ensure_macos_screen_recording_access()
+        from .stop_signal import watch_for_stop
+
+        watch_for_stop(self._stop_requested_externally)
+        if sys.platform == "darwin":
+            from .autostart import enable_once_on_macos
+
+            enable_once_on_macos(os.path.dirname(os.path.abspath(self.config.buffer_path)))
+            if self._shots_enabled:
+                ensure_macos_screen_recording_access()
         self.refresh_server_policy()
 
         who = self.display_name or self.username or "??"
@@ -326,6 +386,15 @@ class Agent:
                 "[timetrack-agent] WARNING: idle detection unavailable — "
                 "install xprintidle (sudo apt install xprintidle) or use an X11 session. "
                 "Away time may be logged as active until fixed."
+            )
+        if pf.backend_name() == "linux" and (
+            os.environ.get("XDG_SESSION_TYPE", "").lower() == "wayland"
+            or os.environ.get("WAYLAND_DISPLAY")
+        ):
+            print(
+                "[timetrack-agent] WARNING: Wayland session — window titles and app names "
+                "are only visible for X11 apps. Choose 'Ubuntu on Xorg' at the login "
+                "screen for full tracking."
             )
 
         if tray:
@@ -351,6 +420,7 @@ class Agent:
         next_shot = time.monotonic() + self.next_shot_delay()
         next_flush = time.monotonic() + cfg.flush_interval
         next_policy = time.monotonic() + 30.0
+        next_prune = time.monotonic() + 60.0
 
         try:
             while self._running:
@@ -370,8 +440,12 @@ class Agent:
                     next_shot = mono + self.next_shot_delay()
 
                 if mono >= next_flush:
-                    self._safe(self.flush)
+                    self._safe(self.flush, self.upload_holdback())
                     next_flush = mono + cfg.flush_interval
+
+                if mono >= next_prune:
+                    self._safe(self.buffer.prune_synced, time.time() - SYNCED_RETENTION)
+                    next_prune = mono + 3600.0
         finally:
             self._safe(self.flush)
             if self.client.token:
@@ -380,21 +454,50 @@ class Agent:
             print("[timetrack-agent] stopped.")
 
     def _relogin(self) -> bool:
-        """Session ended (30 days or revoked): ask to sign in, or quit if cancelled."""
-        from .login_ui import show_login
+        """Session ended (30 days or revoked): ask to sign in, or quit if cancelled.
 
+        Runs from the tracking thread, so the sign-in window is opened in a child
+        process (a Tk window off the main thread crashes the macOS app).
+        """
+        from .ui_process import run_ui
+
+        if not self._relogin_lock.acquire(blocking=False):
+            # Another thread is already showing the sign-in window: wait for it.
+            with self._relogin_lock:
+                return bool(self.client.token) and self._running
+        try:
+            return self._relogin_locked(run_ui)
+        finally:
+            self._relogin_lock.release()
+
+    def _relogin_locked(self, run_ui) -> bool:
         print("[esstracker] session expired — please sign in again")
-        if show_login(self.config):
-            self.client.token = self.config.api_token
-            return True
+        if run_ui("login") == 0:
+            fresh = load_agent_config()
+            if fresh.api_token:
+                self.config.api_token = fresh.api_token
+                self.config.server_url = fresh.server_url
+                self.client.base_url = fresh.server_url.rstrip("/")
+                self.client.token = fresh.api_token
+                return True
         print("[esstracker] sign-in cancelled — stopping")
         self.request_stop("logout")
-        if self._tray is not None and self._tray._icon is not None:
-            self._tray._icon.stop()
+        if self._tray is not None:
+            self._tray.stop_icon()
         return False
 
+    def _stop_requested_externally(self) -> None:
+        """``esstracker-agent stop`` (the installer passes ``--reason update/uninstall``)."""
+        from .stop_signal import read_stop_reason
+
+        self._stop_reason = read_stop_reason()
+        self.stop()
+
     def stop(self, *_: object) -> None:
+        """Stop tracking (signal handler / installer request) and close the tray."""
         self._running = False
+        if self._tray is not None:
+            self._tray.stop_icon()
 
     def request_stop(self, reason: str = "quit") -> None:
         self._stop_reason = reason
@@ -410,6 +513,10 @@ class Agent:
 
     def _install_signal_handlers(self) -> None:
         def handler(_s: int, _f: FrameType | None) -> None:
+            # SIGTERM from ``esstracker-agent stop`` leaves its reason in a file.
+            from .stop_signal import read_stop_reason
+
+            self._stop_reason = read_stop_reason(self._stop_reason)
             self.stop()
 
         for sig in (signal.SIGINT, signal.SIGTERM):

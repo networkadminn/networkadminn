@@ -23,6 +23,8 @@ dependencies = [
     "pywin32>=306; platform_system == 'Windows'",
     "uiautomation>=2.0.20; platform_system == 'Windows'",
     "pyobjc-framework-Quartz>=10.0; platform_system == 'Darwin'",
+    "pyobjc-framework-Cocoa>=10.0; platform_system == 'Darwin'",
+    "certifi>=2024.2.2",
 ]
 
 [project.optional-dependencies]
@@ -32,6 +34,7 @@ packaging = ["pyinstaller>=6.0"]
 [project.scripts]
 timetrack = "timetrack.__main__:main"
 timetrack-agent = "timetrack.agent.__main__:main"
+esstracker-agent = "timetrack.agent.__main__:main"
 timetrack-server = "timetrack.server.__main__:main"
 
 [tool.setuptools.packages.find]
@@ -43,4 +46,5 @@ timetrack = [
     "dashboard/static/*",
     "server/templates/*",
     "server/static/*",
+    "agent/assets/*",
 ]

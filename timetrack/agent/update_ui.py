@@ -21,7 +21,6 @@ from .. import __version__
 SNOOZE_SECONDS = 24 * 3600
 
 _lock = threading.Lock()
-_showing = False
 
 
 def _snooze_file(state_dir: str) -> Path:
@@ -46,40 +45,100 @@ def _snooze(state_dir: str, version: str) -> None:
         pass
 
 
+_popup_proc = None
+# Re-offer the same version at most this often, even without "Later" (e.g. the
+# user opened the download page but has not installed yet).
+REOFFER_SECONDS = 6 * 3600
+_offered_at: dict[str, float] = {}
+
+
 def maybe_prompt_update(
     update: dict | None, *, server_url: str, state_dir: str, force: bool = False
 ) -> None:
-    """Show the popup in its own thread if an update is offered and not snoozed."""
-    global _showing
+    """Show the update popup (in a child process) if offered and not snoozed.
+
+    The popup is a Tk window; this is called from the tracking thread, and Tk off
+    the main thread crashes the macOS app, so it runs as ``esstracker-agent
+    update-popup`` instead.
+    """
+    global _popup_proc
     if not isinstance(update, dict) or not update.get("latest") or not update.get("url"):
         return
     latest = str(update["latest"])
     if not force and _snoozed(state_dir, latest):
         return
-    with _lock:
-        if _showing:
-            return
-        _showing = True
     base = server_url.rstrip("/")
     url = base + str(update["url"]) if str(update["url"]).startswith("/") else str(update["url"])
     page = base + str(update.get("page") or "/download")
     if not url.startswith(base + "/"):
         url = page
+    with _lock:
+        if _popup_proc is not None and _popup_proc.poll() is None:
+            return  # already showing
+        if not force and time.time() - _offered_at.get(latest, 0.0) < REOFFER_SECONDS:
+            return
+        _offered_at[latest] = time.time()
+        from .ui_process import spawn_ui
 
-    def _run() -> None:
-        global _showing
-        try:
-            _popup(latest, url, page, state_dir)
-        except Exception as exc:
-            print(f"[esstracker] update popup failed: {exc!r}")
-        finally:
-            with _lock:
-                _showing = False
-
-    threading.Thread(target=_run, daemon=True, name="esstracker-update").start()
+        _popup_proc = spawn_ui(
+            "update-popup",
+            "--latest", latest,
+            "--url", url,
+            "--page", page,
+            "--state-dir", state_dir,
+        )
 
 
-def _popup(latest: str, url: str, page: str, state_dir: str) -> None:
+def _same_publisher(installer: str) -> bool:
+    """Windows: a signed agent only runs an installer signed by the same publisher.
+
+    Unsigned (dev/CI-without-certificate) builds skip the check, since there is
+    nothing to compare against.
+    """
+    import subprocess
+
+    def subject(path: str) -> tuple[str, str]:
+        script = (
+            "$s = Get-AuthenticodeSignature -LiteralPath $env:ESS_SIG_PATH; "
+            "Write-Output $s.Status; "
+            "if ($s.SignerCertificate) { Write-Output $s.SignerCertificate.Subject }"
+        )
+        env = dict(os.environ, ESS_SIG_PATH=path)
+        out = subprocess.run(
+            ["powershell", "-NoProfile", "-NonInteractive", "-Command", script],
+            capture_output=True,
+            text=True,
+            timeout=60,
+            env=env,
+            creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0),
+            check=False,
+        ).stdout.splitlines()
+        status = out[0].strip() if out else ""
+        subj = out[1].strip() if len(out) > 1 else ""
+        return status, subj
+
+    if not getattr(sys, "frozen", False):
+        return True
+    try:
+        own_status, own_subject = subject(sys.executable)
+    except Exception:
+        own_status, own_subject = "", ""
+    if own_status in ("NotSigned", "UnknownError") and not own_subject:
+        return True  # unsigned build: nothing to compare against
+    if own_status != "Valid":
+        # Could not read our own signature (PowerShell blocked?): don't run the
+        # installer; the caller opens the download page instead.
+        return False
+    try:
+        status, subj = subject(installer)
+    except Exception:
+        return False
+    return status == "Valid" and subj == own_subject
+
+
+def run_popup(latest: str, url: str, page: str, state_dir: str) -> None:
+    """The popup window itself (main thread of the ``update-popup`` process)."""
+    import queue
     import tkinter as tk
 
     root = tk.Tk()
@@ -109,6 +168,8 @@ def _popup(latest: str, url: str, page: str, state_dir: str) -> None:
 
     buttons = tk.Frame(frame, bg="#ffffff")
     buttons.pack(anchor="e")
+    # Worker threads never touch Tk; they post results here for the Tk thread.
+    results: queue.Queue[str] = queue.Queue()
 
     def later() -> None:
         _snooze(state_dir, latest)
@@ -123,27 +184,44 @@ def _popup(latest: str, url: str, page: str, state_dir: str) -> None:
         btn_later.config(state="disabled")
         status.config(text="Downloading update…")
         threading.Thread(target=_download_and_run, daemon=True).start()
+        root.after(200, poll)
+
+    def poll() -> None:
+        try:
+            outcome = results.get_nowait()
+        except queue.Empty:
+            root.after(200, poll)
+            return
+        if outcome != "ok":
+            webbrowser.open(page)
+        root.destroy()
 
     def _download_and_run() -> None:
+        from .client import urlopen
+
         try:
             dest = os.path.join(tempfile.gettempdir(), f"esstracker-Setup-{latest}.exe")
             req = urllib.request.Request(
                 url, headers={"User-Agent": f"esstracker-Agent/{__version__}"}
             )
-            with urllib.request.urlopen(req, timeout=120) as resp, open(dest + ".part", "wb") as fh:
+            with urlopen(req, timeout=120) as resp, open(dest + ".part", "wb") as fh:
                 while True:
                     chunk = resp.read(1 << 16)
                     if not chunk:
                         break
                     fh.write(chunk)
             os.replace(dest + ".part", dest)
-            # The installer closes this tracker, upgrades it, and offers to relaunch.
+            if not _same_publisher(dest):
+                print("[esstracker] update rejected: installer signature does not match")
+                os.remove(dest)
+                results.put("bad-signature")
+                return
+            # The installer stops this tracker, upgrades it, and offers to relaunch.
             os.startfile(dest)  # type: ignore[attr-defined]
-            root.after(0, root.destroy)
+            results.put("ok")
         except Exception as exc:
             print(f"[esstracker] update download failed: {exc!r}")
-            webbrowser.open(page)
-            root.after(0, root.destroy)
+            results.put("failed")
 
     btn_later = tk.Button(buttons, text="Later", width=10, command=later)
     btn_later.pack(side="left", padx=(0, 8))

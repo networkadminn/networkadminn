@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import os
 import subprocess
+import sys
 import threading
 import time
 from typing import Callable
@@ -26,8 +27,56 @@ def human_duration(seconds: float) -> str:
     return f"{s}s"
 
 
+_notifier: Callable[[str, str], bool] | None = None
+
+
+def set_notifier(fn: Callable[[str, str], bool] | None) -> None:
+    """Register the tray's notification hook (Windows balloon/toast)."""
+    global _notifier
+    _notifier = fn
+
+
 def notify(title: str, body: str) -> None:
-    """Best-effort desktop notification (Linux notify-send) with ESS icon."""
+    """Best-effort desktop notification on every platform.
+
+    Windows: through the tray icon. macOS: Notification Center via osascript.
+    Linux: notify-send with the ESS icon. Falls back to the log.
+    """
+    if _notifier is not None:
+        try:
+            if _notifier(title, body):
+                return
+        except Exception:
+            pass
+    if sys.platform == "darwin":
+        if _notify_macos(title, body):
+            return
+    elif sys.platform.startswith("linux"):
+        if _notify_linux(title, body):
+            return
+    print(f"[esstracker] {title}: {body}")
+
+
+def _notify_macos(title: str, body: str) -> bool:
+    def esc(text: str) -> str:
+        return text.replace("\\", "\\\\").replace('"', '\\"')[:400]
+
+    try:
+        subprocess.Popen(
+            [
+                "osascript",
+                "-e",
+                f'display notification "{esc(body)}" with title "{esc(title)}"',
+            ],
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+        )
+        return True
+    except Exception:
+        return False
+
+
+def _notify_linux(title: str, body: str) -> bool:
     icon = os.environ.get(
         "ESSTRACKER_ICON",
         "/usr/share/icons/hicolor/256x256/apps/esstracker.png",
@@ -39,13 +88,16 @@ def notify(title: str, body: str) -> None:
         cmd.extend(["-i", "esstracker"])
     cmd.extend([title, body])
     try:
-        subprocess.Popen(
-            cmd,
-            stdout=subprocess.DEVNULL,
-            stderr=subprocess.DEVNULL,
-        )
+        subprocess.Popen(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        return True
     except Exception:
-        print(f"[esstracker] {title}: {body}")
+        return False
+
+
+def _gtk_countdown_possible() -> bool:
+    """The full-screen countdown needs GTK, i.e. a non-frozen Linux install."""
+    frozen = getattr(sys, "frozen", False) or hasattr(sys, "_MEIPASS")
+    return sys.platform.startswith("linux") and not frozen
 
 
 def show_going_offline_countdown(
@@ -53,20 +105,34 @@ def show_going_offline_countdown(
     on_tick: Callable[[int], None] | None = None,
     on_done: Callable[[], None] | None = None,
 ) -> None:
-    """Show a big circular countdown, then call on_done (daemon thread)."""
+    """Show the going-offline countdown, then call ``on_done`` (daemon thread).
+
+    The GTK window runs in a child process: GTK is not thread-safe and the tray's
+    own GTK loop lives on this process's main thread. Elsewhere a single
+    notification is shown (not one per second).
+    """
 
     def _run() -> None:
-        ok = _gtk_countdown(seconds, on_tick)
-        if not ok:
+        shown = False
+        if _gtk_countdown_possible():
+            from .ui_process import run_ui
+
+            shown = run_ui("idle-countdown", str(int(seconds)), timeout=seconds + 30) == 0
+        if not shown:
+            notify("Going offline", f"No activity — going offline in {int(seconds)} seconds")
             for n in range(seconds, 0, -1):
                 if on_tick:
                     on_tick(n)
-                notify("Going offline", f"{n}…")
                 time.sleep(1)
         if on_done:
             on_done()
 
     threading.Thread(target=_run, daemon=True, name="esstracker-idle-countdown").start()
+
+
+def run_countdown_window(seconds: int) -> bool:
+    """Entry point of ``esstracker-agent idle-countdown`` (child process main thread)."""
+    return _gtk_countdown(seconds, None)
 
 
 def _gtk_countdown(seconds: int, on_tick: Callable[[int], None] | None) -> bool:

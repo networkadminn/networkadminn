@@ -13,8 +13,11 @@ SQLAlchemy>=2.0.0
 mss>=9.0.0
 Pillow>=10.0.0
 pystray>=0.19.0
+# CA bundle for HTTPS from packaged builds (macOS/Linux OpenSSL has no usable default)
+certifi>=2024.2.2
 
 # --- Platform-specific (installed automatically only where applicable) ---
 pywin32>=306 ; platform_system == "Windows"
 uiautomation>=2.0.20 ; platform_system == "Windows"
 pyobjc-framework-Quartz>=10.0 ; platform_system == "Darwin"
+pyobjc-framework-Cocoa>=10.0 ; platform_system == "Darwin"
