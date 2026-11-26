@@ -96,15 +96,29 @@ def test_generate_ai_report(client, app):
         def __exit__(self, *args):
             return False
 
-    with patch("timetrack.server.ai_report.urllib.request.urlopen", return_value=FakeResp()):
+    class InlineThread:
+        """Run the background generation synchronously so the test can see the result."""
+
+        def __init__(self, target, **_kwargs):
+            self._target = target
+
+        def start(self):
+            self._target()
+
+    with patch("timetrack.server.ai_report.urllib.request.urlopen", return_value=FakeResp()), patch(
+        "timetrack.server.ai_report.threading.Thread", InlineThread
+    ):
         resp = client.post(
             f"/admin/user/{emp_id}/ai-report",
             data={"day": day, "action": "generate"},
             follow_redirects=True,
         )
     assert resp.status_code == 200
-    assert b"AI day report generated" in resp.data
-    assert b"Alice spent an hour coding in Cursor." in resp.data
+    assert b"AI report is generating" in resp.data
+    # The report panel loads the summary from the status endpoint, not the page HTML.
+    status = client.get(f"/admin/user/{emp_id}/ai-report/status?day={day}").get_json()
+    assert status["status"] == "ready"
+    assert "Alice spent an hour coding in Cursor." in status["summary"]
     with app.app_context():
         report = db.session.execute(
             db.select(DayAiReport).filter_by(user_id=emp_id, day=day)
