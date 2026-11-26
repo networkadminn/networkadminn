@@ -41,8 +41,8 @@ jobs:
             exit 0
           fi
 
-          body=$(cat <<EOF
-          ## Summary
+          # Build body without an indented heredoc terminator (that breaks bash).
+          body="## Summary
           Auto-opened from pushes to \`develop\`.
 
           ## Ship path
@@ -50,14 +50,12 @@ jobs:
           2. Merge into \`${BASE}\`
           3. **Deploy web** runs on merge (timetrack changes) → production
 
-          _Latest tip: \`${GITHUB_SHA}\`_
-          EOF
-          )
+          _Latest tip: \`${GITHUB_SHA}\`_"
 
-          existing_json=$(gh pr list --base "$BASE" --head develop --state open --json number,url -q '.[0] // empty')
-          if [ -n "$existing_json" ]; then
-            num=$(printf '%s' "$existing_json" | python3 -c 'import sys,json; print(json.load(sys.stdin)["number"])')
-            url=$(printf '%s' "$existing_json" | python3 -c 'import sys,json; print(json.load(sys.stdin)["url"])')
+          existing=$(gh pr list --base "$BASE" --head develop --state open --json number,url --jq '.[0] // empty')
+          if [ -n "$existing" ]; then
+            num=$(printf '%s' "$existing" | python3 -c 'import sys,json; print(json.load(sys.stdin)["number"])')
+            url=$(printf '%s' "$existing" | python3 -c 'import sys,json; print(json.load(sys.stdin)["url"])')
             echo "PR already open: $url"
             gh pr edit "$num" --title "Promote develop → ${BASE}" --body "$body" || true
             echo "$url" >> "$GITHUB_STEP_SUMMARY"
