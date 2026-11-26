@@ -2282,7 +2282,7 @@ def admin_user_websites(user_id: int):
     )
 
 
-_SCREENSHOTS_PER_PAGE = 50
+_SCREENSHOTS_PER_PAGE = 21
 
 
 def _shot_page_numbers(page: int, pages: int, *, max_buttons: int = 9) -> list[int | None]:
