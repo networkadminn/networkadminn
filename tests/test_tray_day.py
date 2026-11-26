@@ -1,5 +1,33 @@
 """Tray day JSON API for desktop flyout."""
 
+import pytest
+
+from timetrack.server import create_app
+from timetrack.server.extensions import db
+from timetrack.server.models import ROLE_EMPLOYEE, User
+
+
+@pytest.fixture()
+def app(tmp_path):
+    app = create_app(
+        data_dir=str(tmp_path / "data"),
+        database_uri="sqlite:///" + str(tmp_path / "test.db"),
+        secret_key="test-secret",
+    )
+    app.config.update(TESTING=True)
+    with app.app_context():
+        emp = User(username="alice", role=ROLE_EMPLOYEE, display_name="Alice")
+        emp.set_password("alicepass")
+        db.session.add(emp)
+        db.session.commit()
+        app.config["_EMP_TOKEN"] = emp.api_token
+    return app
+
+
+@pytest.fixture()
+def client(app):
+    return app.test_client()
+
 
 def test_tray_day_requires_token(client):
     assert client.get("/api/v1/tray-day").status_code == 401

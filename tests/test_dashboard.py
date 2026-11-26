@@ -1,3 +1,5 @@
+import time
+
 from timetrack.config import Config
 from timetrack.dashboard import create_app
 from timetrack.storage import Storage
@@ -5,9 +7,11 @@ from timetrack.storage import Storage
 
 def _app(tmp_path):
     db = str(tmp_path / "t.db")
+    now = time.time()
     with Storage(db) as s:
-        s.record("code", "main.py", "productive", False, 120.0)
-        s.record("firefox", "youtube", "unproductive", False, 60.0)
+        # Back-to-back spans (120 s then 60 s); both ending "now" would overlap.
+        s.record("code", "main.py", "productive", False, 120.0, now=now - 60)
+        s.record("firefox", "youtube", "unproductive", False, 60.0, now=now)
     cfg = Config(db_path=db)
     app = create_app(cfg)
     app.config.update(TESTING=True)
