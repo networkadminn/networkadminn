@@ -45,16 +45,55 @@
   {% if teams %}
   <ul class="rank-list">
     {% for t in teams %}
+    {% set members = users|selectattr("team_id", "equalto", t.id)|list %}
     <li>
       <span class="rank-meta">
         <strong>{{ t.name }}</strong>
-        <span class="muted">{{ t.users.count() }} members</span>
+        <span class="muted">{{ members|length }} member{{ '' if members|length == 1 else 's' }}{% if members %}: {{ members|map(attribute="name")|join(", ") }}{% endif %}</span>
       </span>
     </li>
     {% endfor %}
   </ul>
   {% else %}
-  <p class="empty">No teams yet.</p>
+  <p class="empty">No teams yet. Create one above, then assign people below.</p>
   {% endif %}
+</section>
+
+<section class="panel" id="members">
+  <div class="panel-head">
+    <h2>Members</h2>
+    <span class="muted">{{ users|length }} people · {{ users|selectattr("team_id")|list|length }} in a team</span>
+  </div>
+  <div class="grid-wrap">
+    <table class="grid">
+      <thead>
+        <tr><th>Name</th><th>Username</th><th>Role</th><th>Team</th></tr>
+      </thead>
+      <tbody>
+        {% for u in users %}
+        <tr>
+          <td><strong>{{ u.name }}</strong>{% if not u.enabled %} <span class="muted">(disabled)</span>{% endif %}</td>
+          <td class="muted">@{{ u.username }}</td>
+          <td>{{ u.role|capitalize }}</td>
+          <td>
+            <form method="post" class="inline-form">
+              <input type="hidden" name="action" value="assign" />
+              <input type="hidden" name="user_id" value="{{ u.id }}" />
+              <select name="team_id" onchange="this.form.submit()" aria-label="Team for {{ u.name }}">
+                <option value="">— None —</option>
+                {% for t in teams %}
+                <option value="{{ t.id }}" {% if u.team_id == t.id %}selected{% endif %}>{{ t.name }}</option>
+                {% endfor %}
+              </select>
+              <noscript><button class="btn tiny" type="submit">Save</button></noscript>
+            </form>
+          </td>
+        </tr>
+        {% else %}
+        <tr><td colspan="4" class="empty">No users in this organization.</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
 </section>
 {% endblock %}
