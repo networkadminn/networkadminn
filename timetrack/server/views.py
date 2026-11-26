@@ -2796,6 +2796,8 @@ def employees():
 # ----- Screenshots browser (DeskTime gallery) -----
 
 
+# Browsers cached an old nginx 301 to /screenshots/ for a day; serve both so it can't loop.
+@views_bp.route("/screenshots/")
 @views_bp.route("/screenshots")
 @login_required
 def screenshots_browser():
