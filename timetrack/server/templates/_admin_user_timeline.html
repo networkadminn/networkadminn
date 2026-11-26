@@ -1,0 +1,34 @@
+<div class="panel-head">
+  <h2>Activity detail</h2>
+  <span class="muted">apps · window titles · URLs</span>
+</div>
+{% if timeline %}
+<div class="grid-wrap">
+  <table class="apps timeline-table">
+    <thead>
+      <tr>
+        <th>Time</th>
+        <th>App</th>
+        <th>Window / page</th>
+        <th>Website</th>
+        <th>Category</th>
+        <th class="num">Duration</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for t in timeline %}
+      <tr>
+        <td class="num">{{ t.start_ts|clock }}–{{ t.end_ts|clock }}</td>
+        <td class="app-name">{{ t.app }}</td>
+        <td class="title-cell" title="{{ t.title }}">{{ t.title or '—' }}</td>
+        <td>{% if t.domain and t.url.lower().startswith(('http://', 'https://')) %}<a class="site-chip" href="{{ t.url }}" target="_blank" rel="noopener noreferrer" title="{{ t.url }}">{{ t.domain }}</a>{% elif t.domain %}<span class="site-chip">{{ t.domain }}</span>{% else %}—{% endif %}</td>
+        <td><span class="tag {{ t.category }}">{{ t.category }}</span></td>
+        <td class="num">{{ humanize(t.seconds) }}</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% else %}
+<p class="empty">No detailed activity for this day.</p>
+{% endif %}

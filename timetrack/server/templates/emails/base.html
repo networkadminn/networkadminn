@@ -1,0 +1,66 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <meta http-equiv="X-UA-Compatible" content="IE=edge" />
+  <title>{% block title %}esstracker{% endblock %}</title>
+  <!--[if mso]>
+  <noscript>
+    <xml>
+      <o:OfficeDocumentSettings>
+        <o:PixelsPerInch>96</o:PixelsPerInch>
+      </o:OfficeDocumentSettings>
+    </xml>
+  </noscript>
+  <![endif]-->
+</head>
+<body style="margin:0;padding:0;background-color:#EEF2F6;font-family:'Segoe UI',Roboto,Helvetica,Arial,sans-serif;-webkit-font-smoothing:antialiased;">
+  <table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0" style="background-color:#EEF2F6;">
+    <tr>
+      <td align="center" style="padding:32px 16px;">
+        <table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0" style="max-width:560px;">
+          <!-- Header -->
+          <tr>
+            <td style="background:linear-gradient(135deg,#0B7A4B 0%,#065A37 100%);border-radius:14px 14px 0 0;padding:28px 32px 24px;">
+              <table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0">
+                <tr>
+                  <td style="vertical-align:middle;">
+                    {% if logo_url %}
+                    <img src="{{ logo_url }}" alt="" width="40" height="40" style="display:inline-block;vertical-align:middle;border:0;border-radius:10px;" />
+                    {% endif %}
+                    <span style="display:inline-block;vertical-align:middle;margin-left:{% if logo_url %}12{% else %}0{% endif %}px;font-size:22px;font-weight:700;color:#ffffff;letter-spacing:-0.02em;">esstracker</span>
+                  </td>
+                </tr>
+                <tr>
+                  <td style="padding-top:8px;">
+                    <span style="font-size:13px;color:rgba(255,255,255,0.85);">ESS Tracker · workforce insights</span>
+                  </td>
+                </tr>
+              </table>
+            </td>
+          </tr>
+          <!-- Body card -->
+          <tr>
+            <td style="background-color:#ffffff;border-left:1px solid #E2E8F0;border-right:1px solid #E2E8F0;padding:32px 32px 28px;">
+              {% block content %}{% endblock %}
+            </td>
+          </tr>
+          <!-- Footer -->
+          <tr>
+            <td style="background-color:#F8FAFC;border:1px solid #E2E8F0;border-top:none;border-radius:0 0 14px 14px;padding:20px 32px 24px;">
+              <p style="margin:0 0 8px;font-size:12px;line-height:1.5;color:#64748B;">
+                {% block footer_note %}This message was sent by your organization’s esstracker server.{% endblock %}
+              </p>
+              <p style="margin:0;font-size:12px;color:#94A3B8;">
+                <a href="{{ tracker_url }}" style="color:#0B7A4B;text-decoration:none;font-weight:600;">Open esstracker</a>
+                &nbsp;·&nbsp; © {{ year }} Euclidee Solutions
+              </p>
+            </td>
+          </tr>
+        </table>
+      </td>
+    </tr>
+  </table>
+</body>
+</html>

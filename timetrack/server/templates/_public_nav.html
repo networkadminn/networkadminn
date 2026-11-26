@@ -1,0 +1,22 @@
+<header class="dt-header pub-header" id="top">
+  <div class="dt-header-inner pub-header-inner">
+    <a class="pub-logo" href="{{ url_for('views.home') }}">
+      <img src="{{ url_for('static', filename='brand/ess-mark.png') }}" alt="" />
+      <span><strong>esstracker</strong><small>ESS Tracker</small></span>
+    </a>
+    <nav class="dt-nav pub-menu" aria-label="Main">
+      <a href="{{ url_for('views.home') }}#solutions"{% if nav_active == 'home' %} class="is-on"{% endif %}>Solutions</a>
+      <a href="{{ url_for('views.home') }}#features">Features</a>
+      <a href="{{ url_for('views.blog_index') }}"{% if nav_active == 'blog' %} class="is-on"{% endif %}>Blog</a>
+      <a href="{{ url_for('views.home') }}#tour"{% if nav_active == 'home' %} data-tour-open{% endif %}>Tour</a>
+      <a href="{{ url_for('views.home') }}#faq">FAQ</a>
+    </nav>
+    <div class="dt-header-cta pub-header-cta">
+      <a class="pub-link" href="{{ url_for('auth.login') }}">Sign in</a>
+      <a class="pub-btn dt-btn-cta" href="{{ url_for('auth.login') }}">Start free</a>
+    </div>
+    <button class="pub-burger" type="button" id="navToggle" aria-label="Menu" aria-expanded="false">
+      <span></span><span></span>
+    </button>
+  </div>
+</header>

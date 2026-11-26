@@ -1,0 +1,9 @@
+[esstracker] Tracker stopped
+
+Employee: {{ employee_name }} (@{{ username }})
+Reason: {{ reason_label }}
+Time: {{ event_time }}
+
+Open dashboard: {{ dashboard_url }}
+
+— esstracker

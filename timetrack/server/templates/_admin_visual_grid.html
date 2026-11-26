@@ -1,0 +1,319 @@
+  {% set vq = viz_day_query|default('') %}
+  {% set apps_anchor = viz_apps_anchor|default('#team-apps') %}
+  {% set emp_anchor = viz_emp_anchor|default('#team-table') %}
+  {% set tr = trend_range|default(7) %}
+  <section class="viz-dash" aria-label="Team analytics overview">
+    <div class="viz-grid">
+      <article class="viz-card viz-treemap">
+        <header class="viz-card-head">
+          <h2>App usage map</h2>
+          <span class="muted">share of desk time</span>
+        </header>
+        {% if treemap_apps %}
+        <div class="viz-treemap-body">
+          {% for a in treemap_apps %}
+          <a class="viz-tile {{ a.category }}" style="flex-grow: {{ [a.pct, 4]|max|int }}"
+             href="{{ apps_anchor }}" title="{{ a.app }} · {{ a.pct }}%">
+            <span class="viz-tile-name">{{ a.app }}</span>
+            <span class="viz-tile-pct">{{ a.pct }}%</span>
+          </a>
+          {% endfor %}
+        </div>
+        {% else %}
+        <p class="viz-empty">No app data yet for this day.</p>
+        {% endif %}
+      </article>
+
+      <article class="viz-card viz-gauge-main">
+        <header class="viz-card-head">
+          <h2>Team productivity</h2>
+          <span class="muted">{{ day }}</span>
+        </header>
+        <div class="viz-gauge-wrap">
+          <div class="ring xl viz-ring" style="--pct: {{ avg_prod }}; --ring: var(--productive)">
+            <span class="ring-val">{{ avg_prod }}%</span>
+          </div>
+          <p class="viz-gauge-sub">{{ humanize(total_productive) }} productive of {{ humanize(total_desktime) }} desk</p>
+        </div>
+      </article>
+
+      <article class="viz-card viz-attendance">
+        <header class="viz-card-head">
+          <h2>Attendance</h2>
+          <span class="muted">{{ employee_count }} people</span>
+        </header>
+        <ul class="viz-hbars">
+          {% for row in attendance_viz %}
+          <li>
+            <span class="viz-hlabel">{{ row.label }}</span>
+            <div class="viz-htrack"><i class="{{ row.key }}" style="width: {{ row.pct }}%"></i></div>
+            <span class="viz-hval">{{ row.n }}</span>
+          </li>
+          {% endfor %}
+        </ul>
+      </article>
+
+      <article class="viz-card viz-spark">
+        <header class="viz-card-head">
+          <h2>Productivity trend</h2>
+          <span class="muted">{{ tr }} days</span>
+        </header>
+        <svg class="viz-chart" viewBox="0 0 240 56" preserveAspectRatio="none" role="img" aria-label="{{ tr }}-day productivity trend">
+          <defs>
+            <linearGradient id="vizProdFill" x1="0" y1="0" x2="0" y2="1">
+              <stop offset="0%" stop-color="var(--productive)" stop-opacity="0.35"/>
+              <stop offset="100%" stop-color="var(--productive)" stop-opacity="0"/>
+            </linearGradient>
+          </defs>
+          <polygon points="{{ prod_spark_area }}" fill="url(#vizProdFill)"/>
+          <polyline points="{{ prod_spark_line }}" fill="none" stroke="var(--productive)" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/>
+        </svg>
+        <div class="viz-mini-days">
+          {% for d in trend_days %}
+          <a class="viz-mini-day {% if d.day == day %}is-on{% endif %}" href="?day={{ d.day }}{{ vq }}" title="{{ d.label_full }} · {{ d.pct }}%">{{ d.label }}</a>
+          {% endfor %}
+        </div>
+      </article>
+
+      <article class="viz-card viz-bars">
+        <header class="viz-card-head">
+          <h2>Daily productivity</h2>
+          <span class="muted">% by day</span>
+        </header>
+        <div class="viz-col-chart">
+          {% for d in trend_days %}
+          <a class="viz-col {% if d.day == day %}is-on{% endif %}" href="?day={{ d.day }}{{ vq }}" title="{{ d.pct }}%">
+            <span class="viz-col-bar" style="height: {{ ((d.pct / trend_max_pct) * 100)|round }}%"></span>
+            <span class="viz-col-lbl">{{ d.label }}</span>
+          </a>
+          {% endfor %}
+        </div>
+      </article>
+
+      <article class="viz-card viz-apps">
+        <header class="viz-card-head">
+          <h2>Top apps</h2>
+          <a class="muted" href="{{ apps_anchor }}">All</a>
+        </header>
+        {% if team_apps %}
+        <ul class="viz-app-bars">
+          {% for a in team_apps[:5] %}
+          <li>
+            <span class="viz-app-name" title="{{ a.app }}">{{ a.app }}</span>
+            <div class="viz-htrack slim"><i class="{{ a.category }}" style="width: {{ a.pct }}%"></i></div>
+            <span class="viz-hval">{{ a.pct }}%</span>
+          </li>
+          {% endfor %}
+        </ul>
+        {% else %}
+        <p class="viz-empty">—</p>
+        {% endif %}
+      </article>
+
+      <article class="viz-card viz-area">
+        <header class="viz-card-head">
+          <h2>Tracked hours</h2>
+          <span class="muted">{{ tr }}-day volume</span>
+        </header>
+        <svg class="viz-chart" viewBox="0 0 240 56" preserveAspectRatio="none" role="img" aria-label="{{ tr }}-day tracked time">
+          <defs>
+            <linearGradient id="vizActiveFill" x1="0" y1="0" x2="0" y2="1">
+              <stop offset="0%" stop-color="var(--accent-2)" stop-opacity="0.4"/>
+              <stop offset="100%" stop-color="var(--accent-2)" stop-opacity="0"/>
+            </linearGradient>
+          </defs>
+          <polygon points="{{ active_spark_area }}" fill="url(#vizActiveFill)"/>
+          <polyline points="{{ active_spark_line }}" fill="none" stroke="var(--accent-2)" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/>
+        </svg>
+        <p class="viz-foot muted">Peak day: {{ humanize(trend_max_active) }} active</p>
+      </article>
+
+      <article class="viz-card viz-gauge-sm">
+        <header class="viz-card-head">
+          <h2>Effectiveness</h2>
+          <span class="muted">{{ expected_hours|int }}h goal</span>
+        </header>
+        <div class="viz-gauge-wrap sm">
+          <div class="ring lg viz-ring" style="--pct: {{ avg_eff }}; --ring: var(--accent-2)">
+            <span class="ring-val">{{ avg_eff }}%</span>
+          </div>
+        </div>
+      </article>
+
+      <article class="viz-card viz-split">
+        <header class="viz-card-head">
+          <h2>Time split</h2>
+          <span class="muted">today</span>
+        </header>
+        <ul class="viz-hbars split">
+          {% for c in category_viz %}
+          <li>
+            <span class="viz-hlabel">{{ c.label }}</span>
+            <div class="viz-htrack"><i class="{{ c.class }}" style="width: {{ c.pct }}%"></i></div>
+            <span class="viz-hval">{{ humanize(c.seconds) }}</span>
+          </li>
+          {% endfor %}
+        </ul>
+      </article>
+
+      <article class="viz-card viz-dual">
+        <header class="viz-card-head">
+          <h2>Productivity vs effectiveness</h2>
+          <span class="muted">{{ tr }}-day compare</span>
+        </header>
+        <svg class="viz-chart tall" viewBox="0 0 240 72" preserveAspectRatio="none" role="img" aria-label="Productivity and effectiveness trends">
+          <polyline class="viz-line-prod" points="{{ prod_spark_line }}" fill="none" stroke="var(--productive)" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/>
+          <polyline class="viz-line-eff" points="{{ eff_spark_line }}" fill="none" stroke="var(--accent-2)" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" stroke-dasharray="6 4"/>
+        </svg>
+        <div class="viz-legend-row">
+          <span><i class="dot productive"></i> Productivity</span>
+          <span><i class="dot accent"></i> Effectiveness</span>
+        </div>
+      </article>
+
+      <article class="viz-card viz-stack">
+        <header class="viz-card-head">
+          <h2>Daily time mix</h2>
+          <span class="muted">stacked hours</span>
+        </header>
+        <div class="viz-stack-chart">
+          {% for d in trend_days %}
+          <a class="viz-stack-col {% if d.day == day %}is-on{% endif %}" href="?day={{ d.day }}{{ vq }}" title="{{ d.label_full }}">
+            <span class="viz-stack-bar" style="height: {{ (100.0 * (d.active + d.idle) / trend_stack_max)|round(1) if trend_stack_max else 0 }}%">
+              <i class="productive" style="flex-basis: {{ d.stack_prod }}%"></i>
+              <i class="neutral" style="flex-basis: {{ d.stack_neutral }}%"></i>
+              <i class="unproductive" style="flex-basis: {{ d.stack_unprod }}%"></i>
+              <i class="idle" style="flex-basis: {{ d.stack_idle }}%"></i>
+            </span>
+            <span class="viz-col-lbl">{{ d.label }}</span>
+          </a>
+          {% endfor %}
+        </div>
+        <div class="viz-legend-row compact">
+          <span><i class="dot productive"></i> Prod</span>
+          <span><i class="dot neutral"></i> Neut</span>
+          <span><i class="dot unproductive"></i> Unprod</span>
+          <span><i class="dot idle"></i> Idle</span>
+        </div>
+      </article>
+
+      <article class="viz-card viz-donut">
+        <header class="viz-card-head">
+          <h2>Today’s split</h2>
+          <span class="muted">donut</span>
+        </header>
+        <div class="viz-donut-wrap">
+          <div class="viz-donut" style="background: {{ category_conic }}">
+            <span class="viz-donut-hole">{{ avg_prod }}%</span>
+          </div>
+          <ul class="viz-donut-legend">
+            {% for c in category_viz %}
+            <li><i class="dot {{ c.class }}"></i>{{ c.label }} <strong>{{ c.pct }}%</strong></li>
+            {% endfor %}
+          </ul>
+        </div>
+      </article>
+
+      <article class="viz-card viz-donut">
+        <header class="viz-card-head">
+          <h2>App categories</h2>
+          <span class="muted">by time</span>
+        </header>
+        {% if app_category_viz %}
+        <div class="viz-donut-wrap">
+          <div class="viz-donut sm" style="background: {{ app_category_conic }}">
+            <span class="viz-donut-hole sm">{{ app_category_viz|length }}</span>
+          </div>
+          <ul class="viz-donut-legend">
+            {% for c in app_category_viz %}
+            <li><i class="dot {{ c.class }}"></i>{{ c.label }} <strong>{{ c.pct }}%</strong></li>
+            {% endfor %}
+          </ul>
+        </div>
+        {% else %}
+        <p class="viz-empty">No app breakdown yet.</p>
+        {% endif %}
+      </article>
+
+      <article class="viz-card viz-eff-trend">
+        <header class="viz-card-head">
+          <h2>Effectiveness trend</h2>
+          <span class="muted">vs {{ expected_hours|int }}h goal</span>
+        </header>
+        <svg class="viz-chart" viewBox="0 0 240 56" preserveAspectRatio="none" role="img" aria-label="{{ tr }}-day effectiveness">
+          <defs>
+            <linearGradient id="vizEffFill" x1="0" y1="0" x2="0" y2="1">
+              <stop offset="0%" stop-color="var(--accent-2)" stop-opacity="0.35"/>
+              <stop offset="100%" stop-color="var(--accent-2)" stop-opacity="0"/>
+            </linearGradient>
+          </defs>
+          <polygon points="{{ eff_spark_area }}" fill="url(#vizEffFill)"/>
+          <polyline points="{{ eff_spark_line }}" fill="none" stroke="var(--accent-2)" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/>
+        </svg>
+        <div class="viz-mini-days">
+          {% for d in trend_days %}
+          <span class="viz-mini-day {% if d.day == day %}is-on{% endif %}" title="{{ d.eff }}%">{{ d.eff }}%</span>
+          {% endfor %}
+        </div>
+      </article>
+
+      <article class="viz-card viz-present">
+        <header class="viz-card-head">
+          <h2>Headcount present</h2>
+          <span class="muted">{{ tr }} days</span>
+        </header>
+        <svg class="viz-chart" viewBox="0 0 240 56" preserveAspectRatio="none" role="img" aria-label="Present employees trend">
+          <defs>
+            <linearGradient id="vizPresentFill" x1="0" y1="0" x2="0" y2="1">
+              <stop offset="0%" stop-color="var(--online)" stop-opacity="0.35"/>
+              <stop offset="100%" stop-color="var(--online)" stop-opacity="0"/>
+            </linearGradient>
+          </defs>
+          <polygon points="{{ present_spark_area }}" fill="url(#vizPresentFill)"/>
+          <polyline points="{{ present_spark_line }}" fill="none" stroke="var(--online)" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/>
+        </svg>
+        <p class="viz-foot muted">Today: {{ team.present }} / {{ employee_count }} present</p>
+      </article>
+
+      <article class="viz-card viz-employees">
+        <header class="viz-card-head">
+          <h2>Employee productivity</h2>
+          <a class="muted" href="{{ emp_anchor }}">Table</a>
+        </header>
+        {% if employee_viz %}
+        <ul class="viz-emp-chart">
+          {% for e in employee_viz %}
+          <li>
+            <a href="{{ url_for('views.admin_user', user_id=e.id) }}?day={{ day }}" title="{{ e.eff }}% effective">
+              <span class="viz-emp-name">{{ e.name }}</span>
+              <div class="viz-htrack slim"><i class="productive" style="width: {{ (e.pct / emp_max_pct * 100)|round }}%"></i></div>
+              <span class="viz-hval">{{ e.pct }}%</span>
+            </a>
+          </li>
+          {% endfor %}
+        </ul>
+        {% else %}
+        <p class="viz-empty">No tracked time today.</p>
+        {% endif %}
+      </article>
+
+      <article class="viz-card viz-eff-bars">
+        <header class="viz-card-head">
+          <h2>Employee effectiveness</h2>
+          <span class="muted">today</span>
+        </header>
+        {% if employee_viz %}
+        <div class="viz-col-chart emp">
+          {% for e in employee_viz[:7] %}
+          <a class="viz-col" href="{{ url_for('views.admin_user', user_id=e.id) }}?day={{ day }}" title="{{ e.name }}">
+            <span class="viz-col-bar eff" style="height: {{ e.eff }}%"></span>
+            <span class="viz-col-lbl">{{ e.name.split()[0] }}</span>
+          </a>
+          {% endfor %}
+        </div>
+        {% else %}
+        <p class="viz-empty">—</p>
+        {% endif %}
+      </article>
+    </div>
+  </section>

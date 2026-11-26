@@ -1,0 +1,43 @@
+{% extends "emails/base.html" %}
+{% block title %}Tracker stopped — {{ employee_name }}{% endblock %}
+{% block content %}
+<table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0" style="margin:0 0 20px;">
+  <tr>
+    <td style="width:44px;vertical-align:top;padding-right:14px;">
+      <div style="width:44px;height:44px;border-radius:12px;background-color:#FEF3C7;text-align:center;line-height:44px;font-size:22px;">⚠</div>
+    </td>
+    <td style="vertical-align:top;">
+      <h1 style="margin:0 0 6px;font-size:20px;font-weight:700;color:#0F172A;">Desktop tracker stopped</h1>
+      <p style="margin:0;font-size:14px;color:#64748B;">An employee’s esstracker agent is no longer running.</p>
+    </td>
+  </tr>
+</table>
+<table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0" style="margin:0 0 24px;background-color:#F8FAFC;border:1px solid #E2E8F0;border-radius:12px;">
+  <tr>
+    <td style="padding:16px 18px;">
+      <table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0">
+        <tr>
+          <td style="padding:6px 0;font-size:13px;color:#64748B;width:100px;">Employee</td>
+          <td style="padding:6px 0;font-size:14px;font-weight:600;color:#0F172A;">{{ employee_name }} <span style="font-weight:500;color:#64748B;">@{{ username }}</span></td>
+        </tr>
+        <tr>
+          <td style="padding:6px 0;font-size:13px;color:#64748B;">Reason</td>
+          <td style="padding:6px 0;font-size:14px;color:#0F172A;">{{ reason_label }}</td>
+        </tr>
+        <tr>
+          <td style="padding:6px 0;font-size:13px;color:#64748B;">Time</td>
+          <td style="padding:6px 0;font-size:14px;color:#0F172A;">{{ event_time }}</td>
+        </tr>
+      </table>
+    </td>
+  </tr>
+</table>
+<table role="presentation" cellspacing="0" cellpadding="0" border="0">
+  <tr>
+    <td style="border-radius:10px;background-color:#0B7A4B;">
+      <a href="{{ dashboard_url }}" target="_blank" style="display:inline-block;padding:12px 24px;font-size:14px;font-weight:700;color:#ffffff;text-decoration:none;">Open admin dashboard</a>
+    </td>
+  </tr>
+</table>
+{% endblock %}
+{% block footer_note %}Tracker stop alert for administrators.{% endblock %}
