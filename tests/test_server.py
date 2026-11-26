@@ -251,8 +251,10 @@ def test_agent_login_returns_token(client, app):
     assert resp.status_code == 200
     data = resp.get_json()
     assert data["ok"] is True
-    assert data["api_token"] == app.config["_EMP_TOKEN"]
+    assert data["api_token"]
     assert data["user"] == "alice"
+    ping = client.get("/api/v1/ping", headers={"Authorization": f"Bearer {data['api_token']}"})
+    assert ping.status_code == 200
 
 
 def test_agent_login_rejects_bad_password(client):

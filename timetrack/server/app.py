@@ -74,6 +74,23 @@ def create_app(config: ServerConfig | None = None, **overrides) -> Flask:
     app.register_blueprint(views_bp)
     app.register_blueprint(desk_bp)
 
+    @app.before_request
+    def _employee_tz():
+        # Employees see their own day; admins default to the company day and switch
+        # per employee where a page is about one person.
+        from flask import g
+        from flask_login import current_user
+
+        from .settings_util import user_tz_name
+
+        if current_user.is_authenticated and not current_user.is_admin:
+            g.tz_name = user_tz_name(current_user)
+
+    from .settings_util import company_tz_name, tz_choices
+
+    app.jinja_env.globals["tz_choices"] = tz_choices
+    app.jinja_env.globals["company_tz_name"] = company_tz_name
+
     @app.context_processor
     def inject_public_url():
         return {

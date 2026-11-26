@@ -68,10 +68,10 @@ def _day_view_redirect(day: str | datetime, user_id: int):
 
 
 def _day_arrival_ts(user_id: int, day: datetime) -> float | None:
-    from .settings_util import company_tz_name
+    from .settings_util import active_tz_name
 
     acts = _activities_for(user_id, day)
-    start, end = day_bounds(day, tz_name=company_tz_name())
+    start, end = day_bounds(day, tz_name=active_tz_name())
     return summarize(acts, start, end).arrival_ts
 
 
@@ -177,10 +177,10 @@ def toggle_private():
 @login_required
 def offline_fill():
     from ..tzutil import format_datetime_local, zone as tz_zone
-    from .settings_util import company_tz_name
+    from .settings_util import active_tz_name
 
     settings = get_settings()
-    tz_name = company_tz_name()
+    tz_name = active_tz_name()
     day = _parse_day(request.args.get("day") or request.form.get("day"))
     # Prefill from gap click (?start=&end= unix timestamps) or datetime-local strings.
     prefill_start = ""
@@ -449,9 +449,9 @@ def _title_with_project_task(base: str, project: str, task: str) -> str:
 
 def _parse_day_times_from_form() -> tuple[datetime, float, float, str]:
     from ..tzutil import zone as tz_zone
-    from .settings_util import company_tz_name
+    from .settings_util import active_tz_name
 
-    tz_name = company_tz_name()
+    tz_name = active_tz_name()
     tz = tz_zone(tz_name)
     day = _parse_day(request.form.get("day"))
     start = datetime.strptime(request.form.get("start") or "", "%Y-%m-%dT%H:%M").replace(
@@ -546,12 +546,12 @@ def _remove_offline_activities(user_id: int, start_ts: float, end_ts: float) -> 
 @login_required
 def offline_delete(rid: int):
     from ..tzutil import zone as tz_zone
-    from .settings_util import company_tz_name
+    from .settings_util import active_tz_name
 
     row = db.session.get(OfflineRequest, rid) or abort(404)
     if row.user_id != current_user.id and not current_user.is_admin:
         abort(403)
-    tz_name = company_tz_name()
+    tz_name = active_tz_name()
     tz = tz_zone(tz_name)
     day = datetime.fromtimestamp(float(row.start_ts), tz=tz).strftime("%Y-%m-%d")
     if row.status == "approved":
@@ -596,9 +596,9 @@ def approvals():
             return redirect(url_for("desk.approvals", day=day_q))
         return redirect(url_for("desk.approvals"))
 
-    from .settings_util import company_tz_name
+    from .settings_util import active_tz_name
 
-    tz_name = company_tz_name()
+    tz_name = active_tz_name()
     day = _parse_day(request.args.get("day"))
     nav = _day_nav(day)
     start, end = day_bounds(day, tz_name=tz_name)
@@ -1031,11 +1031,18 @@ def export_day_csv():
     user_id = request.args.get("user_id", type=int) or current_user.id
     if user_id != current_user.id and not current_user.is_admin:
         abort(403)
+    from flask import g
+
+    from .settings_util import user_tz_name
+
+    target = db.session.get(User, user_id) or abort(404)
+    g.tz_name = user_tz_name(target)
+    day = _parse_day(request.args.get("day"))
     acts = _activities_for(user_id, day)
     from ..tzutil import format_iso_tz
-    from .settings_util import company_tz_name
+    from .settings_util import active_tz_name
 
-    tz = company_tz_name()
+    tz = active_tz_name()
     buf = io.StringIO()
     w = csv.writer(buf)
     w.writerow(["start", "end", "duration_sec", "app", "title", "category", "idle"])
