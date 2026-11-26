@@ -16,6 +16,7 @@ from flask import Blueprint, current_app, g, jsonify, request
 from .extensions import db
 from .models import (
     Activity,
+    AgentSession,
     PrivatePeriod,
     Project,
     Screenshot,
@@ -23,7 +24,7 @@ from .models import (
     TimerSession,
     User,
 )
-from .settings_util import company_tz_name, get_settings
+from .settings_util import get_settings, user_tz_name
 from ..tzutil import is_work_day, now_tz, today_tz, zone
 
 api_bp = Blueprint("api", __name__, url_prefix="/api/v1")
@@ -47,12 +48,31 @@ def token_required(view):
         token = _token_from_request()
         if not token:
             return jsonify({"error": "missing token"}), 401
+        now = time.time()
+        session = db.session.execute(
+            db.select(AgentSession).filter_by(token=token)
+        ).scalar_one_or_none()
+        if session is not None:
+            user = db.session.get(User, session.user_id)
+            if user is None or not user.enabled:
+                return jsonify({"error": "invalid token"}), 401
+            if now - session.issued_at > SESSION_SECONDS:
+                return jsonify({"error": "session expired"}), 401
+            # Throttle writes: one update per minute is plenty for "last seen".
+            if not session.last_seen_at or now - session.last_seen_at > 60:
+                session.last_seen_at = now
+                db.session.commit()
+            g.agent_user = user
+            g.agent_session = session
+            g.tz_name = user_tz_name(user)
+            return view(*args, **kwargs)
+
+        # Legacy per-user token (agents signed in before device sessions existed).
         user = db.session.execute(
             db.select(User).filter_by(api_token=token)
         ).scalar_one_or_none()
         if user is None or not user.enabled:
             return jsonify({"error": "invalid token"}), 401
-        now = time.time()
         if user.token_issued_at is None:
             # Tokens from before sessions existed start their 30 days now.
             user.token_issued_at = now
@@ -60,6 +80,8 @@ def token_required(view):
         elif now - user.token_issued_at > SESSION_SECONDS:
             return jsonify({"error": "session expired"}), 401
         g.agent_user = user
+        g.agent_session = None
+        g.tz_name = user_tz_name(user)
         return view(*args, **kwargs)
 
     return wrapped
@@ -83,21 +105,45 @@ def agent_login():
     if user is None or not user.enabled or not user.check_password(password):
         return jsonify({"error": "invalid username or password"}), 401
 
-    # New 30-day session; an expired one gets a fresh token. A still-valid session is
-    # shared so signing in on a second device doesn't log out the first.
+    # Each device gets its own token and 30-day window, so signing in on a second
+    # machine never shortens or ends the first one's session.
     now = time.time()
-    expired = user.token_issued_at is not None and now - user.token_issued_at > SESSION_SECONDS
-    if not user.api_token or expired:
-        user.rotate_token()
-    if user.token_issued_at is None or expired:
-        user.token_issued_at = now
+    device_id = str(data.get("device_id") or "").strip()[:64]
+    device_name = str(data.get("device_name") or "").strip()[:200]
+    platform = str(
+        data.get("platform") or request.headers.get("X-Agent-Platform") or ""
+    ).strip()[:16]
+    db.session.execute(
+        db.delete(AgentSession).where(
+            AgentSession.user_id == user.id,
+            AgentSession.issued_at < now - SESSION_SECONDS,
+        )
+    )
+    session = None
+    if device_id:
+        session = db.session.execute(
+            db.select(AgentSession).filter_by(user_id=user.id, device_id=device_id)
+        ).scalar_one_or_none()
+    if session is None:
+        session = AgentSession(
+            user_id=user.id,
+            device_id=device_id,
+            device_name=device_name,
+            platform=platform,
+            issued_at=now,
+        )
+        db.session.add(session)
+    else:
+        session.device_name = device_name or session.device_name
+        session.platform = platform or session.platform
+    session.last_seen_at = now
     db.session.commit()
 
     settings = get_settings(user.organization_id or 1)
     return jsonify(
         {
             "ok": True,
-            "api_token": user.api_token,
+            "api_token": session.token,
             "user": user.username,
             "name": user.name,
             "role": user.role,
@@ -143,6 +189,7 @@ def ping():
     if u.tracker_stop_alerted_at:
         u.tracker_stop_alerted_at = None
     u.agent_stopped_at = None
+    u.agent_stop_reason = None
     db.session.commit()
     check_stale_trackers(u.organization_id or 1)
     private = db.session.execute(
@@ -193,7 +240,7 @@ def ping():
             "office_end_hour": float(settings.office_end_hour or 18.5),
             "work_days": settings.work_days or "0,1,2,3,4",
             "track_today": is_work_day(
-                today_tz(settings.timezone or "Asia/Kolkata"),
+                today_tz(user_tz_name(u)),
                 settings.work_days,
             ),
             "tray_logout_allowed": bool(getattr(settings, "tray_logout_allowed", True)),
@@ -237,6 +284,9 @@ def agent_stop():
 
     # max() guards against agent clocks running ahead of the server.
     u.agent_stopped_at = max(time.time(), _last_seen(u.id) or 0.0)
+    u.agent_stop_reason = reason
+    if reason == "logout" and g.get("agent_session") is not None:
+        db.session.delete(g.agent_session)
     db.session.commit()
 
     # An installer upgrade stops the agent and relaunches it a moment later:
@@ -397,6 +447,7 @@ def ingest_activities():
     if u.tracker_stop_alerted_at:
         u.tracker_stop_alerted_at = None
     u.agent_stopped_at = None
+    u.agent_stop_reason = None
     check_stale_trackers(u.organization_id or 1)
     # Reject (not 2xx) while private so the agent keeps buffered rows for retry.
     private = db.session.execute(
@@ -415,11 +466,13 @@ def ingest_activities():
     ).scalar_one_or_none()
 
     accepted = 0
+    duplicates = 0
     from ..config import Config as CoreConfig, merge_rules
     from .settings_util import load_server_rules
 
     server_rules = merge_rules(load_server_rules(u.organization_id or 1), org_only=True)
     categorizer = CoreConfig(rules=server_rules)
+    seen = _existing_activity_keys(u.id, items)
 
     for item in items:
         if not isinstance(item, dict):
@@ -429,6 +482,12 @@ def ingest_activities():
             end_ts = float(item["end_ts"])
         except (KeyError, TypeError, ValueError):
             continue
+        # A retried upload (timeout after the server committed) resends the same rows.
+        key = _activity_key(start_ts, end_ts)
+        if key in seen:
+            duplicates += 1
+            continue
+        seen.add(key)
         duration = float(item.get("duration", max(0.0, end_ts - start_ts)))
         app = str(item.get("app", "unknown"))[:255]
         title = str(item.get("title", ""))[:2000]
@@ -462,7 +521,32 @@ def ingest_activities():
         accepted += 1
 
     db.session.commit()
-    return jsonify({"accepted": accepted}), 201
+    return jsonify({"accepted": accepted, "duplicates": duplicates}), 201
+
+
+def _activity_key(start_ts: float, end_ts: float) -> tuple[int, int]:
+    return (round(start_ts * 1000), round(end_ts * 1000))
+
+
+def _existing_activity_keys(user_id: int, items: list) -> set[tuple[int, int]]:
+    """(start, end) keys already stored for this user within the batch's time span."""
+    starts = []
+    for item in items:
+        if isinstance(item, dict):
+            try:
+                starts.append(float(item["start_ts"]))
+            except (KeyError, TypeError, ValueError):
+                pass
+    if not starts:
+        return set()
+    rows = db.session.execute(
+        db.select(Activity.start_ts, Activity.end_ts).where(
+            Activity.user_id == user_id,
+            Activity.start_ts >= min(starts) - 0.001,
+            Activity.start_ts <= max(starts) + 0.001,
+        )
+    ).all()
+    return {_activity_key(s, e) for s, e in rows}
 
 
 @api_bp.route("/screenshots", methods=["POST"])
@@ -484,6 +568,15 @@ def ingest_screenshot():
         return jsonify({"error": "missing 'image' file"}), 400
 
     ts = float(request.form.get("ts", time.time()))
+    existing = db.session.execute(
+        db.select(Screenshot.id).where(
+            Screenshot.user_id == u.id,
+            Screenshot.ts >= ts - 0.001,
+            Screenshot.ts <= ts + 0.001,
+        )
+    ).scalar()
+    if existing is not None:
+        return jsonify({"id": existing, "duplicate": True}), 200
     app_name = (request.form.get("app", "") or "")[:255]
     title = (request.form.get("title", "") or "")[:2000]
     blurred = request.form.get("blurred", "0") in ("1", "true", "True")
@@ -500,7 +593,7 @@ def ingest_screenshot():
     from .settings_util import org_screenshot_dir
 
     cfg = current_app.config["TIMETRACK_SERVER_CONFIG"]
-    tz = zone(company_tz_name())
+    tz = zone(user_tz_name(u))
     day = datetime.fromtimestamp(ts, tz=tz).strftime("%Y-%m-%d")
     org_root = org_screenshot_dir(u.organization_id or 1)
     # Forward-slash relative paths so Flask send_from_directory works on Windows.

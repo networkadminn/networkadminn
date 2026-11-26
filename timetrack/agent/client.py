@@ -48,6 +48,21 @@ def agent_platform() -> str:
     return "linux"
 
 
+def device_identity() -> tuple[str, str]:
+    """(stable id, readable name) for this machine, sent on sign-in."""
+    import getpass
+    import hashlib
+    import platform
+
+    name = platform.node() or "unknown"
+    try:
+        os_user = getpass.getuser()
+    except Exception:
+        os_user = ""
+    raw = f"{name}|{os_user}|{agent_platform()}|{uuid.getnode()}"
+    return hashlib.sha256(raw.encode("utf-8")).hexdigest()[:32], name
+
+
 class ServerClient:
     def __init__(self, base_url: str, token: str, timeout: float = 15.0):
         self.base_url = base_url.rstrip("/")
@@ -198,7 +213,16 @@ class ServerClient:
 
     def login(self, username: str, password: str) -> dict | None:
         """Exchange username/password for an API token (first-run desktop login)."""
-        body = json.dumps({"username": username, "password": password}).encode("utf-8")
+        device_id, device_name = device_identity()
+        body = json.dumps(
+            {
+                "username": username,
+                "password": password,
+                "device_id": device_id,
+                "device_name": device_name,
+                "platform": agent_platform(),
+            }
+        ).encode("utf-8")
         req = urllib.request.Request(
             self._url("/api/v1/agent/login"),
             data=body,

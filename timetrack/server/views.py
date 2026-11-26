@@ -13,6 +13,7 @@ from flask import (
     abort,
     current_app,
     flash,
+    g,
     jsonify,
     redirect,
     render_template,
@@ -77,13 +78,21 @@ from .models import (
     ROLE_EMPLOYEE,
     generate_token,
 )
-from .settings_util import company_tz_name, get_settings, load_server_rules, rules_path
+from .settings_util import (
+    active_tz_name,
+    get_settings,
+    load_server_rules,
+    rules_path,
+    user_tz,
+    user_tz_name,
+    valid_tz_name,
+)
 
 views_bp = Blueprint("views", __name__)
 
 
 def _tz() -> str:
-    return company_tz_name()
+    return active_tz_name()
 
 
 def _parse_day(value: str | None) -> datetime:
@@ -257,6 +266,53 @@ def _spark_polyline(values: list[float], *, width: float = 120.0, height: float 
     return line, area
 
 
+def _admin_team_row(
+    u: User,
+    day: datetime,
+    expected: float,
+    off_day: bool,
+    now_ts: float,
+    online_window: float,
+) -> dict:
+    """One employee's row on the team board, in the active (employee's) zone."""
+    start, end = day_bounds(day, tz_name=_tz())
+    acts = _activities_for(u.id, day)
+    manual = _manual_for(u.id, day)
+    dm = compute_day_metrics(acts, manual, start, end, expected)
+    s = dm.summary
+    manual_seconds = dm.manual_total_seconds
+    last = _last_seen(u.id)
+    online = _is_online(u, last, now_ts, online_window)
+    late = _is_late(s.arrival_ts, day)
+    absent = (not off_day) and s.total_seconds <= 0 and manual_seconds <= 0
+    live = _live_snapshot(u.id, now_ts=now_ts, online_window=online_window)
+    if not online and isinstance(live, dict):
+        live["fresh"] = False
+    return {
+        "user": u,
+        "summary": s,
+        "manual_seconds": manual_seconds,
+        "desktime_seconds": dm.desktime_seconds,
+        "online": online,
+        "last_seen": last,
+        "live": live,
+        "shots": db.session.execute(
+            db.select(db.func.count(Screenshot.id)).filter(
+                Screenshot.user_id == u.id,
+                Screenshot.ts >= start,
+                Screenshot.ts < end,
+            )
+        ).scalar_one(),
+        "arrived": format_clock(s.arrival_ts, tz_name=_tz()),
+        "left": format_clock(s.last_seen_ts, tz_name=_tz()),
+        "late": late and not absent,
+        "early": _is_early(s.arrival_ts, day) and not absent,
+        "absent": absent,
+        "dt_productivity": dm.dt_productivity,
+        "dt_effectiveness": dm.dt_effectiveness,
+    }
+
+
 def _admin_team_day_state(
     users: list[User],
     day: datetime,
@@ -266,7 +322,6 @@ def _admin_team_day_state(
 ) -> tuple[list[dict], dict, list[dict], float, float, bool]:
     """Per-day team rows, aggregates, and top apps (admin dashboard + reports viz)."""
     expected = _expected_seconds()
-    start, end = day_bounds(day, tz_name=_tz())
     off_day = _is_off_day(day)
     rows: list[dict] = []
     team = {
@@ -280,53 +335,20 @@ def _admin_team_day_state(
         "absent": 0,
     }
     for u in users:
-        acts = _activities_for(u.id, day)
-        manual = _manual_for(u.id, day)
-        dm = compute_day_metrics(acts, manual, start, end, expected)
-        s = dm.summary
-        manual_seconds = dm.manual_total_seconds
-        desktime_seconds = dm.desktime_seconds
-        last = _last_seen(u.id)
-        online = _is_online(u, last, now_ts, online_window)
-        late = _is_late(s.arrival_ts, day)
-        absent = (not off_day) and s.total_seconds <= 0 and manual_seconds <= 0
-        live = _live_snapshot(u.id, now_ts=now_ts, online_window=online_window)
-        if not online and isinstance(live, dict):
-            live["fresh"] = False
-        row = {
-            "user": u,
-            "summary": s,
-            "manual_seconds": manual_seconds,
-            "desktime_seconds": desktime_seconds,
-            "online": online,
-            "last_seen": last,
-            "live": live,
-            "shots": db.session.execute(
-                db.select(db.func.count(Screenshot.id)).filter(
-                    Screenshot.user_id == u.id,
-                    Screenshot.ts >= start,
-                    Screenshot.ts < end,
-                )
-            ).scalar_one(),
-            "arrived": format_clock(s.arrival_ts, tz_name=_tz()),
-            "left": format_clock(s.last_seen_ts, tz_name=_tz()),
-            "late": late and not absent,
-            "early": _is_early(s.arrival_ts, day) and not absent,
-            "absent": absent,
-            "dt_productivity": dm.dt_productivity,
-            "dt_effectiveness": dm.dt_effectiveness,
-        }
+        with user_tz(u):
+            row = _admin_team_row(u, day, expected, off_day, now_ts, online_window)
         rows.append(row)
+        s = row["summary"]
         team["active"] += s.active_seconds
         team["productive"] += s.productive_seconds
         team["idle"] += s.idle_seconds
         team["unproductive"] += s.unproductive_seconds
-        team["online"] += 1 if online else 0
-        if absent:
+        team["online"] += 1 if row["online"] else 0
+        if row["absent"]:
             team["absent"] += 1
         else:
             team["present"] += 1
-            if late:
+            if row["late"]:
                 team["late"] += 1
 
     app_totals: dict[str, dict] = {}
@@ -571,7 +593,7 @@ def _lunch_range(day: datetime) -> tuple[float, float] | None:
     le = settings.lunch_end_hour
     if ls is None or le is None or float(le) <= float(ls):
         return None
-    tz = settings.timezone or _tz()
+    tz = _tz()
     return (
         office_datetime(day, float(ls), tz).timestamp(),
         office_datetime(day, float(le), tz).timestamp(),
@@ -712,7 +734,7 @@ def _is_off_day(day: datetime) -> bool:
 def _office_start_ts(day: datetime) -> float:
     settings = get_settings()
     start_h = float(settings.office_start_hour or settings.expected_arrival_hour or 9.5)
-    return office_datetime(day, start_h, settings.timezone or _tz()).timestamp()
+    return office_datetime(day, start_h, _tz()).timestamp()
 
 
 def _is_late(arrival_ts: float | None, day: datetime) -> bool:
@@ -2003,6 +2025,23 @@ def user_avatar(user_id: int):
     )
 
 
+def _apply_timezone_field(user: User) -> bool:
+    """Set ``user.timezone`` from the form (empty = company default). False if invalid."""
+    if "timezone" not in request.form:
+        return True
+    raw = (request.form.get("timezone") or "").strip()
+    if not raw:
+        user.timezone = None
+        return True
+    tz = valid_tz_name(raw)
+    if tz is None:
+        db.session.rollback()
+        flash(f"Unknown time zone “{raw}”. Pick one from the list, e.g. Europe/London.", "error")
+        return False
+    user.timezone = tz
+    return True
+
+
 @views_bp.route("/me/account", methods=["GET", "POST"])
 @login_required
 def my_account():
@@ -2030,8 +2069,9 @@ def my_account():
             email = (request.form.get("email") or "").strip()
             user.display_name = name
             user.email = email
-            db.session.commit()
-            flash("Profile saved.", "info")
+            if _apply_timezone_field(user):
+                db.session.commit()
+                flash("Profile saved.", "info")
         elif action == "password":
             current_pw = request.form.get("current_password") or ""
             password = request.form.get("password") or ""
@@ -2190,6 +2230,8 @@ def _org_user_or_404(user_id: int) -> User:
     user = db.session.get(User, user_id) or abort(404)
     if current_user.role != ROLE_SUPERADMIN and not assert_same_org(user):
         abort(404)
+    # Pages about one employee split days in that employee's time zone.
+    g.tz_name = user_tz_name(user)
     return user
 
 
@@ -2601,8 +2643,9 @@ def employees():
             email = (request.form.get("email") or "").strip()
             user.display_name = name
             user.email = email
-            db.session.commit()
-            flash(f"Profile updated for {user.username}.", "info")
+            if _apply_timezone_field(user):
+                db.session.commit()
+                flash(f"Profile updated for {user.username}.", "info")
         elif action == "role":
             uid = request.form.get("user_id", type=int)
             user = db.session.get(User, uid) or abort(404)

@@ -108,6 +108,7 @@
                 <input type="hidden" name="user_id" value="{{ u.id }}" />
                 <input name="name" value="{{ u.display_name }}" placeholder="Display name" />
                 <input name="email" type="email" value="{{ u.email }}" placeholder="Email" />
+                <input name="timezone" list="tz-choices" value="{{ u.timezone or '' }}" maxlength="64" placeholder="Time zone (company default)" autocomplete="off" />
                 <button class="btn primary inline" type="submit">Save profile</button>
               </form>
             </details>
@@ -168,4 +169,5 @@
     </table>
   </div>
 </section>
+<datalist id="tz-choices">{% for z in tz_choices() %}<option value="{{ z }}">{% endfor %}</datalist>
 {% endblock %}

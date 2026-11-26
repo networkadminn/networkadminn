@@ -16,6 +16,7 @@ checked first when a URL/domain can be inferred.
 from __future__ import annotations
 
 import os
+import re
 from dataclasses import dataclass, field
 from pathlib import Path
 
@@ -43,7 +44,7 @@ def _default_db_path() -> str:
 
 DEFAULT_DB_PATH = _default_db_path()
 
-# Substrings are matched case-insensitively against "<app> <title>".
+# Whole words are matched case-insensitively against "<app> <title>".
 DEFAULT_RULES: dict[str, list[str]] = {
     PRODUCTIVE: [
         "code", "vim", "nvim", "emacs", "pycharm", "intellij", "sublime",
@@ -140,9 +141,16 @@ class Config:
                 n = needle.strip().lower()
                 if not n or n == app_l:
                     continue
-                if n in haystack and n not in app_l:
+                if _word_in(n, haystack) and not _word_in(n, app_l):
                     return category
         return NEUTRAL
+
+
+def _word_in(needle: str, text: str) -> bool:
+    """``needle`` appears in ``text`` as a whole word ("word" must not match "password")."""
+    if not needle or not text:
+        return False
+    return re.search(rf"(?<![a-z0-9]){re.escape(needle)}(?![a-z0-9])", text) is not None
 
 
 def _activity_domain(app: str, title: str, url: str = "") -> str:
@@ -172,7 +180,10 @@ def _domain_matches(domain: str, needles: list[str]) -> bool:
         n = (needle or "").strip().lower().lstrip(".")
         if not n:
             continue
-        if d == n or d.endswith("." + n) or n in d:
+        if d == n or d.endswith("." + n):
+            return True
+        # Dotless needle ("google") matches a whole hostname label, not a substring.
+        if "." not in n and n in d.split("."):
             return True
     return False
 
