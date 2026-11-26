@@ -6,7 +6,7 @@ esstracker follows the same distribution model as DeskTime-class trackers:
 |----|----------|------------|-------|
 | Linux | `.deb` | Linux amd64 | Ready — Applications + tray + Sign in |
 | Windows | `.exe` | Windows 10/11 | SmartScreen until Authenticode-signed |
-| macOS | `.dmg` | macOS | Must codesign + notarize; drag to `/Applications` |
+| macOS | `.dmg` | macOS (CI: `macOS dmg` workflow on tag `v*`) | arm64 on GitHub; Intel via local `build_mac.sh`; codesign + notarize for wide distribution |
 
 ## Why we cannot “just build everything” on one Linux box
 
@@ -30,7 +30,7 @@ esstracker follows the same distribution model as DeskTime-class trackers:
 - Best on **X11** with `xdotool` + `xprintidle`.
 - **Wayland** often hides window titles from unprivileged clients.
 - GNOME needs **AppIndicator** support for the tray.
-- Deb Depends already pulls tray/notification libraries.
+- Deb **Depends** pull `xprintidle`, `xdotool`, `libxss1`, and tray/notification libraries (idle + active window).
 
 ## Linux (Ubuntu 20.04 / 22.04 / 24.04)
 
@@ -60,8 +60,11 @@ powershell -ExecutionPolicy Bypass -File packaging\build_windows.ps1
 # Install on an employee PC:
 #   powershell -ExecutionPolicy Bypass -File dist\windows\install.ps1 -Launch
 
-# macOS (on a Mac)
+# macOS (on a Mac, or GitHub Actions "macOS dmg" on v* tags)
+# Full guide (Intel vs ARM, venv, CI): docs/MAC_BUILD.md
 bash packaging/build_mac.sh
+# → dist/releases/esstracker-*-arm64.dmg (Apple Silicon runner or Mac)
+# → dist/releases/esstracker-*-x86_64.dmg (Intel Mac only)
 # then codesign + notarize before public download
 ```
 
@@ -81,5 +84,22 @@ Upload artifacts to the server:
 ```bash
 scp dist/releases/* root@SERVER:/www/wwwroot/timetrack/data/releases/
 ```
+
+### GitHub Actions (Ubuntu 22.04 + 24.04 + Windows → server)
+
+Workflow: **`.github/workflows/client-release.yml`**
+
+| Trigger | Builds | Deploy to server |
+|---------|--------|------------------|
+| Push tag `v*` (e.g. `v0.3.14`) | `.deb` for 22.04 & 24.04, Windows Setup + zip | Yes (if secret set) |
+| Manual **workflow_dispatch** | Same | Only if **Upload builds to tracker production server** is checked |
+
+**One-time setup** in GitHub → Settings → Secrets → Actions:
+
+- `PRODUCTION_SSH_KEY` — private key for `root@31.97.239.250` (same as `server-key.pem`)
+
+Optional Windows signing: `WINDOWS_CERT_PFX_BASE64`, `WINDOWS_CERT_PASSWORD`.
+
+After a successful run, files land in `/www/wwwroot/timetrack/data/releases/` and appear on **https://tracker.euclideesolutions.com/download**.
 
 The public page is `/download`.

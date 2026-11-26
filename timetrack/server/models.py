@@ -12,6 +12,8 @@ from .extensions import db
 
 ROLE_ADMIN = "admin"
 ROLE_EMPLOYEE = "employee"
+# Legacy SaaS role — still in some DBs; treated as admin.
+ROLE_SUPERADMIN = "superadmin"
 
 PLAN_BUSINESS = "business"
 ORG_ACTIVE = "active"
@@ -83,10 +85,24 @@ class User(UserMixin, db.Model):
     enabled = db.Column(db.Boolean, nullable=False, default=True)
     team_id = db.Column(db.Integer, db.ForeignKey("teams.id"), nullable=True)
     private_time_allowed = db.Column(db.Boolean, nullable=False, default=True)
+    # Let employee see their own screenshots on My Day / My screenshots nav.
+    view_own_screenshots = db.Column(db.Boolean, nullable=False, default=False)
     # Per-user screenshot overrides (NULL = use company settings)
     screenshots_enabled = db.Column(db.Boolean, nullable=True)
     screenshot_interval = db.Column(db.Integer, nullable=True)
     created_at = db.Column(db.DateTime, default=_utcnow)
+    # Agent heartbeat + stop-alert dedupe (unix timestamp).
+    last_agent_ping = db.Column(db.Float, nullable=True)
+    tracker_stop_alerted_at = db.Column(db.Float, nullable=True)
+    # Set when the agent reports Quit / Sign out; cleared on its next ping or sync.
+    agent_stopped_at = db.Column(db.Float, nullable=True)
+    # Reported by the agent on every ping/sync (NULL = client older than 0.3.2).
+    agent_version = db.Column(db.String(32), nullable=True)
+    agent_platform = db.Column(db.String(16), nullable=True)
+    # Start of the agent's sign-in session (unix ts); the token expires SESSION_DAYS later.
+    token_issued_at = db.Column(db.Float, nullable=True)
+    avatar_filename = db.Column(db.String(120), default="")
+    avatar_updated_at = db.Column(db.Float, nullable=True)
 
     activities = db.relationship(
         "Activity", backref="user", lazy="dynamic", cascade="all, delete-orphan"
@@ -103,7 +119,7 @@ class User(UserMixin, db.Model):
 
     @property
     def is_admin(self) -> bool:
-        return self.role == ROLE_ADMIN
+        return self.role in (ROLE_ADMIN, ROLE_SUPERADMIN)
 
     @property
     def name(self) -> str:
@@ -288,12 +304,48 @@ class CompanySettings(db.Model):
     # Office window (IST by default). expected_arrival_hour stays in sync with start.
     office_start_hour = db.Column(db.Float, nullable=False, default=9.5)
     office_end_hour = db.Column(db.Float, nullable=False, default=18.5)
+    # Strict lunch break: activity inside this window is never counted or fillable.
+    # Lunch is disabled when end <= start.
+    lunch_start_hour = db.Column(db.Float, nullable=False, default=13.5)
+    lunch_end_hour = db.Column(db.Float, nullable=False, default=14.25)
     # Comma-separated Python weekdays: 0=Mon … 6=Sun. Default Mon–Fri.
     work_days = db.Column(db.String(32), nullable=False, default="0,1,2,3,4")
     timezone = db.Column(db.String(64), nullable=False, default="Asia/Kolkata")
-    company_name = db.Column(db.String(200), nullable=False, default="Euclidee Software Solutions Private Limited")
+    company_name = db.Column(db.String(200), nullable=False, default="ESS Tracker")
     # Seconds without keyboard/mouse before agent marks idle (DeskTime default ~180).
     idle_threshold = db.Column(db.Integer, nullable=False, default=180)
+    # Tray: allow employees to log out / quit from the notification menu.
+    tray_logout_allowed = db.Column(db.Boolean, nullable=False, default=True)
+    tray_quit_allowed = db.Column(db.Boolean, nullable=False, default=True)
+    # Email admins when an employee tracker stops.
+    alert_on_tracker_stop = db.Column(db.Boolean, nullable=False, default=True)
+    tracker_alert_emails = db.Column(db.String(500), default="")
+    # AI day reports (Google Gemini).
+    email_ai_report_on_logout = db.Column(db.Boolean, nullable=False, default=False)
+    ai_report_after_office_only = db.Column(db.Boolean, nullable=False, default=True)
+    ai_report_emails = db.Column(db.String(500), default="")
+
+
+class DayAiReport(db.Model):
+    """Cached Gemini summary for one employee day."""
+
+    __tablename__ = "day_ai_reports"
+
+    id = db.Column(db.Integer, primary_key=True)
+    user_id = db.Column(
+        db.Integer, db.ForeignKey("users.id"), nullable=False, index=True
+    )
+    day = db.Column(db.String(10), nullable=False, index=True)  # YYYY-MM-DD
+    summary = db.Column(db.Text, nullable=False, default="")
+    status = db.Column(db.String(20), nullable=False, default="ready")
+    # generating | ready | failed
+    error_message = db.Column(db.Text, nullable=False, default="")
+    created_at = db.Column(db.DateTime, default=_utcnow)
+    emailed_at = db.Column(db.DateTime, nullable=True)
+
+    user = db.relationship("User", backref=db.backref("ai_reports", lazy="dynamic"))
+
+    __table_args__ = (db.UniqueConstraint("user_id", "day", name="uq_ai_report_user_day"),)
 
 
 class PasswordResetToken(db.Model):
@@ -326,9 +378,11 @@ __all__ = [
     "PrivatePeriod",
     "OfflineRequest",
     "CompanySettings",
+    "DayAiReport",
     "PasswordResetToken",
     "ROLE_ADMIN",
     "ROLE_EMPLOYEE",
+    "ROLE_SUPERADMIN",
     "PLAN_BUSINESS",
     "ORG_ACTIVE",
     "generate_token",

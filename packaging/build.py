@@ -13,6 +13,7 @@ from __future__ import annotations
 import argparse
 import os
 import platform
+import re
 import shutil
 import subprocess
 import sys
@@ -24,7 +25,9 @@ DIST = ROOT / "dist"
 BUILD = ROOT / "build"
 PACKAGING = ROOT / "packaging"
 LINUX = PACKAGING / "linux"
-VERSION = "0.2.6"
+VERSION = re.search(
+    r'^__version__ = "(.+)"', (ROOT / "timetrack" / "__init__.py").read_text(), re.M
+).group(1)
 APP_ID = "com.euclidee.esstracker"
 PKG_NAME = "esstracker"
 
@@ -71,9 +74,11 @@ HIDDEN = [
     "win32con",
     "pywintypes",
     "pythoncom",
+    "timetrack.platform.linux_screenshot",
 ]
 
 WINDOWS = PACKAGING / "windows"
+MACOS = PACKAGING / "macos"
 
 
 def _run(cmd: list[str], **kwargs) -> None:
@@ -116,10 +121,62 @@ def _windows_icon() -> Path | None:
         return None
 
 
+def _macos_icon() -> Path | None:
+    """Build packaging/macos/esstracker.icns from the ESS PNG (Dock / Finder icon)."""
+    icns = MACOS / "esstracker.icns"
+    src = LINUX / "icons" / "esstracker-512.png"
+    if not src.is_file():
+        src = ROOT / "timetrack" / "agent" / "assets" / "ess-mark.png"
+    if not src.is_file():
+        return icns if icns.is_file() else None
+    if icns.is_file() and icns.stat().st_mtime >= src.stat().st_mtime:
+        return icns
+    try:
+        from PIL import Image
+
+        MACOS.mkdir(parents=True, exist_ok=True)
+        iconset = BUILD / "esstracker.iconset"
+        if iconset.exists():
+            shutil.rmtree(iconset)
+        iconset.mkdir(parents=True)
+        img = Image.open(src).convert("RGBA")
+        resample = getattr(getattr(Image, "Resampling", Image), "LANCZOS", Image.LANCZOS)
+        for name, size in {
+            "icon_16x16.png": 16,
+            "icon_16x16@2x.png": 32,
+            "icon_32x32.png": 32,
+            "icon_32x32@2x.png": 64,
+            "icon_128x128.png": 128,
+            "icon_128x128@2x.png": 256,
+            "icon_256x256.png": 256,
+            "icon_256x256@2x.png": 512,
+            "icon_512x512.png": 512,
+            "icon_512x512@2x.png": 1024,
+        }.items():
+            img.resize((size, size), resample).save(iconset / name)
+        if icns.exists():
+            icns.unlink()
+        _run(["iconutil", "-c", "icns", str(iconset), "-o", str(icns)])
+        shutil.rmtree(iconset)
+        print(f"Wrote macOS icon: {icns}")
+        return icns
+    except Exception as exc:
+        print(f"WARNING: could not build .icns ({exc!r})", file=sys.stderr)
+        return icns if icns.is_file() else None
+
+
+def _platform_dist() -> Path:
+    if platform.system() == "Windows":
+        return DIST / "windows"
+    if platform.system() == "Darwin":
+        return DIST / "macos"
+    return DIST / "linux"
+
+
 def build_binaries(*, onefile: bool, apps: tuple[tuple[str, str], ...] | None = None) -> Path:
     """Build PyInstaller binaries for the current platform. Returns output dir."""
     _ensure_pyinstaller()
-    out = DIST / ("windows" if platform.system() == "Windows" else "linux")
+    out = _platform_dist()
     if out.exists():
         shutil.rmtree(out)
     out.mkdir(parents=True)
@@ -159,6 +216,8 @@ def build_binaries(*, onefile: bool, apps: tuple[tuple[str, str], ...] | None = 
             if win_icon is not None:
                 cmd.extend(["--icon", str(win_icon)])
             cmd.extend(["--collect-all", "tkinter", "--collect-all", "pystray"])
+            # Browser address-bar URLs (UI Automation); comtypes builds COM wrappers at runtime.
+            cmd.extend(["--collect-all", "uiautomation", "--collect-all", "comtypes"])
         for src, dest in DATAS:
             if Path(src).exists():
                 cmd.extend(["--add-data", f"{src}{sep}{dest}"])
@@ -243,27 +302,95 @@ def _install_icons(deb_root: Path) -> None:
         shutil.copy2(master, pix / "esstracker.png")
 
 
+def _install_agent_venv(optdir: Path) -> None:
+    """Venv + source tree so tray uses system python3-gi (AppIndicator menu)."""
+    venv = optdir / "venv"
+    app = optdir / "app"
+    if venv.exists():
+        shutil.rmtree(venv)
+    if app.exists():
+        shutil.rmtree(app)
+    subprocess.run(
+        [sys.executable, "-m", "venv", "--system-site-packages", str(venv)],
+        check=True,
+    )
+    pip = venv / "bin" / "pip"
+    subprocess.run(
+        [
+            str(pip),
+            "install",
+            "-q",
+            "psutil>=5.9",
+            "mss>=9",
+            "Pillow>=10",
+            "pystray>=0.19",
+            "tzdata>=2024",
+        ],
+        check=True,
+    )
+    shutil.copytree(ROOT / "timetrack", app / "timetrack")
+    _relink_venv_python_for_deb(venv)
+
+
+def _relink_venv_python_for_deb(venv: Path) -> None:
+    """CI builders use ephemeral Python paths; the .deb must use system python3."""
+    bindir = venv / "bin"
+    if not bindir.is_dir():
+        return
+    for name in list(bindir.iterdir()):
+        if name.name == "python" or name.name == "python3" or name.name.startswith("python3."):
+            name.unlink(missing_ok=True)
+    (bindir / "python").symlink_to("/usr/bin/python3")
+    (bindir / "python3").symlink_to("python")
+
+
 def _write_wrapper(path: Path, target: str, *, default_args: str = "") -> None:
     path.write_text(
         "#!/bin/sh\n"
         "# esstracker launcher — Ubuntu 20.04 / 22.04 / 24.04 compatible\n"
         'export ESSTRACKER_ICON="${ESSTRACKER_ICON:-/usr/share/icons/hicolor/256x256/apps/esstracker.png}"\n'
-        # Prefer X11 for active-window, idle, and tray backends across Ubuntu releases
-        'if [ -z "${ESSTRACKER_FORCE_WAYLAND:-}" ]; then\n'
-        '  export GDK_BACKEND="${GDK_BACKEND:-x11}"\n'
-        "fi\n"
-        # Help AppIndicator / notifications on GNOME
         'export XDG_CURRENT_DESKTOP="${XDG_CURRENT_DESKTOP:-$XDG_SESSION_DESKTOP}"\n'
+        "# SSH/autostart may lack DISPLAY/WAYLAND; discover from the user runtime dir.\n"
+        'if [ -z "${WAYLAND_DISPLAY:-}" ] && [ -n "${XDG_RUNTIME_DIR:-}" ]; then\n'
+        '  for _wl in "$XDG_RUNTIME_DIR"/wayland-[0-9]*; do\n'
+        '    if [ -S "$_wl" ]; then\n'
+        '      export WAYLAND_DISPLAY="$(basename "$_wl")"\n'
+        "      break\n"
+        "    fi\n"
+        "  done\n"
+        "fi\n"
+        'if [ -z "${DISPLAY:-}" ]; then\n'
+        '  export DISPLAY="${DISPLAY:-:0}"\n'
+        "fi\n"
+        "# Forcing X11 GTK on Wayland breaks gnome-screenshot (no X authority over SSH).\n"
+        'if [ -z "${ESSTRACKER_FORCE_WAYLAND:-}" ]; then\n'
+        '  if [ -n "${WAYLAND_DISPLAY:-}" ] || [ "${XDG_SESSION_TYPE:-}" = wayland ]; then\n'
+        "    unset GDK_BACKEND\n"
+        "  else\n"
+        '    export GDK_BACKEND="${GDK_BACKEND:-x11}"\n'
+        "  fi\n"
+        "fi\n"
+        'PYTHON_VENV="/opt/esstracker/venv/bin/python"\n'
+        'PYTHON_APP="/opt/esstracker/app"\n'
         f'BIN="/opt/esstracker/{target}"\n'
-        'if [ ! -x "$BIN" ]; then echo "missing $BIN" >&2; exit 127; fi\n'
-        + (
-            'if [ "$#" -eq 0 ]; then\n'
-            f'  exec "$BIN" {default_args}\n'
-            "fi\n"
-            if default_args
-            else ""
-        )
-        + 'exec "$BIN" "$@"\n',
+        'run_agent() {\n'
+        '  if [ -x "$PYTHON_VENV" ] && [ -d "$PYTHON_APP/timetrack" ]; then\n'
+        '    export PYTHONPATH="$PYTHON_APP${PYTHONPATH:+:$PYTHONPATH}"\n'
+        '    if [ "$#" -eq 0 ]; then\n'
+        f'      exec "$PYTHON_VENV" -m timetrack.agent {default_args}\n'
+        "    fi\n"
+        '    exec "$PYTHON_VENV" -m timetrack.agent "$@"\n'
+        "  fi\n"
+        '  if [ ! -x "$BIN" ]; then echo "missing $BIN" >&2; exit 127; fi\n'
+        '  if [ "$#" -eq 0 ]; then\n'
+        f'    exec "$BIN" {default_args}\n'
+        "  fi\n"
+        '  exec "$BIN" "$@"\n'
+        "}\n"
+        'if [ "$#" -eq 0 ]; then\n'
+        "  run_agent\n"
+        "fi\n"
+        'run_agent "$@"\n',
         encoding="utf-8",
     )
     os.chmod(path, 0o755)
@@ -305,6 +432,9 @@ def build_deb() -> Path:
         shutil.copy2(src, dst)
         os.chmod(dst, 0o755)
 
+    print("Installing agent venv (tray menu via system AppIndicator)…")
+    _install_agent_venv(optdir)
+
     # Client wrappers only
     _write_wrapper(bindir / "esstracker-agent", "timetrack-agent", default_args="run")
     _write_wrapper(bindir / "esstracker", "timetrack-agent", default_args="run")
@@ -319,6 +449,10 @@ def build_deb() -> Path:
     shutil.copy2(
         LINUX / "com.euclidee.esstracker.Agent-autostart.desktop",
         autostart / "com.euclidee.esstracker.Agent.desktop",
+    )
+    shutil.copy2(
+        LINUX / "com.euclidee.esstracker.Agent-url.desktop",
+        appsdir / "com.euclidee.esstracker.Agent-url.desktop",
     )
     shutil.copy2(
         LINUX / "com.euclidee.esstracker.metainfo.xml",
@@ -345,12 +479,12 @@ def build_deb() -> Path:
     if (ROOT / "TIMETRACK.md").exists():
         shutil.copy2(ROOT / "TIMETRACK.md", readme)
     else:
-        readme.write_text("esstracker — Euclidee Software Solutions\n", encoding="utf-8")
+        readme.write_text("esstracker — ESS Tracker\n", encoding="utf-8")
     (docdir / "copyright").write_text(
         "Format: https://www.debian.org/doc/packaging-manuals/copyright-format/1.0/\n"
         f"Upstream-Name: {PKG_NAME}\n"
         "Source: https://tracker.euclideesolutions.com/\n\n"
-        "Files: *\nCopyright: Euclidee Software Solutions\nLicense: MIT\n",
+        "Files: *\nCopyright: ESS Tracker\nLicense: MIT\n",
         encoding="utf-8",
     )
 
@@ -359,9 +493,9 @@ Version: {VERSION}
 Section: utils
 Priority: optional
 Architecture: {deb_arch}
-Maintainer: Euclidee Software Solutions <noreply@euclideesolutions.com>
-Depends: libc6 (>= 2.31), libgtk-3-0t64 | libgtk-3-0, libnotify-bin, libayatana-appindicator3-1 | libappindicator3-1, gir1.2-gtk-3.0, gir1.2-ayatanaappindicator3-0.1 | gir1.2-appindicator3-0.1, python3-gi, libx11-6
-Recommends: xdotool, x11-utils, xprintidle, gnome-shell-extension-appindicator | gnome-shell-extension-ubuntu-appindicators
+Maintainer: ESS Tracker <noreply@euclideesolutions.com>
+Depends: libc6 (>= 2.31), libgtk-3-0t64 | libgtk-3-0, libnotify-bin, libayatana-appindicator3-1 | libappindicator3-1, gir1.2-gtk-3.0, gir1.2-ayatanaappindicator3-0.1 | gir1.2-appindicator3-0.1, python3-gi, python3-tk, libx11-6, libxss1, xprintidle, xdotool, gnome-screenshot
+Recommends: grim, x11-utils, gnome-shell-extension-appindicator | gnome-shell-extension-ubuntu-appindicators
 Provides: timetrack
 Conflicts: timetrack
 Replaces: timetrack
@@ -381,19 +515,40 @@ rm -f /usr/share/applications/com.euclidee.esstracker.Server.desktop
 if command -v update-desktop-database >/dev/null 2>&1; then
   update-desktop-database -q /usr/share/applications || true
 fi
+if command -v xdg-mime >/dev/null 2>&1; then
+  xdg-mime default com.euclidee.esstracker.Agent-url.desktop x-scheme-handler/esstracker 2>/dev/null || true
+fi
 if command -v gtk-update-icon-cache >/dev/null 2>&1; then
   gtk-update-icon-cache -f -t /usr/share/icons/hicolor >/dev/null 2>&1 || true
 fi
 if command -v update-icon-caches >/dev/null 2>&1; then
   update-icon-caches /usr/share/icons/hicolor >/dev/null 2>&1 || true
 fi
+# CI-built venv may point at a non-existent Python path; always use system python3.
+VENV_BIN="/opt/esstracker/venv/bin"
+if [ -d "$VENV_BIN" ] && [ -x /usr/bin/python3 ]; then
+  rm -f "$VENV_BIN/python" "$VENV_BIN/python3" "$VENV_BIN"/python3.*
+  ln -sf /usr/bin/python3 "$VENV_BIN/python"
+  ln -sf python "$VENV_BIN/python3"
+  for _pip in "$VENV_BIN/pip" "$VENV_BIN/pip3" "$VENV_BIN/pip3."*; do
+    [ -f "$_pip" ] || continue
+    sed -i '1s|^#!.*|#!/usr/bin/python3|' "$_pip" 2>/dev/null || true
+  done
+fi
 echo ""
 echo "  esstracker (ESS) client installed."
 echo "  Open Applications → esstracker → Sign in"
-echo "  Supported: Ubuntu 20.04 / 22.04 / 24.04 (amd64)"
-echo "  Tip: X11 session gives the best window-title + tray support."
+echo "  Supported: @SUPPORTED@ (amd64)"
+echo "  Wayland screenshots use gnome-screenshot (installed with this package)."
+echo "  Tip: X11 session gives the best window-title + tray + idle support."
+echo "  Idle gaps need xprintidle (installed) and the agent running."
 echo ""
 """
+    supported = {
+        "ubuntu22.04": "Ubuntu 22.04 / 24.04",
+        "ubuntu24.04": "Ubuntu 24.04 and newer",
+    }.get(os.environ.get("ESSTRACKER_DEB_TAG", "").strip(), "Ubuntu 20.04 / 22.04 / 24.04")
+    postinst = postinst.replace("@SUPPORTED@", supported)
     (debiandir / "postinst").write_text(postinst, encoding="utf-8")
     os.chmod(debiandir / "postinst", 0o755)
 
@@ -410,7 +565,10 @@ fi
     os.chmod(debiandir / "postrm", 0o755)
 
     DIST.mkdir(parents=True, exist_ok=True)
-    deb_path = DIST / f"{PKG_NAME}_{VERSION}_{deb_arch}.deb"
+    # e.g. ESSTRACKER_DEB_TAG=ubuntu22.04 → esstracker_0.3.2_ubuntu22.04_amd64.deb
+    deb_tag = os.environ.get("ESSTRACKER_DEB_TAG", "").strip()
+    deb_name = f"{PKG_NAME}_{VERSION}_{deb_tag}_{deb_arch}.deb" if deb_tag else f"{PKG_NAME}_{VERSION}_{deb_arch}.deb"
+    deb_path = DIST / deb_name
     if deb_path.exists():
         deb_path.unlink()
 
@@ -471,6 +629,30 @@ def _publish_release(path: Path) -> Path:
     return dest
 
 
+def sign_windows(path: Path) -> None:
+    """Authenticode-sign ``path`` when ESSTRACKER_SIGN_PFX (+ _PASSWORD) is set.
+
+    Unsigned PyInstaller binaries trigger SmartScreen / browser "dangerous" warnings.
+    """
+    pfx = os.environ.get("ESSTRACKER_SIGN_PFX", "").strip()
+    if not pfx or platform.system() != "Windows":
+        return
+    signtool = shutil.which("signtool")
+    if not signtool:
+        kits = sorted(Path(r"C:\Program Files (x86)\Windows Kits\10\bin").glob("*/x64/signtool.exe"))
+        signtool = str(kits[-1]) if kits else ""
+    if not signtool:
+        sys.exit("signing requested but signtool.exe not found")
+    _run(
+        [
+            signtool, "sign", "/f", pfx, "/p", os.environ.get("ESSTRACKER_SIGN_PASSWORD", ""),
+            "/fd", "sha256", "/tr", "http://timestamp.digicert.com", "/td", "sha256",
+            "/d", "esstracker", str(path),
+        ]
+    )
+    print(f"Signed: {path}")
+
+
 def build_exe_client() -> Path:
     """Windows employee client only (tray + login + install helpers)."""
     if platform.system() != "Windows":
@@ -488,6 +670,7 @@ def build_exe_client() -> Path:
         if dst.exists():
             dst.unlink()
         src.rename(dst)
+        sign_windows(dst)
 
     # Ship company defaults + installer next to the agent (Ubuntu /etc equivalent)
     defaults = WINDOWS / "defaults.toml"
@@ -527,6 +710,18 @@ def build_exe_client() -> Path:
     return dst
 
 
+def _patch_macos_app_bundle(app_dir: Path) -> None:
+    """Menu-bar agent: no Dock bounce; show version in Finder."""
+    plist = app_dir / "Contents" / "Info.plist"
+    if not plist.is_file():
+        return
+    _run(["plutil", "-replace", "LSUIElement", "-bool", "true", str(plist)])
+    _run(
+        ["plutil", "-replace", "CFBundleShortVersionString", "-string", VERSION, str(plist)]
+    )
+    _run(["plutil", "-replace", "CFBundleVersion", "-string", VERSION, str(plist)])
+
+
 def build_dmg(*, arch: str = "") -> Path:
     """macOS .app + .dmg (must run on Darwin)."""
     if platform.system() != "Darwin":
@@ -550,7 +745,7 @@ def build_dmg(*, arch: str = "") -> Path:
             "if __name__ == '__main__':\n    main()\n",
             encoding="utf-8",
         )
-        icon_png = LINUX / "icons" / "esstracker-512.png"
+        mac_icon = _macos_icon()
         cmd = [
             sys.executable,
             "-m",
@@ -572,17 +767,30 @@ def build_dmg(*, arch: str = "") -> Path:
             str(ROOT),
             "--onedir",
         ]
+        if mac_icon is not None:
+            cmd.extend(["--icon", str(mac_icon)])
         assets = ROOT / "timetrack" / "agent" / "assets"
         if assets.exists():
             cmd.extend(["--add-data", f"{assets}{sep}timetrack/agent/assets"])
         for mod in HIDDEN:
             cmd.extend(["--hidden-import", mod])
+        for mod in (
+            "AppKit",
+            "Foundation",
+            "objc",
+            "PyObjCTools.MachSignals",
+            "pystray._darwin",
+        ):
+            cmd.extend(["--hidden-import", mod])
+        cmd.extend(["--collect-all", "tkinter", "--collect-all", "pystray"])
         cmd.append(str(launcher))
         _run(cmd)
         app_dir = out / "esstracker.app"
 
     if not app_dir.exists():
         sys.exit(f"missing macOS app bundle under {out}")
+
+    _patch_macos_app_bundle(app_dir)
 
     # Stage DMG contents
     stage = BUILD / "dmg-stage"

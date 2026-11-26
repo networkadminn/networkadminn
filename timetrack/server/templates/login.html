@@ -1,15 +1,27 @@
 {% extends "base.html" %}
 {% block title %}Sign in · esstracker{% endblock %}
 {% block body %}
-<div class="login-page">
+<div class="login-page" id="loginPage">
   <section class="login-hero" aria-label="esstracker">
+    <div class="login-hero-media" aria-hidden="true">
+      {% if login_hero_video_url %}
+      <video class="login-hero-video" autoplay muted loop playsinline preload="metadata"
+             poster="{{ url_for('static', filename='brand/login-hero-poster.jpg') }}">
+        <source src="{{ login_hero_video_url }}" type="video/{{ 'webm' if login_hero_video_url.endswith('.webm') else 'mp4' }}" />
+      </video>
+      {% else %}
+      {% include "_login_hero_loop.html" %}
+      {% endif %}
+    </div>
+    <div class="login-hero-shade" aria-hidden="true"></div>
     <div class="login-hero-inner">
       <div class="login-hero-brand">
-        <img class="login-logo" src="{{ url_for('static', filename='brand/euclidee-logo.png') }}" alt="Euclidee Software Solutions" />
+        <img class="login-logo" src="{{ url_for('static', filename='brand/euclidee-logo.png') }}" alt="ESS Tracker" />
       </div>
       <p class="login-product">esstracker</p>
-      <h1>Employee time tracking for Euclidee.</h1>
-      <p>Apps, idle, screenshots, and productivity — built for Euclidee Software Solutions Private Limited.</p>
+      <p class="login-hero-greeting">{{ login_greeting }}</p>
+      <h1>{{ login_tagline }}</h1>
+      <p class="login-hero-copy">Apps, idle, screenshots, and productivity — built for ESS Tracker.</p>
       <div class="login-metrics" aria-hidden="true">
         <div class="login-metric">
           <strong>IST</strong>
@@ -28,24 +40,42 @@
   </section>
 
   <section class="login-panel">
-    <div class="login-card">
-      <img class="login-mark" src="{{ url_for('static', filename='brand/ess-mark.png') }}" alt="" />
-      <p class="login-kicker">Euclidee Software Solutions</p>
-      <h2>Sign in to esstracker</h2>
-      <p class="login-sub">Use your company username and password.</p>
-      <form method="post" class="login-form">
-        <label>Username
-          <input type="text" name="username" autofocus required autocomplete="username" placeholder="username" />
-        </label>
-        <label>Password
-          <input type="password" name="password" required autocomplete="current-password" placeholder="••••••••" />
-        </label>
-        <p class="login-forgot">
-          <a href="{{ url_for('auth.forgot_password') }}">Forgot password?</a>
-        </p>
-        <button class="btn primary" type="submit">Sign in</button>
-      </form>
+    <div class="login-owl-stage">
+      <div class="login-owl-rail login-mascot--owl" id="loginMascot">
+        {% include "_login_mascot.html" %}
+        <div class="login-owl-box" id="loginOwlBox">
+        <div class="login-owl-inner">
+          <p class="login-kicker">ESS Tracker</p>
+          <h2 class="login-owl-title">Sign in</h2>
+          <form method="post" class="login-form login-form--owl" id="loginForm">
+            <label class="login-owl-field">
+              <span class="login-field-icon" aria-hidden="true">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="12" cy="8" r="4"/><path d="M4 20c0-4 4-6 8-6s8 2 8 6"/></svg>
+              </span>
+              <input type="text" name="username" id="loginUsername" autofocus required autocomplete="username"
+                     placeholder="Username" value="{{ login_username|default('', true)|e }}" />
+            </label>
+            <label class="login-owl-field">
+              <span class="login-field-icon" aria-hidden="true">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="5" y="11" width="14" height="10" rx="2"/><path d="M8 11V8a4 4 0 0 1 8 0v3"/></svg>
+              </span>
+              <input type="password" name="password" id="loginPassword" required autocomplete="current-password" placeholder="Password" />
+              <button type="button" class="login-password-toggle" id="loginPasswordToggle"
+                      aria-pressed="false" aria-label="Show password">Show</button>
+            </label>
+            <p class="login-forgot">
+              <a href="{{ url_for('auth.forgot_password') }}">Forgot password?</a>
+            </p>
+            <button class="btn primary login-submit-btn" type="submit">{{ login_submit_label }}</button>
+          </form>
+        </div>
+        </div>
+        {% include "_login_owl_hands.html" %}
+      </div>
     </div>
   </section>
 </div>
+{% endblock %}
+{% block scripts %}
+<script src="{{ url_for('static', filename='login-mascot.js') }}?v=44" defer></script>
 {% endblock %}

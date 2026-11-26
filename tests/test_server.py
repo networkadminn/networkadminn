@@ -175,6 +175,67 @@ def test_admin_approves_offline_request(client, app):
         )
         assert len(acts) == 1
         assert acts[0].duration == 1200
+        assert acts[0].category == "neutral"
+
+
+def test_admin_approves_offline_request_keeps_productive_category(client, app):
+    from timetrack.server.models import Activity, OfflineRequest
+
+    _login(client, "alice", "alicepass")
+    day = "2026-07-16"
+    client.post(
+        "/offline",
+        data={
+            "day": day,
+            "start": f"{day}T14:00",
+            "end": f"{day}T14:30",
+            "category": "productive",
+            "note": "Client call",
+            "fill_kind": "offline",
+        },
+    )
+    with app.app_context():
+        rid = db.session.execute(db.select(OfflineRequest.id)).scalar_one()
+        req = db.session.get(OfflineRequest, rid)
+        assert req.category == "productive"
+        emp_id = req.user_id
+
+    client.get("/logout", follow_redirects=True)
+    _login(client, "boss", "adminpass")
+    client.post("/approvals", data={"id": rid, "action": "approve"}, follow_redirects=True)
+
+    with app.app_context():
+        acts = list(
+            db.session.execute(
+                db.select(Activity).filter_by(app="offline", user_id=emp_id)
+            ).scalars()
+        )
+        assert len(acts) == 1
+        assert acts[0].category == "productive"
+
+
+def test_recategorize_skips_offline_gap_fills(app):
+    from timetrack.server.models import Activity, User
+    from timetrack.server.settings_util import recategorize_activities
+
+    with app.app_context():
+        user = db.session.execute(db.select(User).filter_by(username="alice")).scalar_one()
+        act = Activity(
+            user_id=user.id,
+            app="offline",
+            title="Manual / offline time",
+            category="productive",
+            idle=False,
+            start_ts=1_700_000_000.0,
+            end_ts=1_700_000_900.0,
+            duration=900.0,
+        )
+        db.session.add(act)
+        db.session.commit()
+        changed = recategorize_activities(user.organization_id or 1)
+        db.session.refresh(act)
+        assert act.category == "productive"
+        assert changed == 0
 
 
 def test_bad_password(client):

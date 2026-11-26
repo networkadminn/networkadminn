@@ -4,9 +4,20 @@ from __future__ import annotations
 
 import json
 import mimetypes
+import sys
 import urllib.error
 import urllib.request
 import uuid
+
+from .. import __version__
+
+
+def agent_platform() -> str:
+    if sys.platform == "win32":
+        return "windows"
+    if sys.platform == "darwin":
+        return "mac"
+    return "linux"
 
 
 class ServerClient:
@@ -14,6 +25,7 @@ class ServerClient:
         self.base_url = base_url.rstrip("/")
         self.token = token
         self.timeout = timeout
+        self.last_status: int | None = None
 
     def _url(self, path: str) -> str:
         return f"{self.base_url}{path}"
@@ -22,8 +34,10 @@ class ServerClient:
         headers = {
             "Authorization": f"Bearer {self.token}",
             # Cloudflare / reverse proxies often block the default Python-urllib UA.
-            "User-Agent": "TimeTrack-Agent/0.1 (+https://tracker.euclideesolutions.com)",
+            "User-Agent": f"esstracker-Agent/{__version__} (+https://tracker.euclideesolutions.com)",
             "Accept": "application/json, */*",
+            "X-Agent-Version": __version__,
+            "X-Agent-Platform": agent_platform(),
         }
         if extra:
             headers.update(extra)
@@ -35,9 +49,20 @@ class ServerClient:
         )
         try:
             with urllib.request.urlopen(req, timeout=self.timeout) as resp:
-                return json.loads(resp.read().decode("utf-8"))
-        except (urllib.error.URLError, OSError, ValueError):
+                data = json.loads(resp.read().decode("utf-8"))
+                self.last_status = resp.status
+                return data
+        except urllib.error.HTTPError as exc:
+            self.last_status = exc.code
             return None
+        except (urllib.error.URLError, OSError, ValueError):
+            self.last_status = None
+            return None
+
+    @property
+    def unauthorized(self) -> bool:
+        """Last ping was refused by the server (signed out / 30-day session over)."""
+        return self.last_status == 401
 
     def post_activities(self, activities: list[dict]) -> bool:
         body = json.dumps({"activities": activities}).encode("utf-8")
@@ -70,6 +95,21 @@ class ServerClient:
         except (urllib.error.URLError, OSError):
             return False
 
+    def notify_stop(self, reason: str = "quit", timeout: float = 5.0) -> bool:
+        """Tell the server the tracker is stopping so dashboards go offline at once."""
+        body = json.dumps({"reason": reason}).encode("utf-8")
+        req = urllib.request.Request(
+            self._url("/api/v1/agent/stop"),
+            data=body,
+            headers=self._headers({"Content-Type": "application/json"}),
+            method="POST",
+        )
+        try:
+            with urllib.request.urlopen(req, timeout=timeout) as resp:
+                return 200 <= resp.status < 300
+        except (urllib.error.URLError, OSError):
+            return False
+
     def set_private(self, active: bool) -> dict | None:
         body = json.dumps({"active": active}).encode("utf-8")
         req = urllib.request.Request(
@@ -94,6 +134,22 @@ class ServerClient:
         except (urllib.error.URLError, OSError, ValueError):
             return None
 
+    def fetch_tray_day(self) -> dict | None:
+        req = urllib.request.Request(
+            self._url("/api/v1/tray-day"), headers=self._headers(), method="GET"
+        )
+        try:
+            with urllib.request.urlopen(req, timeout=self.timeout) as resp:
+                data = json.loads(resp.read().decode("utf-8"))
+                self.last_status = resp.status
+                return data if data.get("ok") else None
+        except urllib.error.HTTPError as exc:
+            self.last_status = exc.code
+            return None
+        except (urllib.error.URLError, OSError, ValueError):
+            self.last_status = None
+            return None
+
     def login(self, username: str, password: str) -> dict | None:
         """Exchange username/password for an API token (first-run desktop login)."""
         body = json.dumps({"username": username, "password": password}).encode("utf-8")
@@ -102,8 +158,10 @@ class ServerClient:
             data=body,
             headers={
                 "Content-Type": "application/json",
-                "User-Agent": "esstracker-Agent/0.1 (+https://tracker.euclideesolutions.com)",
+                "User-Agent": f"esstracker-Agent/{__version__} (+https://tracker.euclideesolutions.com)",
                 "Accept": "application/json, */*",
+                "X-Agent-Version": __version__,
+                "X-Agent-Platform": agent_platform(),
             },
             method="POST",
         )
@@ -147,4 +205,4 @@ def _encode_multipart(boundary: str, fields: dict, image_bytes: bytes) -> bytes:
     return b"\r\n".join(lines)
 
 
-__all__ = ["ServerClient"]
+__all__ = ["ServerClient", "agent_platform"]

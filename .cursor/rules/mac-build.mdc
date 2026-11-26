@@ -1,0 +1,25 @@
+---
+description: macOS esstracker client DMG builds (Intel vs Apple Silicon, venv, CI)
+globs: packaging/**,docs/MAC_BUILD.md,.github/workflows/macos-dmg.yml
+alwaysApply: false
+---
+
+# macOS client builds (esstracker)
+
+Full steps: **`docs/MAC_BUILD.md`**.
+
+## Architecture
+
+- **Intel Macs** need `esstracker-*-x86_64.dmg` — build locally with Python **3.12** in `.venv`: `python packaging/build.py dmg --arch x86_64`.
+- **Apple Silicon** use `*-arm64.dmg` from GitHub Actions workflow **macOS dmg** (tag `v*`) or local `build_mac.sh` / `build.py dmg --arch arm64`.
+- Never tell Intel users to install the **arm64** DMG from the download page.
+
+## Python / packaging
+
+- Avoid system Homebrew **python@3.14** without a venv (PEP 668). Prefer **python.org 3.12** or `brew install python@3.12` after Xcode CLT are updated.
+- Install in venv: `requirements.txt`, `pyinstaller>=6.0`, `Pillow`, `pyobjc-framework-Quartz`.
+- Hosted GitHub Actions **cannot** build Intel DMGs; only **self-hosted** Intel runner or a physical Intel Mac.
+
+## Production releases
+
+Upload DMGs to `/www/wwwroot/timetrack/data/releases/` on `31.97.239.250` (see `production-server.mdc` for SSH/rsync).

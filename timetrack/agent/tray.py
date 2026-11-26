@@ -16,6 +16,7 @@ from __future__ import annotations
 import os
 import sys
 import threading
+import time
 import webbrowser
 from pathlib import Path
 from typing import TYPE_CHECKING, Callable
@@ -30,6 +31,21 @@ _DIST_PATHS = (
     "/usr/lib/python3.10/dist-packages",
     "/usr/lib/python3.8/dist-packages",
 )
+
+
+def _patch_frozen_pystray_menu() -> None:
+    """PyInstaller: pystray.Menu.items mis-detects MenuItem as a dynamic factory."""
+    if not getattr(sys, "frozen", False):
+        return
+    try:
+        from pystray import _base
+
+        def _items(self):
+            return self._items
+
+        _base.Menu.items = property(_items)
+    except Exception:
+        pass
 
 
 def _ensure_system_gi() -> None:
@@ -166,6 +182,20 @@ def _pick_backend() -> str | None:
             os.environ.pop("PYSTRAY_BACKEND", None)
             return None
 
+    if sys.platform == "darwin":
+        preferred = os.environ.get("PYSTRAY_BACKEND", "darwin")
+        os.environ["PYSTRAY_BACKEND"] = preferred
+        try:
+            # Do not reload pystray on macOS — PyObjC classes cannot be re-registered.
+            import pystray
+
+            _ = pystray.Icon
+            return preferred
+        except Exception as exc:
+            print(f"[esstracker] tray backend {preferred!r} unavailable: {exc!r}")
+            os.environ.pop("PYSTRAY_BACKEND", None)
+            return None
+
     _ensure_system_gi()
     desktop = (os.environ.get("XDG_CURRENT_DESKTOP") or "").lower()
     session = (os.environ.get("XDG_SESSION_TYPE") or "").lower()
@@ -212,7 +242,7 @@ class AgentTray:
             return (148, 163, 184)  # Offline grey
         if self.agent.private:
             return (245, 158, 11)
-        return (11, 122, 75)  # Euclidee green
+        return (11, 122, 75)  # ESS Tracker green
 
     def _title(self) -> str:
         a = self.agent
@@ -225,7 +255,7 @@ class AgentTray:
         else:
             state = "Offline"
         name = a.display_name or a.username or "esstracker"
-        org = a.company_name or "Euclidee Software Solutions"
+        org = a.company_name or "ESS Tracker"
         tip = ""
         if self._backend == "appindicator":
             tip = "\n(Left-click for menu)"
@@ -274,9 +304,14 @@ class AgentTray:
                 default=use_default,
             ),
             pystray.MenuItem("Sync now", self._flush_now),
+            pystray.MenuItem("Preferences", self._preferences_menu()),
             pystray.Menu.SEPARATOR,
-            pystray.MenuItem("Sign out", self._sign_out),
-            pystray.MenuItem("Quit", self._quit),
+            pystray.MenuItem(
+                "Sign out", self._sign_out, enabled=lambda _: self.agent.tray_logout_allowed
+            ),
+            pystray.MenuItem(
+                "Quit", self._menu_quit, enabled=lambda _: self.agent.tray_quit_allowed
+            ),
         ]
         return pystray.Menu(*items)
 
@@ -306,33 +341,122 @@ class AgentTray:
         url = self.agent.config.server_url.rstrip("/") + "/me"
         webbrowser.open(url)
 
+    def _preferences_menu(self):
+        """Tray submenu — no Tk window (works on GNOME AppIndicator)."""
+        import pystray
+
+        from .. import __version__
+        from . import autostart
+
+        server = self.agent.config.server_url.replace("https://", "").replace("http://", "")
+        if len(server) > 40:
+            server = server[:37] + "…"
+        return pystray.Menu(
+            pystray.MenuItem(f"Version {__version__}", self._noop),
+            pystray.MenuItem(f"Server: {server}", self._noop),
+            pystray.Menu.SEPARATOR,
+            pystray.MenuItem(
+                "Launch at login",
+                self._toggle_autostart,
+                checked=lambda _: autostart.is_enabled(),
+                enabled=lambda _: autostart.is_supported(),
+            ),
+            pystray.MenuItem("Test connection", self._pref_test_connection),
+            pystray.MenuItem("Check for updates", self._pref_check_updates),
+            pystray.MenuItem("Download page", self._open_download),
+        )
+
+    def _toggle_autostart(self, icon=None, item=None) -> None:
+        from . import autostart
+        from .idle_ui import notify
+
+        want = not autostart.is_enabled()
+        try:
+            autostart.set_enabled(want)
+            notify("esstracker", f"Launch at login {'ON' if want else 'OFF'}")
+        except Exception as exc:
+            notify("esstracker", f"Startup setting failed: {exc}")
+        self.refresh_ui()
+
+    def _pref_test_connection(self, icon=None, item=None) -> None:
+        from .idle_ui import notify
+
+        def work() -> None:
+            t0 = time.monotonic()
+            data = self.agent.client.ping()
+            ms = int((time.monotonic() - t0) * 1000)
+            if data:
+                notify("esstracker", f"Connected · {ms} ms")
+            else:
+                notify("esstracker", "Server not reachable — check your internet")
+
+        threading.Thread(target=work, daemon=True, name="esstracker-ping").start()
+
+    def _pref_check_updates(self, icon=None, item=None) -> None:
+        from .. import __version__
+        from .idle_ui import notify
+
+        base = self.agent.config.server_url.rstrip("/")
+
+        def work() -> None:
+            data = self.agent.client.ping()
+            upd = (data or {}).get("client_update") if data else None
+            if data is None:
+                notify("esstracker", "Could not reach the server")
+            elif upd:
+                latest = upd.get("latest") or "new"
+                notify("esstracker", f"Version {latest} available")
+                webbrowser.open(base + str(upd.get("page") or "/download"))
+            else:
+                notify("esstracker", f"You have the latest version ({__version__})")
+
+        threading.Thread(target=work, daemon=True, name="esstracker-update").start()
+
+    def _open_download(self, icon=None, item=None) -> None:
+        webbrowser.open(self.agent.config.server_url.rstrip("/") + "/download")
+
     def _flush_now(self, icon=None, item=None) -> None:
         a, s = self.agent.flush()
         print(f"[esstracker] tray sync: {a} activities, {s} screenshots")
         self.refresh_ui()
 
+    def _menu_quit(self, icon=None, item=None) -> None:
+        if not self.agent.tray_quit_allowed:
+            print("[esstracker] Quit is disabled by your administrator")
+            return
+        self._quit()
+
     def _sign_out(self, icon=None, item=None) -> None:
         from .config import clear_saved_token
 
+        if not self.agent.tray_logout_allowed:
+            print("[esstracker] Sign out is disabled by your administrator")
+            return
         clear_saved_token(self.agent.config)
         self.agent.config.api_token = ""
         print("[esstracker] signed out — relaunch to sign in again")
-        self._quit()
+        self._quit(reason="logout")
 
-    def _quit(self, icon=None, item=None) -> None:
-        self.agent.stop()
+    def _quit(self, icon=None, item=None, *, reason: str = "quit") -> None:
+        self.agent.request_stop(reason)
         if self._icon is not None:
             self._icon.stop()
 
     def run(self, on_ready: Callable[[], None] | None = None) -> None:
         import pystray
 
+        _patch_frozen_pystray_menu()
         backend = _pick_backend()
         if backend is None:
             if sys.platform == "win32":
                 raise RuntimeError(
                     "No system-tray backend available on Windows.\n"
                     "Install: pip install pystray Pillow pywin32"
+                )
+            if sys.platform == "darwin":
+                raise RuntimeError(
+                    "No menu-bar tray on macOS (pystray darwin backend failed).\n"
+                    "Install: pip install pystray Pillow pyobjc-framework-Cocoa"
                 )
             raise RuntimeError(
                 "No system-tray backend available on this Ubuntu session.\n"
@@ -345,16 +469,34 @@ class AgentTray:
         self._backend = backend
         print(f"[esstracker] tray backend={backend}")
         if backend == "appindicator":
-            print("[esstracker] tip: left-click the ESS tray icon for the menu")
+            print(
+                "[esstracker] tip: left-click the ESS tray icon for the menu "
+                "(right-click does nothing on GNOME)"
+            )
+        elif backend == "xorg":
+            print(
+                "[esstracker] tip: left-click the tray icon for actions "
+                "(the X11 tray backend has no right-click menu)"
+            )
+        elif backend == "darwin":
+            print(
+                "[esstracker] tip: click the ESS icon in the menu bar (top-right) for options"
+            )
         self._icon = pystray.Icon(
             "esstracker",
             _make_icon(self._status_color()),
             self._title(),
             self._rebuild_menu(),
         )
+        loop = None
         if on_ready:
-            threading.Thread(target=on_ready, daemon=True).start()
+            loop = threading.Thread(target=on_ready, daemon=True)
+            loop.start()
         self._icon.run()
+        if loop is not None:
+            # Let the loop finish its final sync + stop notice before the process exits.
+            self.agent.request_stop(self.agent._stop_reason)
+            loop.join(timeout=20)
 
 
 __all__ = ["AgentTray", "tray_available"]

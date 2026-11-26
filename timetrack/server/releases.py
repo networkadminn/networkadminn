@@ -7,8 +7,7 @@ from pathlib import Path
 
 from flask import current_app
 
-# Semantic version shown on the download page (keep in sync with packaging/build.py)
-CLIENT_VERSION = "0.2.6"
+from .. import __version__ as CLIENT_VERSION
 
 
 def releases_dir() -> Path:
@@ -35,6 +34,35 @@ def releases_dir() -> Path:
         if candidate.is_dir():
             return candidate
     return root / "dist" / "releases"
+
+
+def version_tuple(version: str | None) -> tuple[int, ...]:
+    parts = []
+    for piece in (version or "").strip().split("."):
+        digits = "".join(ch for ch in piece if ch.isdigit())
+        parts.append(int(digits) if digits else 0)
+    return tuple(parts) if any(parts) else (0,)
+
+
+def is_outdated(version: str | None) -> bool:
+    """True when a client reports an older version (or none: pre-0.3.2 clients)."""
+    return version_tuple(version) < version_tuple(CLIENT_VERSION)
+
+
+def latest_download(platform: str | None) -> dict | None:
+    """Latest installer for a client platform, only if that exact version is published."""
+    rel = scan_releases()
+    plat = (platform or "").lower()
+    info = None
+    if plat == "windows":
+        info = rel["windows"].get("setup") or rel["windows"].get("file")
+    elif plat == "linux":
+        info = rel["linux"].get("deb")
+    elif plat == "mac":
+        info = rel["mac"].get("arm") or rel["mac"].get("intel")
+    if not info or CLIENT_VERSION not in info["name"]:
+        return None
+    return {"version": CLIENT_VERSION, "platform": plat, "filename": info["name"]}
 
 
 def _file_info(path: Path) -> dict | None:
@@ -86,9 +114,25 @@ def scan_releases() -> dict:
             if linux_deb:
                 break
 
-    windows_exe = pick(
+    # Per-Ubuntu builds: esstracker_<ver>_ubuntu22.04_amd64.deb (newest Ubuntu first).
+    ubuntu_debs = []
+    for ubuntu in ("24.04", "22.04"):
+        info = _file_info(base / f"esstracker_{CLIENT_VERSION}_ubuntu{ubuntu}_amd64.deb")
+        if info:
+            ubuntu_debs.append({"ubuntu": ubuntu, "label": f"Ubuntu {ubuntu}", **info})
+    if ubuntu_debs:
+        linux_deb = ubuntu_debs[-1]
+
+    windows_setup = pick(
         f"esstracker-Setup-{CLIENT_VERSION}.exe",
         "esstracker-Setup.exe",
+    )
+    if not windows_setup:
+        for p in sorted(base.glob("esstracker-Setup-*.exe"), reverse=True):
+            windows_setup = _file_info(p)
+            break
+
+    windows_exe = pick(
         f"esstracker-Agent-{CLIENT_VERSION}.exe",
         "esstracker-Agent.exe",
     )
@@ -111,8 +155,13 @@ def scan_releases() -> dict:
                 windows_zip = _file_info(p)
                 break
 
-    windows_file = windows_zip or windows_exe
-    windows_kind = "zip" if windows_zip else ("exe" if windows_exe else None)
+    windows_file = windows_setup or windows_zip or windows_exe
+    if windows_setup:
+        windows_kind = "setup"
+    elif windows_zip:
+        windows_kind = "zip"
+    else:
+        windows_kind = "exe" if windows_exe else None
 
     mac_arm = pick(
         f"esstracker-{CLIENT_VERSION}-arm64.dmg",
@@ -140,9 +189,11 @@ def scan_releases() -> dict:
         "dir": str(base),
         "linux": {
             "deb": linux_deb,
+            "ubuntu": ubuntu_debs,
             "ready": linux_deb is not None,
         },
         "windows": {
+            "setup": windows_setup,
             "exe": windows_exe,
             "zip": windows_zip,
             "file": windows_file,

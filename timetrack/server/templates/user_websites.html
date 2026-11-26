@@ -1,0 +1,136 @@
+{% extends "base.html" %}
+{% block title %}Websites · {{ subject.name }} · esstracker{% endblock %}
+{% block content %}
+<div class="emp-day dash-v2 websites-page">
+  <header class="dash-top">
+    <div class="dash-top-left">
+      <p class="dash-kicker">Websites &amp; URLs</p>
+      <div class="dash-title-row">
+        <a class="back dash-back" href="{{ url_for('views.admin_user', user_id=subject.id, day=day) }}" aria-label="Back to profile">&larr;</a>
+        <h1>{{ subject.name }}</h1>
+        <div class="dash-badges"><span class="btn-daily">{{ range_label }}</span></div>
+      </div>
+    </div>
+    <div class="dash-top-right">
+      <nav class="dt-date-nav" aria-label="Choose day">
+        <a class="dt-date-arrow" href="?day={{ prev_day }}&range={{ range_days }}" aria-label="Previous day">&larr;</a>
+        <form method="get" class="dt-date-form">
+          <input type="hidden" name="range" value="{{ range_days }}" />
+          <label class="dt-date-label">
+            <span>{{ day }}</span>
+            <input type="date" name="day" value="{{ day }}" onchange="this.form.submit()" />
+          </label>
+        </form>
+        <a class="dt-date-arrow" href="?day={{ next_day }}&range={{ range_days }}" aria-label="Next day">&rarr;</a>
+      </nav>
+      <div class="seg-toggle" role="group" aria-label="View range">
+        {% for n, label in [(1, 'Day'), (7, '7 days'), (30, '30 days')] %}
+        {% if range_days == n %}<span class="is-on">{{ label }}</span>
+        {% else %}<a href="?day={{ day }}&range={{ n }}">{{ label }}</a>{% endif %}
+        {% endfor %}
+      </div>
+    </div>
+  </header>
+
+  <section class="alert-summary">
+    <div class="alert-chip accent"><strong>{{ humanize(report.total_seconds) }}</strong><span>On websites</span></div>
+    <div class="alert-chip"><strong>{{ report.site_count }}</strong><span>Sites</span></div>
+    <div class="alert-chip"><strong>{{ report.visit_count }}</strong><span>Visits</span></div>
+    <div class="alert-chip muted"><strong>{{ report.exact_share }}%</strong><span>Exact URL captured</span></div>
+  </section>
+
+  <section class="panel dash-panel">
+    <div class="panel-head">
+      <h2>Sites</h2>
+      <span class="muted">click a site to see its pages</span>
+    </div>
+    {% if report.sites %}
+    <table class="apps sites-table">
+      <thead><tr><th>Site</th><th>Category</th><th>Share</th><th class="num">Visits</th><th class="num">Last seen</th><th class="num">Time</th></tr></thead>
+      {% for s in report.sites %}
+      <tbody class="site-group">
+        <tr>
+          <td class="app-name">
+            <details class="site-pages">
+              <summary><span class="site-chip">{{ s.domain }}</span></summary>
+              <ul class="page-list">
+                {% for p in s.pages %}
+                <li>
+                  <span class="page-time">{{ humanize(p.seconds) }}</span>
+                  {% if p.url %}
+                  <a href="{{ p.url }}" target="_blank" rel="noopener noreferrer" title="{{ p.url }}">{{ p.title or p.url }}</a>
+                  <span class="page-url muted">{{ p.url }}</span>
+                  {% else %}
+                  <span title="from tab title">{{ p.title or '—' }}</span>
+                  {% endif %}
+                </li>
+                {% endfor %}
+              </ul>
+            </details>
+          </td>
+          <td><span class="tag {{ s.category }}">{{ s.category }}</span></td>
+          <td>
+            <div class="minibar"><div class="minibar-fill {{ s.category }}" style="width:{{ s.pct }}%"></div></div>
+            {{ s.pct }}%
+          </td>
+          <td class="num"><a href="?day={{ day }}&range={{ range_days }}&site={{ s.domain|urlencode }}#visits">{{ s.visits }}</a></td>
+          <td class="num">{% if multi_day %}{{ s.last_ts|dayclock }}{% else %}{{ s.last_ts|clock }}{% endif %}</td>
+          <td class="num">{{ humanize(s.seconds) }}</td>
+        </tr>
+      </tbody>
+      {% endfor %}
+    </table>
+    {% else %}
+    <p class="empty">No websites recorded for this period.</p>
+    {% endif %}
+  </section>
+
+  <section class="panel dash-panel" id="visits">
+    <div class="panel-head">
+      <h2>Visit log{% if site_filter %} · {{ site_filter }}{% endif %}</h2>
+      <span class="muted">
+        {% if site_filter %}<a href="?day={{ day }}&range={{ range_days }}#visits">show all sites</a> · {% endif %}
+        newest first · {{ visits|length }} shown
+      </span>
+    </div>
+    {% if visits %}
+    <div class="grid-wrap">
+      <table class="apps timeline-table">
+        <thead><tr><th>Time</th><th>Site</th><th>Page</th><th>Browser</th><th>Category</th><th class="num">Duration</th></tr></thead>
+        <tbody>
+          {% for v in visits %}
+          <tr>
+            <td class="num">{% if multi_day %}{{ v.start_ts|dayclock }}{% else %}{{ v.start_ts|clock }}{% endif %}–{{ v.end_ts|clock }}</td>
+            <td><span class="site-chip">{{ v.domain }}</span></td>
+            <td class="title-cell" title="{{ v.url or v.title }}">
+              {% if v.url %}<a href="{{ v.url }}" target="_blank" rel="noopener noreferrer">{{ v.title or v.url }}</a>
+              {% else %}{{ v.title or '—' }}{% endif %}
+            </td>
+            <td class="app-name">{{ v.app }}</td>
+            <td><span class="tag {{ v.category }}">{{ v.category }}</span></td>
+            <td class="num">{{ humanize(v.seconds) }}</td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+    {% else %}
+    <p class="empty">No visits for this selection.</p>
+    {% endif %}
+    <p class="metric-hint" style="margin-top:12px">
+      Exact URLs come from the browser address bar (Windows client 0.3.1+). Older data and other
+      systems show the site recognised from the tab title. Search terms and URL parameters are not stored.
+    </p>
+  </section>
+</div>
+<style>
+  .websites-page .site-pages summary { cursor: pointer; list-style: none; }
+  .websites-page .site-pages summary::-webkit-details-marker { display: none; }
+  .websites-page .site-pages summary::before { content: "▸ "; color: var(--muted); }
+  .websites-page .site-pages[open] summary::before { content: "▾ "; }
+  .websites-page .page-list { list-style: none; margin: 8px 0 4px 14px; padding: 0; display: grid; gap: 6px; }
+  .websites-page .page-list li { display: flex; flex-wrap: wrap; gap: 4px 10px; align-items: baseline; font-weight: 500; }
+  .websites-page .page-time { min-width: 64px; font-variant-numeric: tabular-nums; color: var(--muted); }
+  .websites-page .page-url { font-size: 0.78rem; word-break: break-all; }
+</style>
+{% endblock %}

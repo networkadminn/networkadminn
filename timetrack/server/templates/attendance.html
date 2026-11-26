@@ -8,13 +8,14 @@
     <p class="page-sub">Weekly present · late · absent grid — esstracker shift overview style.</p>
   </div>
   <nav class="daynav">
-    <a class="btn" href="{{ url_for('desk.attendance', view='week', day=day) }}">Week</a>
-    <a class="btn primary" href="{{ url_for('desk.attendance', view='month', day=day) }}">Month</a>
-    <a class="btn" href="?day={{ prev_week }}">&larr; Prev</a>
-    <form method="get" class="dayform">
+    <a class="btn {% if view == 'week' %}primary{% endif %}" href="{{ url_for('desk.attendance', view='week', day=day) }}">Week</a>
+    <a class="btn {% if view != 'week' %}primary{% endif %}" href="{{ url_for('desk.attendance', view='month', day=day) }}">Month</a>
+    <a class="btn" href="{{ url_for('desk.attendance', view='week', day=prev_week) }}">&larr; Prev</a>
+    <form method="get" class="dayform" action="{{ url_for('desk.attendance') }}">
+      <input type="hidden" name="view" value="week" />
       <input type="date" name="day" value="{{ day }}" onchange="this.form.submit()" />
     </form>
-    <a class="btn" href="?day={{ next_week }}">Next &rarr;</a>
+    <a class="btn" href="{{ url_for('desk.attendance', view='week', day=next_week) }}">Next &rarr;</a>
   </nav>
 </div>
 

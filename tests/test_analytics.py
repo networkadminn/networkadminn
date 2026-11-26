@@ -59,6 +59,24 @@ def test_overlap_dedup_first_wins():
     assert s.unproductive_seconds == 30
 
 
+def test_offline_gap_fill_overrides_overlapping_tracker():
+    acts = [
+        _act("browser", "neutral", 2700, start=0),  # 0–45m neutral
+        Activity(
+            app="offline",
+            title="Client call",
+            category="productive",
+            idle=False,
+            start_ts=2700.0,
+            end_ts=4500.0,
+            duration=1800.0,
+        ),
+    ]
+    s = summarize(acts)
+    assert s.productive_seconds == 1800.0
+    assert s.neutral_seconds == 2700.0
+
+
 def test_day_window_clip():
     acts = [_act("code", "productive", 200, start=50)]
     s = summarize(acts, window_start=100, window_end=150)
@@ -146,6 +164,37 @@ def test_productivity_bar_idle_gaps_fillable():
     merged = merge_bar_segments(bar_raw)
     assert len(merged) < len(bar_raw)
     assert any(s.get("buckets", 1) > 1 for s in merged)
+
+
+def test_productivity_bar_gap_splits_at_lunch():
+    from timetrack.analytics import idle_gap_list, productivity_bar_segments, reconcile_fillable_gap_bounds
+
+    # Empty from 0–3600s; lunch 3600–5400 would be wrong - use lunch within window
+    # 1h bar: activity 0-600, empty rest; lunch 1800-3600 (30-60 min)
+    acts = [_act("code", "productive", 600, start=0)]
+    lunch = (1800.0, 3600.0)
+    bar = productivity_bar_segments(
+        acts,
+        0,
+        5400,
+        bucket_seconds=300.0,
+        now_ts=5400.0,
+        excluded_ranges=[lunch],
+    )
+    gaps = idle_gap_list(bar)
+    assert gaps
+    for g in gaps:
+        assert g["start"] >= lunch[1] or g["end"] <= lunch[0]
+        assert not (g["start"] < lunch[1] and g["end"] > lunch[0])
+    fillable = [s for s in bar if s.get("fillable")]
+    assert fillable
+    assert all(
+        not (float(s["start"]) < lunch[1] and float(s.get("end") or s["start"]) > lunch[0])
+        for s in fillable
+    )
+    # Stale gap_start across lunch should be fixed after reconcile
+    for s in fillable:
+        assert float(s["gap_start"]) >= lunch[1] or float(s["gap_end"]) <= lunch[0]
 
 
 def test_productivity_bar_no_future_fillable_gaps():

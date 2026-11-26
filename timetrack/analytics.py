@@ -47,12 +47,12 @@ class Summary:
             return 0.0
         return round(100.0 * self.active_seconds / self.total_seconds, 1)
 
-    @property
-    def desktime_productivity_pct(self) -> float:
-        """DeskTime-style: productive time / time at the computer (active)."""
-        if self.active_seconds <= 0:
+    def desktime_productivity_pct(self, manual_seconds: float = 0.0) -> float:
+        """DeskTime-style: productive time / DeskTime time (active + exclusive manual)."""
+        denom = self.desktime_seconds(manual_seconds)
+        if denom <= 0:
             return 0.0
-        return round(100.0 * self.productive_seconds / self.active_seconds, 1)
+        return round(100.0 * self.productive_seconds / denom, 1)
 
     def desktime_effectiveness_pct(self, expected_seconds: float = 8 * 3600) -> float:
         """DeskTime-style: productive / expected hours (may exceed 100% with overtime)."""
@@ -78,6 +78,128 @@ class Summary:
         return self.active_seconds + max(0.0, manual_seconds)
 
 
+@dataclass
+class DayMetrics:
+    """DeskTime-aligned day KPIs (single source of truth for dashboards)."""
+
+    summary: Summary
+    manual_total_seconds: float
+    manual_extra_seconds: float
+    desktime_seconds: float
+    dt_productivity: float
+    dt_effectiveness: float
+
+
+def _clip_manual_interval(
+    start: float,
+    end: float,
+    window_start: float | None,
+    window_end: float | None,
+) -> tuple[float, float] | None:
+    s, e = start, end
+    if window_start is not None:
+        s = max(s, window_start)
+    if window_end is not None:
+        e = min(e, window_end)
+    if e <= s:
+        return None
+    return s, e
+
+
+def manual_total_seconds(
+    manual_entries: list,
+    window_start: float | None = None,
+    window_end: float | None = None,
+) -> float:
+    total = 0.0
+    for m in manual_entries:
+        raw_start = float(m.start_ts)
+        raw_end = float(m.end_ts)
+        clipped = _clip_manual_interval(raw_start, raw_end, window_start, window_end)
+        if clipped is None:
+            continue
+        total += clipped[1] - clipped[0]
+    return total
+
+
+def _manual_duplicated_by_activity(
+    start_ts: float,
+    end_ts: float,
+    activities: list,
+    *,
+    eps: float = 1.0,
+) -> bool:
+    """True when a ManualEntry interval is already represented by tracked Activity (e.g. timer)."""
+    duration = max(0.0, end_ts - start_ts)
+    if duration <= 0:
+        return False
+    for raw in activities:
+        if bool(getattr(raw, "idle", False)):
+            continue
+        a_start = float(raw.start_ts)
+        a_end = float(raw.end_ts)
+        if abs(a_start - start_ts) <= eps and abs(a_end - end_ts) <= eps:
+            return True
+        overlap_start = max(a_start, start_ts)
+        overlap_end = min(a_end, end_ts)
+        if overlap_end > overlap_start:
+            overlap = overlap_end - overlap_start
+            if overlap >= 0.9 * duration:
+                return True
+    return False
+
+
+def exclusive_manual_seconds(
+    manual_entries: list,
+    activities: list,
+    *,
+    window_start: float | None = None,
+    window_end: float | None = None,
+    eps: float = 1.0,
+) -> float:
+    """Manual time not already counted in ``active_seconds`` (dedupes timer ManualEntry + Activity)."""
+    total = 0.0
+    for m in manual_entries:
+        raw_start = float(m.start_ts)
+        raw_end = float(m.end_ts)
+        clipped = _clip_manual_interval(raw_start, raw_end, window_start, window_end)
+        if clipped is None:
+            continue
+        start_ts, end_ts = clipped
+        if _manual_duplicated_by_activity(start_ts, end_ts, activities, eps=eps):
+            continue
+        total += end_ts - start_ts
+    return total
+
+
+def compute_day_metrics(
+    activities: list,
+    manual_entries: list,
+    window_start: float | None = None,
+    window_end: float | None = None,
+    expected_seconds: float = 8 * 3600,
+) -> DayMetrics:
+    summary = summarize(activities, window_start, window_end)
+    manual_total = manual_total_seconds(manual_entries, window_start, window_end)
+    manual_extra = exclusive_manual_seconds(
+        manual_entries,
+        activities,
+        window_start=window_start,
+        window_end=window_end,
+    )
+    desktime = summary.desktime_seconds(manual_extra)
+    dt_productivity = summary.desktime_productivity_pct(manual_extra)
+    dt_effectiveness = summary.desktime_effectiveness_pct(expected_seconds)
+    return DayMetrics(
+        summary=summary,
+        manual_total_seconds=manual_total,
+        manual_extra_seconds=manual_extra,
+        desktime_seconds=desktime,
+        dt_productivity=dt_productivity,
+        dt_effectiveness=dt_effectiveness,
+    )
+
+
 def _as_span(a: Activity | SimpleNamespace) -> SimpleNamespace:
     return SimpleNamespace(
         app=getattr(a, "app", "") or "",
@@ -91,12 +213,64 @@ def _as_span(a: Activity | SimpleNamespace) -> SimpleNamespace:
     )
 
 
+def _copy_span(a: SimpleNamespace, start_ts: float, end_ts: float) -> SimpleNamespace:
+    return SimpleNamespace(
+        app=a.app,
+        title=a.title,
+        url=getattr(a, "url", "") or "",
+        category=a.category,
+        idle=a.idle,
+        start_ts=start_ts,
+        end_ts=end_ts,
+        duration=end_ts - start_ts,
+    )
+
+
+def _first_wins(spans: list[SimpleNamespace]) -> list[SimpleNamespace]:
+    """Remove overlapping double-counts on auto-tracked spans (first-wins)."""
+    ordered = sorted(spans, key=lambda x: (x.start_ts, x.end_ts, 0 if not x.idle else 1))
+    out: list[SimpleNamespace] = []
+    cursor = float("-inf")
+    for a in ordered:
+        if a.end_ts <= cursor:
+            continue
+        if a.start_ts < cursor:
+            a = _copy_span(a, cursor, a.end_ts)
+        if a.duration <= 0:
+            continue
+        out.append(a)
+        cursor = a.end_ts
+    return out
+
+
+def _apply_offline_overrides(
+    base: list[SimpleNamespace], offline: list[SimpleNamespace]
+) -> list[SimpleNamespace]:
+    """Approved gap fills replace overlapping auto-tracked time for charts and totals."""
+    timeline = list(base)
+    for m in sorted(offline, key=lambda x: (x.start_ts, x.end_ts)):
+        ms, me = m.start_ts, m.end_ts
+        carved: list[SimpleNamespace] = []
+        for a in timeline:
+            s, e = a.start_ts, a.end_ts
+            if e <= ms or s >= me:
+                carved.append(a)
+                continue
+            if s < ms:
+                carved.append(_copy_span(a, s, ms))
+            if e > me:
+                carved.append(_copy_span(a, me, e))
+        carved.append(m)
+        timeline = carved
+    return sorted(timeline, key=lambda x: (x.start_ts, x.end_ts, 0 if not x.idle else 1))
+
+
 def prepare_activities(
     activities: list[Activity],
     window_start: float | None = None,
     window_end: float | None = None,
 ) -> list[SimpleNamespace]:
-    """Clip to window and remove overlapping double-counts (first-wins)."""
+    """Clip to window, dedupe overlaps, and let approved offline fills win overlaps."""
     clipped: list[SimpleNamespace] = []
     for raw in activities:
         a = _as_span(raw)
@@ -112,20 +286,12 @@ def prepare_activities(
         a.duration = e - s
         clipped.append(a)
 
-    clipped.sort(key=lambda x: (x.start_ts, x.end_ts, 0 if not x.idle else 1))
-    out: list[SimpleNamespace] = []
-    cursor = float("-inf")
-    for a in clipped:
-        if a.end_ts <= cursor:
-            continue
-        if a.start_ts < cursor:
-            a.start_ts = cursor
-            a.duration = a.end_ts - a.start_ts
-            if a.duration <= 0:
-                continue
-        out.append(a)
-        cursor = a.end_ts
-    return out
+    offline = [a for a in clipped if (a.app or "").lower() == "offline"]
+    auto = [a for a in clipped if (a.app or "").lower() != "offline"]
+    base = _first_wins(auto)
+    if not offline:
+        return base
+    return _apply_offline_overrides(base, offline)
 
 
 def summarize(
@@ -225,9 +391,14 @@ def timeline_buckets(
     return buckets
 
 
-def humanize(seconds: float) -> str:
-    seconds = int(round(seconds))
-    h, rem = divmod(seconds, 3600)
+def humanize(seconds: float | None) -> str:
+    try:
+        if seconds is None:
+            seconds = 0.0
+        seconds = int(round(float(seconds)))
+    except (TypeError, ValueError):
+        seconds = 0
+    h, rem = divmod(max(seconds, 0), 3600)
     m, s = divmod(rem, 60)
     if h:
         return f"{h}h {m}m"
@@ -313,6 +484,9 @@ def productivity_bar_segments(
     tz_name: str | None = None,
     *,
     now_ts: float | None = None,
+    earliest_fill_ts: float | None = None,
+    excluded_ranges: list[tuple[float, float]] | None = None,
+    min_gap_seconds: float | None = None,
 ) -> list[dict]:
     """Fine timeline segments for a DeskTime-like productivity bar."""
     buckets = timeline_buckets(activities, start_ts, end_ts, bucket_seconds)
@@ -326,7 +500,7 @@ def productivity_bar_segments(
         active = prod + unprod + neut
         if active <= 0 and idle <= 0:
             kind = "empty"
-        elif idle >= active and idle >= bucket_seconds * 0.35:
+        elif idle > 0 and idle >= active:
             kind = "idle"
         elif prod >= unprod and prod >= neut:
             kind = "productive"
@@ -356,9 +530,58 @@ def productivity_bar_segments(
                 "gap_end": None,
             }
         )
+    gap_min = float(min_gap_seconds) if min_gap_seconds is not None else bucket_seconds
     return annotate_idle_gaps(
-        segments, min_gap_seconds=bucket_seconds, now_ts=now_ts
+        segments,
+        min_gap_seconds=gap_min,
+        now_ts=now_ts,
+        earliest_fill_ts=earliest_fill_ts,
+        excluded_ranges=excluded_ranges,
     )
+
+
+def _ranges_overlap(a_start: float, a_end: float, b_start: float, b_end: float) -> bool:
+    return a_start < b_end and a_end > b_start
+
+
+def _segment_excluded(start: float, end: float, excluded_ranges: list[tuple[float, float]]) -> bool:
+    for xs, xe in excluded_ranges:
+        if _ranges_overlap(start, end, xs, xe):
+            return True
+    return False
+
+
+def _mark_fillable_gap_run(
+    segments: list[dict],
+    i: int,
+    j: int,
+    *,
+    min_gap_seconds: float,
+    now_ts: float | None,
+    earliest_fill_ts: float | None,
+) -> None:
+    gap_start = float(segments[i]["start"])
+    gap_end = float(segments[j - 1].get("end") or segments[j - 1]["start"])
+    if now_ts is not None:
+        if gap_start >= now_ts:
+            return
+        gap_end = min(gap_end, float(now_ts))
+    if earliest_fill_ts is not None:
+        if gap_end <= earliest_fill_ts:
+            return
+        gap_start = max(gap_start, earliest_fill_ts)
+    duration = gap_end - gap_start
+    if duration < min_gap_seconds:
+        return
+    for k in range(i, j):
+        seg_start = float(segments[k]["start"])
+        if now_ts is not None and seg_start >= now_ts:
+            continue
+        if earliest_fill_ts is not None and seg_start < earliest_fill_ts:
+            continue
+        segments[k]["fillable"] = True
+        segments[k]["gap_start"] = gap_start
+        segments[k]["gap_end"] = gap_end
 
 
 def annotate_idle_gaps(
@@ -366,37 +589,74 @@ def annotate_idle_gaps(
     *,
     min_gap_seconds: float = 300.0,
     now_ts: float | None = None,
+    earliest_fill_ts: float | None = None,
+    excluded_ranges: list[tuple[float, float]] | None = None,
 ) -> list[dict]:
-    """Mark consecutive empty bar buckets as one fillable idle/offline gap.
+    """Mark consecutive empty or agent-idle bar buckets as fillable idle/offline gaps.
+
+    Empty buckets = no synced activity. Idle buckets = keyboard/mouse idle per agent.
+    ``min_gap_seconds`` is usually the company idle threshold (e.g. 180).
 
     Buckets that start in the future (after ``now_ts``) are never fillable.
     Gaps that straddle "now" are clipped so ``gap_end`` does not exceed now.
+    Gaps before ``earliest_fill_ts`` (day start / first arrival) are not fillable.
+    Ranges in ``excluded_ranges`` (e.g. lunch) split gaps and are never fillable.
     """
+    excluded = excluded_ranges or []
+    # Empty = no synced samples; idle = keyboard/mouse idle while the agent still runs.
+    for gap_kind in ("empty", "idle"):
+        i = 0
+        n = len(segments)
+        while i < n:
+            if segments[i].get("kind") != gap_kind:
+                i += 1
+                continue
+            j = i
+            while j < n and segments[j].get("kind") == gap_kind:
+                j += 1
+            k = i
+            while k < j:
+                seg_s = float(segments[k]["start"])
+                seg_e = float(segments[k].get("end") or seg_s)
+                if _segment_excluded(seg_s, seg_e, excluded):
+                    k += 1
+                    continue
+                m = k
+                while m < j:
+                    ms = float(segments[m]["start"])
+                    me = float(segments[m].get("end") or ms)
+                    if _segment_excluded(ms, me, excluded):
+                        break
+                    m += 1
+                _mark_fillable_gap_run(
+                    segments,
+                    k,
+                    m,
+                    min_gap_seconds=min_gap_seconds,
+                    now_ts=now_ts,
+                    earliest_fill_ts=earliest_fill_ts,
+                )
+                k = m
+            i = j
+    return segments
+
+
+def reconcile_fillable_gap_bounds(segments: list[dict]) -> list[dict]:
+    """Recompute ``gap_start`` / ``gap_end`` on each contiguous fillable run."""
     i = 0
     n = len(segments)
     while i < n:
-        if segments[i].get("kind") != "empty":
+        if not segments[i].get("fillable"):
             i += 1
             continue
         j = i
-        while j < n and segments[j].get("kind") == "empty":
+        while j < n and segments[j].get("fillable"):
             j += 1
         gap_start = float(segments[i]["start"])
         gap_end = float(segments[j - 1].get("end") or segments[j - 1]["start"])
-        if now_ts is not None:
-            if gap_start >= now_ts:
-                i = j
-                continue
-            gap_end = min(gap_end, float(now_ts))
-        duration = gap_end - gap_start
-        if duration >= min_gap_seconds:
-            for k in range(i, j):
-                seg_start = float(segments[k]["start"])
-                if now_ts is not None and seg_start >= now_ts:
-                    continue
-                segments[k]["fillable"] = True
-                segments[k]["gap_start"] = gap_start
-                segments[k]["gap_end"] = gap_end
+        for k in range(i, j):
+            segments[k]["gap_start"] = gap_start
+            segments[k]["gap_end"] = gap_end
         i = j
     return segments
 
@@ -425,6 +685,32 @@ def idle_gap_list(segments: list[dict], tz_name: str | None = None) -> list[dict
     return gaps
 
 
+def merge_nearby_gaps(
+    gaps: list[dict],
+    *,
+    bridge_seconds: float = 600.0,
+    tz_name: str | None = None,
+) -> list[dict]:
+    """Merge fillable gaps separated by short active blips (one bar / one chip)."""
+    if not gaps:
+        return []
+    ordered = sorted(gaps, key=lambda g: float(g["start"]))
+    out: list[dict] = [dict(ordered[0])]
+    for g in ordered[1:]:
+        prev = out[-1]
+        ps, pe = float(prev["start"]), float(prev["end"])
+        gs, ge = float(g["start"]), float(g["end"])
+        if gs <= pe + float(bridge_seconds):
+            prev["end"] = max(pe, ge)
+            prev["start"] = ps
+            prev["duration"] = float(prev["end"]) - float(prev["start"])
+            prev["label_start"] = format_clock(prev["start"], tz_name=tz_name)
+            prev["label_end"] = format_clock(prev["end"], tz_name=tz_name)
+        else:
+            out.append(dict(g))
+    return out
+
+
 def suppress_covered_gaps(
     segments: list[dict],
     covered_ranges: list[tuple[float, float]],
@@ -446,9 +732,53 @@ def suppress_covered_gaps(
                 seg["fillable"] = False
                 seg["gap_start"] = None
                 seg["gap_end"] = None
-                seg["requested"] = True
                 break
     return segments
+
+
+def _annotate_offline_request_status(
+    segments: list[dict],
+    requests: list,
+    *,
+    status: str,
+) -> list[dict]:
+    if not segments or not requests:
+        return segments
+    for req in requests:
+        rs = float(req.start_ts)
+        re = float(req.end_ts)
+        cat = (getattr(req, "category", None) or "neutral").strip().lower()
+        if cat not in ("productive", "unproductive", "neutral"):
+            cat = "neutral"
+        for seg in segments:
+            s = float(seg.get("start") or 0)
+            e = float(seg.get("end") or s)
+            if s >= re or e <= rs:
+                continue
+            seg["fillable"] = False
+            seg["gap_start"] = None
+            seg["gap_end"] = None
+            seg["requested"] = True
+            seg["request_status"] = status
+            seg["request_category"] = cat
+            seg["request_id"] = int(getattr(req, "id", 0) or 0)
+    return segments
+
+
+def annotate_pending_offline_requests(
+    segments: list[dict],
+    pending_requests: list,
+) -> list[dict]:
+    """Grey bar placeholders on the productivity chart for pending offline fills."""
+    return _annotate_offline_request_status(segments, pending_requests, status="pending")
+
+
+def annotate_rejected_offline_requests(
+    segments: list[dict],
+    rejected_requests: list,
+) -> list[dict]:
+    """Bar placeholders for rejected offline fills (still visible, re-fillable)."""
+    return _annotate_offline_request_status(segments, rejected_requests, status="rejected")
 
 
 def merge_bar_segments(segments: list[dict]) -> list[dict]:
@@ -532,7 +862,7 @@ def top_sites(
     limit: int = 12,
 ) -> list[dict]:
     """Aggregate inferred websites/domains by active time."""
-    from .monitor import extract_domain, extract_url
+    from .monitor import extract_domain, extract_url, is_browser
 
     totals: dict[str, dict] = {}
     for a in prepare_activities(activities):
@@ -541,6 +871,8 @@ def top_sites(
         url = getattr(a, "url", "") or extract_url(a.app, a.title)
         domain = extract_domain(url)
         if not domain:
+            continue
+        if not (is_browser(a.app) or url.lower().startswith(("http://", "https://"))):
             continue
         slot = totals.setdefault(
             domain,
@@ -556,9 +888,185 @@ def top_sites(
     return ranked
 
 
+def website_report(
+    activities: list[Activity],
+    window_start: float | None = None,
+    window_end: float | None = None,
+    *,
+    site_limit: int = 60,
+    page_limit: int = 15,
+    visit_limit: int = 400,
+) -> dict:
+    """Per-site / per-page browsing breakdown plus a chronological visit log.
+
+    A *visit* is a continuous stretch on one site (gaps of up to 5 s are merged).
+    Pages use the recorded URL path when the agent captured one, else the tab title.
+    """
+    from .monitor import extract_domain, extract_url, is_browser, strip_browser_suffix
+
+    sites: dict[str, dict] = {}
+    visits: list[dict] = []
+    for a in prepare_activities(activities, window_start, window_end):
+        if a.idle:
+            continue
+        url = a.url or extract_url(a.app, a.title)
+        domain = extract_domain(url)
+        exact = url.lower().startswith(("http://", "https://"))
+        browser = is_browser(a.app)
+        if not domain or not (browser or exact):
+            continue
+        title = strip_browser_suffix(a.title) if browser else (a.title or "")
+        page_key = url if exact else (title or domain)
+
+        site = sites.setdefault(
+            domain,
+            {
+                "domain": domain,
+                "seconds": 0.0,
+                "visits": 0,
+                "category": a.category,
+                "first_ts": a.start_ts,
+                "last_ts": a.end_ts,
+                "exact": False,
+                "pages": {},
+            },
+        )
+        site["seconds"] += a.duration
+        site["last_ts"] = max(site["last_ts"], a.end_ts)
+        site["exact"] = site["exact"] or exact
+        if site["category"] == NEUTRAL and a.category != NEUTRAL:
+            site["category"] = a.category
+        page = site["pages"].setdefault(
+            page_key,
+            {"url": url if exact else "", "title": title, "seconds": 0.0, "last_ts": a.end_ts},
+        )
+        page["seconds"] += a.duration
+        page["last_ts"] = max(page["last_ts"], a.end_ts)
+        if title and not page["title"]:
+            page["title"] = title
+
+        prev = visits[-1] if visits else None
+        if prev and prev["domain"] == domain and a.start_ts - prev["end_ts"] <= 5.0:
+            prev["end_ts"] = a.end_ts
+            prev["seconds"] += a.duration
+            if exact and not prev["url"]:
+                prev["url"] = url
+        else:
+            site["visits"] += 1
+            visits.append(
+                {
+                    "domain": domain,
+                    "url": url if exact else "",
+                    "title": title,
+                    "app": a.app,
+                    "category": a.category,
+                    "start_ts": a.start_ts,
+                    "end_ts": a.end_ts,
+                    "seconds": a.duration,
+                }
+            )
+
+    ranked = sorted(sites.values(), key=lambda s: s["seconds"], reverse=True)
+    total = sum(s["seconds"] for s in ranked) or 1.0
+    for s in ranked:
+        s["pct"] = round(100.0 * s["seconds"] / total, 1)
+        s["pages"] = sorted(s["pages"].values(), key=lambda p: p["seconds"], reverse=True)[
+            :page_limit
+        ]
+    visits.sort(key=lambda v: v["start_ts"], reverse=True)
+    return {
+        "sites": ranked[:site_limit],
+        "visits": visits[:visit_limit],
+        "total_seconds": sum(s["seconds"] for s in ranked),
+        "site_count": len(ranked),
+        "visit_count": sum(s["visits"] for s in ranked),
+        "exact_share": round(
+            100.0 * sum(s["seconds"] for s in ranked if s["exact"]) / total, 1
+        )
+        if ranked
+        else 0.0,
+    }
+
+
+def bar_view_hours(
+    *,
+    office_start_h: float,
+    office_end_h: float,
+    day_start_ts: float,
+    arrival_ts: float | None,
+    last_seen_ts: float | None,
+    manual_ranges: list[tuple[float, float]] | None = None,
+    is_today: bool = False,
+    is_online: bool = False,
+    now_ts: float | None = None,
+    bar_mode: str = "work",
+    office_pad_h: float = 1.5,
+    activity_pad_h: float = 0.5,
+    min_span_h: float = 4.0,
+) -> tuple[float, float]:
+    """Pick productivity-bar X-axis hours for one user-day.
+
+    Default window: office hours ± ``office_pad_h`` (e.g. 9:30–6:30 → ~8:00–8:00).
+    Expands only for real tracked activity (arrival, manual time, evening sessions).
+    Idle fillable gaps alone do not stretch the chart back to midnight.
+    """
+    if bar_mode == "day":
+        return 0.0, 24.0
+
+    base_start_h = max(0.0, office_start_h - office_pad_h)
+    base_end_h = min(24.0, office_end_h + office_pad_h)
+
+    activity_start_ts = arrival_ts
+    activity_end_ts = last_seen_ts
+    for start_ts, end_ts in manual_ranges or []:
+        if activity_start_ts is None or start_ts < activity_start_ts:
+            activity_start_ts = start_ts
+        if activity_end_ts is None or end_ts > activity_end_ts:
+            activity_end_ts = end_ts
+
+    has_real_activity = activity_start_ts is not None
+    if is_today and now_ts is not None and has_real_activity:
+        if activity_end_ts is None or now_ts > activity_end_ts:
+            activity_end_ts = now_ts
+
+    if not has_real_activity:
+        view_start_h, view_end_h = base_start_h, base_end_h
+    else:
+        first_h = (activity_start_ts - day_start_ts) / 3600.0
+        last_h = (
+            (activity_end_ts - day_start_ts) / 3600.0
+            if activity_end_ts is not None
+            else first_h
+        )
+        if is_today and is_online and now_ts is not None:
+            last_h = max(last_h, (now_ts - day_start_ts) / 3600.0)
+
+        act_start_h = max(0.0, first_h - activity_pad_h)
+        act_end_h = min(24.0, last_h + activity_pad_h)
+
+        # Night / split shift entirely outside the office band → zoom to activity.
+        outside_office = last_h < base_start_h - 0.25 or first_h > base_end_h + 0.25
+        if outside_office:
+            view_start_h, view_end_h = act_start_h, act_end_h
+        else:
+            view_start_h = min(base_start_h, act_start_h)
+            view_end_h = max(base_end_h, act_end_h)
+
+    if view_end_h - view_start_h < min_span_h:
+        mid = (view_start_h + view_end_h) / 2.0
+        view_start_h = max(0.0, mid - min_span_h / 2.0)
+        view_end_h = min(24.0, mid + min_span_h / 2.0)
+
+    return view_start_h, view_end_h
+
+
 __all__ = [
     "Summary",
     "AppSummary",
+    "DayMetrics",
+    "compute_day_metrics",
+    "exclusive_manual_seconds",
+    "manual_total_seconds",
     "summarize",
     "summarize_day",
     "day_bounds",
@@ -566,12 +1074,18 @@ __all__ = [
     "humanize",
     "format_clock",
     "apps_with_share",
+    "bar_view_hours",
     "productivity_bar_segments",
     "annotate_idle_gaps",
+    "reconcile_fillable_gap_bounds",
     "idle_gap_list",
+    "merge_nearby_gaps",
     "suppress_covered_gaps",
+    "annotate_pending_offline_requests",
+    "annotate_rejected_offline_requests",
     "merge_bar_segments",
     "prepare_activities",
     "activity_timeline",
     "top_sites",
+    "website_report",
 ]

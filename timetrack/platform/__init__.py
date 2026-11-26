@@ -39,9 +39,35 @@ def get_idle_seconds() -> float:
     return _backend.get_idle_seconds()
 
 
+def get_browser_url(window: ActiveWindow | None) -> str:
+    """Address-bar URL of the focused browser window ('' where the OS can't tell)."""
+    fn = getattr(_backend, "get_browser_url", None)
+    if fn is None:
+        return ""
+    try:
+        return fn(window) or ""
+    except Exception:
+        return ""
+
+
 def backend_name() -> str:
     """Return the name of the active backend (useful for diagnostics)."""
     return getattr(_backend, "BACKEND_NAME", _system.lower())
 
 
-__all__ = ["ActiveWindow", "get_active_window", "get_idle_seconds", "backend_name"]
+def idle_detection_available() -> bool:
+    """Whether keyboard/mouse idle time is measurable on this host."""
+    fn = getattr(_backend, "idle_detection_available", None)
+    if fn is not None:
+        return bool(fn())
+    return False
+
+
+__all__ = [
+    "ActiveWindow",
+    "get_active_window",
+    "get_idle_seconds",
+    "get_browser_url",
+    "backend_name",
+    "idle_detection_available",
+]

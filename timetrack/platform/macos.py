@@ -105,3 +105,7 @@ def _idle_via_ioreg() -> float:
             if raw.isdigit():
                 return int(raw) / 1_000_000_000.0  # nanoseconds -> seconds
     return 0.0
+
+
+def idle_detection_available() -> bool:
+    return True

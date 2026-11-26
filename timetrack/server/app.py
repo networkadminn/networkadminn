@@ -3,12 +3,34 @@
 from __future__ import annotations
 
 import os
+from datetime import timedelta
 
 from flask import Flask
+from flask_sqlalchemy import SQLAlchemy
 
 from ..paths import package_dir
 from .config import ServerConfig
 from .extensions import db, login_manager
+
+
+def _configure_sqlite(database: SQLAlchemy, database_uri: str) -> None:
+    """WAL + busy timeout for concurrent agents and web UI on SQLite."""
+    if not (database_uri or "").startswith("sqlite"):
+        return
+    import sqlite3
+
+    from sqlalchemy import event
+    from sqlalchemy.engine import Engine
+
+    @event.listens_for(Engine, "connect")
+    def _set_sqlite_pragma(dbapi_connection, connection_record) -> None:
+        if not isinstance(dbapi_connection, sqlite3.Connection):
+            return
+        cursor = dbapi_connection.cursor()
+        cursor.execute("PRAGMA journal_mode=WAL")
+        cursor.execute("PRAGMA busy_timeout=5000")
+        cursor.execute("PRAGMA synchronous=NORMAL")
+        cursor.close()
 
 
 def create_app(config: ServerConfig | None = None, **overrides) -> Flask:
@@ -34,6 +56,8 @@ def create_app(config: ServerConfig | None = None, **overrides) -> Flask:
     db.init_app(app)
     login_manager.init_app(app)
 
+    _configure_sqlite(db, cfg.database_uri)
+
     from .models import User
 
     @login_manager.user_loader
@@ -51,6 +75,60 @@ def create_app(config: ServerConfig | None = None, **overrides) -> Flask:
     app.register_blueprint(desk_bp)
 
     @app.context_processor
+    def inject_public_url():
+        return {
+            "public_url": (
+                os.environ.get("ESSTRACKER_PUBLIC_URL")
+                or os.environ.get("TIMETRACK_PUBLIC_URL")
+                or "https://tracker.euclideesolutions.com"
+            ).rstrip("/")
+        }
+
+    from .blog_posts import category_slug, format_blog_date
+
+    app.add_template_filter(format_blog_date, "blog_date")
+    app.add_template_filter(category_slug, "category_slug")
+
+    @app.context_processor
+    def inject_client_update():
+        from flask_login import current_user
+
+        if not current_user.is_authenticated or not current_user.last_agent_ping:
+            return {"client_update_banner": None}
+        from .releases import CLIENT_VERSION, is_outdated, latest_download
+
+        if not is_outdated(current_user.agent_version) or not latest_download(
+            current_user.agent_platform or "windows"
+        ):
+            return {"client_update_banner": None}
+        return {
+            "client_update_banner": {
+                "latest": CLIENT_VERSION,
+                "current": current_user.agent_version or "older",
+            }
+        }
+
+    @app.context_processor
+    def inject_profile_menu():
+        import time
+
+        from flask_login import current_user
+
+        if not current_user.is_authenticated:
+            return {}
+        org = getattr(current_user, "organization", None)
+        org_name = (org.name if org else "") or "ESS Tracker"
+        agent_online = False
+        ping = current_user.last_agent_ping
+        if ping and not current_user.agent_stopped_at:
+            agent_online = (time.time() - float(ping)) < 300.0
+        return {
+            "profile_org_name": org_name,
+            "profile_agent_online": agent_online,
+            "profile_agent_version": current_user.agent_version or "",
+        }
+
+    @app.context_processor
     def inject_desk_flags():
         from flask_login import current_user
 
@@ -61,7 +139,7 @@ def create_app(config: ServerConfig | None = None, **overrides) -> Flask:
             "pending_approvals": 0,
         }
         if current_user.is_authenticated:
-            from .models import OfflineRequest, PrivatePeriod, TimerSession
+            from .models import PrivatePeriod, TimerSession
 
             flags["private_active"] = (
                 db.session.execute(
@@ -80,17 +158,20 @@ def create_app(config: ServerConfig | None = None, **overrides) -> Flask:
                 is not None
             )
             if current_user.is_admin:
-                pending = (
-                    db.session.execute(
-                        db.select(db.func.count(OfflineRequest.id)).filter_by(
-                            status="pending"
-                        )
-                    ).scalar_one()
-                    or 0
-                )
-                flags["pending_approvals"] = int(pending)
-                flags["alert_count"] = int(pending)
+                from .request_cache import cached_pending_offline_count
+                from .tenancy import current_org_id
+
+                pending = cached_pending_offline_count(current_org_id())
+                flags["pending_approvals"] = pending
+                flags["alert_count"] = pending
         return flags
+
+    # Web sign-in: same 30-day window as the desktop agent API token.
+    from .api import SESSION_DAYS
+
+    session_days = timedelta(days=SESSION_DAYS)
+    app.config.setdefault("PERMANENT_SESSION_LIFETIME", session_days)
+    app.config.setdefault("REMEMBER_COOKIE_DURATION", session_days)
 
     # Harden sessions behind HTTPS proxies (Cloudflare / aaPanel).
     app.config.setdefault("SESSION_COOKIE_HTTPONLY", True)
@@ -108,9 +189,18 @@ def create_app(config: ServerConfig | None = None, **overrides) -> Flask:
         pass
 
     with app.app_context():
+        from .models import ROLE_ADMIN, ROLE_SUPERADMIN, User
         from .settings_util import ensure_schema, get_settings
 
         ensure_schema()
+        # Legacy SaaS superadmin accounts → normal admin (self-hosted mode).
+        legacy = db.session.execute(
+            db.select(User).filter_by(role=ROLE_SUPERADMIN)
+        ).scalars().all()
+        if legacy:
+            for user in legacy:
+                user.role = ROLE_ADMIN
+            db.session.commit()
         get_settings()
 
     return app

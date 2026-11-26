@@ -1,0 +1,78 @@
+# Deploy ESS Tracker web app (Flask/timetrack) to production via SSH.
+#
+# Do NOT rsync from a laptop — run this workflow instead.
+#
+# Triggers:
+#   - workflow_dispatch (manual)
+#   - push to main / master / release/** when timetrack/ changes
+#
+# Repository secret (required):
+#   PRODUCTION_SSH_KEY — contents of server-key.pem (root@31.97.239.250)
+
+name: Deploy web
+
+on:
+  workflow_dispatch:
+    inputs:
+      ref_note:
+        description: Optional note for this deploy
+        required: false
+        type: string
+  push:
+    branches: [main, master, "release/**"]
+    paths:
+      - "timetrack/**"
+      - ".github/workflows/deploy-web.yml"
+
+concurrency:
+  group: deploy-web-production
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    name: Sync timetrack → production
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Require PRODUCTION_SSH_KEY
+        env:
+          SSH_KEY: ${{ secrets.PRODUCTION_SSH_KEY }}
+        run: |
+          if [ -z "$SSH_KEY" ]; then
+            echo "::error::PRODUCTION_SSH_KEY secret is not set"
+            exit 1
+          fi
+
+      - name: Deploy via rsync + graceful reload
+        env:
+          SSH_KEY: ${{ secrets.PRODUCTION_SSH_KEY }}
+        run: |
+          set -euo pipefail
+          mkdir -p ~/.ssh
+          chmod 700 ~/.ssh
+          printf '%s\n' "$SSH_KEY" > ~/.ssh/production.pem
+          chmod 600 ~/.ssh/production.pem
+          SSH="ssh -i ~/.ssh/production.pem -o IdentitiesOnly=yes -o StrictHostKeyChecking=accept-new -p 22"
+
+          echo "Deploying commit ${GITHUB_SHA} (${GITHUB_REF_NAME})"
+          rsync -avz --delete \
+            --exclude '__pycache__' --exclude '*.pyc' --exclude '.git' \
+            -e "$SSH" \
+            ./timetrack/ \
+            root@31.97.239.250:/www/wwwroot/timetrack/timetrack/
+
+          $SSH root@31.97.239.250 \
+            'kill -HUP $(cat /www/wwwroot/timetrack/gunicorn.pid) && echo reloaded && test -f /www/wwwroot/timetrack/gunicorn.pid'
+
+      - name: Smoke check
+        run: |
+          set -euo pipefail
+          code=$(curl -sS -o /dev/null -w '%{http_code}' --max-time 20 https://tracker.euclideesolutions.com/login || true)
+          echo "GET /login -> HTTP $code"
+          case "$code" in
+            200|302|301) ;;
+            *)
+              echo "::warning::Unexpected status from /login: $code"
+              ;;
+          esac

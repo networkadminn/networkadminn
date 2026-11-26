@@ -30,6 +30,27 @@ $VenvPy = Join-Path $Root ".venv\Scripts\python.exe"
 & $VenvPy -m pip install -U pip
 & $VenvPy -m pip install -r requirements.txt "pyinstaller>=6.0" "pywin32" "Pillow" "pystray"
 & $VenvPy packaging\build.py exe-client
+if ($LASTEXITCODE -ne 0) { throw "PyInstaller build failed" }
+
+# Wrap the client in a normal Windows installer (Inno Setup 6: https://jrsoftware.org/isdl.php)
+$Version = (Select-String -Path "timetrack\__init__.py" -Pattern '^__version__ = "(.+)"').Matches[0].Groups[1].Value
+$Iscc = @(
+    (Get-Command iscc -ErrorAction SilentlyContinue).Source,
+    "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe",
+    "$env:ProgramFiles\Inno Setup 6\ISCC.exe",
+    "$env:LOCALAPPDATA\Programs\Inno Setup 6\ISCC.exe"
+) | Where-Object { $_ -and (Test-Path $_) } | Select-Object -First 1
+if ($Iscc) {
+    & $Iscc "/DAppVersion=$Version" "packaging\windows\esstracker.iss"
+    if ($LASTEXITCODE -ne 0) { throw "Inno Setup build failed" }
+    if ($env:ESSTRACKER_SIGN_PFX) {
+        & $VenvPy -c "import sys; sys.path.insert(0, 'packaging'); from pathlib import Path; import build; build.sign_windows(Path(sys.argv[1]))" "dist\releases\esstracker-Setup-$Version.exe"
+        if ($LASTEXITCODE -ne 0) { throw "Signing installer failed" }
+    }
+    Write-Host "Installer: dist\releases\esstracker-Setup-$Version.exe"
+} else {
+    Write-Warning "Inno Setup 6 not found - skipped esstracker-Setup-$Version.exe (zip kit still built)."
+}
 
 $WinDir = Join-Path $Root "dist\windows"
 Write-Host ""

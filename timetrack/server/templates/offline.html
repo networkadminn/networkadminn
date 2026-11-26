@@ -39,9 +39,9 @@
         </div>
         <label>Category
           <select name="category">
-            <option value="productive">Productive (meeting, call, work away)</option>
-            <option value="neutral" selected>Neutral</option>
-            <option value="unproductive">Unproductive</option>
+            <option value="productive" {% if prefill_category == 'productive' %}selected{% endif %}>Productive (meeting, call, work away)</option>
+            <option value="neutral" {% if prefill_category == 'neutral' %}selected{% endif %}>Neutral</option>
+            <option value="unproductive" {% if prefill_category == 'unproductive' %}selected{% endif %}>Unproductive</option>
           </select>
         </label>
         <label>Note

@@ -30,6 +30,9 @@ api_bp = Blueprint("api", __name__, url_prefix="/api/v1")
 
 _VALID_CATEGORIES = {"productive", "unproductive", "neutral"}
 
+SESSION_DAYS = 30
+SESSION_SECONDS = SESSION_DAYS * 24 * 3600
+
 
 def _token_from_request() -> str | None:
     auth = request.headers.get("Authorization", "")
@@ -49,6 +52,13 @@ def token_required(view):
         ).scalar_one_or_none()
         if user is None or not user.enabled:
             return jsonify({"error": "invalid token"}), 401
+        now = time.time()
+        if user.token_issued_at is None:
+            # Tokens from before sessions existed start their 30 days now.
+            user.token_issued_at = now
+            db.session.commit()
+        elif now - user.token_issued_at > SESSION_SECONDS:
+            return jsonify({"error": "session expired"}), 401
         g.agent_user = user
         return view(*args, **kwargs)
 
@@ -73,10 +83,15 @@ def agent_login():
     if user is None or not user.enabled or not user.check_password(password):
         return jsonify({"error": "invalid username or password"}), 401
 
-    # Ensure a token always exists
-    if not user.api_token:
+    # New 30-day session; an expired one gets a fresh token. A still-valid session is
+    # shared so signing in on a second device doesn't log out the first.
+    now = time.time()
+    expired = user.token_issued_at is not None and now - user.token_issued_at > SESSION_SECONDS
+    if not user.api_token or expired:
         user.rotate_token()
-        db.session.commit()
+    if user.token_issued_at is None or expired:
+        user.token_issued_at = now
+    db.session.commit()
 
     settings = get_settings(user.organization_id or 1)
     return jsonify(
@@ -87,9 +102,34 @@ def agent_login():
             "name": user.name,
             "role": user.role,
             "organization_id": user.organization_id or 1,
-            "company": settings.company_name or "Euclidee Software Solutions",
+            "company": settings.company_name or "ESS Tracker",
         }
     )
+
+
+def _client_update(u: User) -> dict | None:
+    """Tell an outdated agent which installer to fetch (None when up to date).
+
+    Paths are relative: behind aaPanel's proxy the app sees Host 127.0.0.1, so the
+    agent joins them with its own configured server_url.
+    """
+    from flask import url_for
+
+    from .releases import is_outdated, latest_download
+
+    if not u.agent_version or not is_outdated(u.agent_version):
+        return None
+    latest = latest_download(u.agent_platform)
+    if latest is None:
+        return None
+    return {
+        "latest": latest["version"],
+        "current": u.agent_version,
+        "url": url_for(
+            "views.download_file", platform=latest["platform"], filename=latest["filename"]
+        ),
+        "page": url_for("views.download_page"),
+    }
 
 
 @api_bp.route("/ping")
@@ -97,6 +137,14 @@ def agent_login():
 def ping():
     u: User = g.agent_user
     settings = get_settings(u.organization_id or 1)
+    from .tracker_alerts import check_stale_trackers, touch_agent_ping
+
+    touch_agent_ping(u)
+    if u.tracker_stop_alerted_at:
+        u.tracker_stop_alerted_at = None
+    u.agent_stopped_at = None
+    db.session.commit()
+    check_stale_trackers(u.organization_id or 1)
     private = db.session.execute(
         db.select(PrivatePeriod)
         .filter_by(user_id=u.id, active=True)
@@ -124,7 +172,7 @@ def ping():
             "user": u.username,
             "role": u.role,
             "name": u.name,
-            "company": settings.company_name or "Euclidee Software Solutions",
+            "company": settings.company_name or "ESS Tracker",
             "private_active": bool(private),
             "private_allowed": bool(u.private_time_allowed and settings.private_time_enabled),
             "screenshots": {
@@ -148,7 +196,10 @@ def ping():
                 today_tz(settings.timezone or "Asia/Kolkata"),
                 settings.work_days,
             ),
+            "tray_logout_allowed": bool(getattr(settings, "tray_logout_allowed", True)),
+            "tray_quit_allowed": bool(getattr(settings, "tray_quit_allowed", True)),
             "rules": rules,
+            "client_update": _client_update(u),
             "timer": None
             if timer is None
             else {
@@ -160,6 +211,40 @@ def ping():
             },
         }
     )
+
+
+@api_bp.route("/tray-day")
+@token_required
+def tray_day():
+    """Today snapshot for the desktop tray flyout (rings, KPIs, top apps)."""
+    from .views import tray_day_json_for_user
+
+    u: User = g.agent_user
+    return jsonify({"ok": True, **tray_day_json_for_user(u)})
+
+
+@api_bp.route("/agent/stop", methods=["POST"])
+@token_required
+def agent_stop():
+    """Agent calls this when quitting — triggers immediate admin email."""
+    u: User = g.agent_user
+    payload = request.get_json(silent=True) or {}
+    reason = str(payload.get("reason") or "stopped")[:32]
+    import time
+
+    from .tracker_alerts import send_tracker_stop_alert
+    from .views import _last_seen
+
+    # max() guards against agent clocks running ahead of the server.
+    u.agent_stopped_at = max(time.time(), _last_seen(u.id) or 0.0)
+    db.session.commit()
+
+    send_tracker_stop_alert(u, reason=reason)
+    if reason in ("logout", "quit"):
+        from .ai_report import maybe_send_ai_report_on_logout
+
+        maybe_send_ai_report_on_logout(u)
+    return jsonify({"ok": True})
 
 
 @api_bp.route("/private", methods=["GET", "POST"])
@@ -303,6 +388,13 @@ def list_projects():
 @token_required
 def ingest_activities():
     u: User = g.agent_user
+    from .tracker_alerts import check_stale_trackers, touch_agent_ping
+
+    touch_agent_ping(u)
+    if u.tracker_stop_alerted_at:
+        u.tracker_stop_alerted_at = None
+    u.agent_stopped_at = None
+    check_stale_trackers(u.organization_id or 1)
     # Reject (not 2xx) while private so the agent keeps buffered rows for retry.
     private = db.session.execute(
         db.select(PrivatePeriod).filter_by(user_id=u.id, active=True)
@@ -323,7 +415,7 @@ def ingest_activities():
     from ..config import Config as CoreConfig, merge_rules
     from .settings_util import load_server_rules
 
-    server_rules = merge_rules(load_server_rules(u.organization_id or 1))
+    server_rules = merge_rules(load_server_rules(u.organization_id or 1), org_only=True)
     categorizer = CoreConfig(rules=server_rules)
 
     for item in items:
@@ -398,7 +490,7 @@ def ingest_screenshot():
         from ..config import UNPRODUCTIVE, merge_rules, Config as CoreConfig
         from .settings_util import load_server_rules
 
-        cfg_rules = merge_rules(load_server_rules(u.organization_id or 1))
+        cfg_rules = merge_rules(load_server_rules(u.organization_id or 1), org_only=True)
         if CoreConfig(rules=cfg_rules).categorize(app_name, title) == UNPRODUCTIVE:
             is_unproductive = True
 

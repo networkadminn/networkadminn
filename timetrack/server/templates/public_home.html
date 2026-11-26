@@ -1,7 +1,8 @@
 {% extends "base.html" %}
 {% block title %}esstracker · Employee Time & Productivity Tracking{% endblock %}
 {% block head %}
-<meta name="description" content="esstracker — self-hosted employee time tracking, productivity timelines, gap approvals, and team dashboards by Euclidee Software Solutions." />
+<meta name="description" content="esstracker — self-hosted employee time tracking, productivity timelines, gap approvals, and team dashboards by ESS Tracker." />
+<link rel="canonical" href="{{ public_url }}/" />
 <link rel="stylesheet" href="{{ url_for('static', filename='public.css') }}?v=20" />
 {% endblock %}
 {% block body %}
@@ -14,7 +15,7 @@
         <img src="{{ url_for('static', filename='brand/ess-mark.png') }}" alt="" />
         <span>
           <strong>esstracker</strong>
-          <small>Euclidee Software Solutions</small>
+          <small>ESS Tracker</small>
         </span>
       </a>
 
@@ -359,7 +360,7 @@
           <section class="ptour-kpis" data-pt="e-kpis">
             <div><s>Arrival</s><b>09:12</b></div>
             <div><s>Left / status</s><b class="live">ONLINE</b></div>
-            <div><s>Desktime</s><b>6h 24m</b><em>78% productive</em></div>
+            <div><s>Desk time</s><b>6h 24m</b><em>78% productive</em></div>
             <div><s>Productive</s><b>5h 01m</b><em>86% of goal</em></div>
           </section>
 
@@ -493,7 +494,7 @@
       </details>
       <details>
         <summary>Is this cloud or self-hosted?</summary>
-        <p>Self-hosted by Euclidee Software Solutions — private, secure, under your control.</p>
+        <p>Self-hosted by ESS Tracker — private, secure, under your control.</p>
       </details>
       <details>
         <summary>How do I get started?</summary>
@@ -525,7 +526,7 @@
       <div class="pub-footer-brand">
         <a class="pub-logo" href="{{ url_for('views.home') }}">
           <img src="{{ url_for('static', filename='brand/ess-mark.png') }}" alt="" />
-          <span><strong>esstracker</strong><small>Euclidee Software Solutions</small></span>
+          <span><strong>esstracker</strong><small>ESS Tracker</small></span>
         </a>
         <p>Self-hosted employee time tracking with productivity timelines, gap approvals, and team visibility.</p>
         <a class="pub-btn" href="{{ url_for('auth.login') }}">Login to workspace</a>
@@ -541,7 +542,7 @@
       </div>
       <div>
         <h4>Company</h4>
-        <span>Euclidee Software Solutions Pvt. Ltd.</span>
+        <span>ESS Tracker</span>
         <span>Time tracking &amp; productivity</span>
         <a href="{{ url_for('views.download_page') }}">Download app</a>
         <a href="{{ url_for('auth.login') }}">Sign in</a>
@@ -549,8 +550,8 @@
       </div>
     </div>
     <div class="pub-container pub-footer-bottom">
-      <img src="{{ url_for('static', filename='brand/euclidee-logo.png') }}" alt="Euclidee" />
-      <p>© 2026 Euclidee Software Solutions Private Limited · esstracker</p>
+      <img src="{{ url_for('static', filename='brand/euclidee-logo.png') }}" alt="ESS Tracker" />
+      <p>© 2026 ESS Tracker · esstracker</p>
       <div>
         <a href="#tour" data-tour-open>Tour</a>
         <a href="#faq">Help</a>

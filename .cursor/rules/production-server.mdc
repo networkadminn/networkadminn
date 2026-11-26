@@ -1,0 +1,76 @@
+---
+description: Production tracker server — deploy path, SSH, and Gunicorn reload
+alwaysApply: true
+---
+
+# Production server (ESS Tracker / timetrack)
+
+When the user asks to deploy, refresh the server, or restart the web app after code changes, **use this host** — do not assume `/opt/esstracker` on the dev machine is production.
+
+## Public URL
+
+- **App:** https://tracker.euclideesolutions.com
+- **Hostname:** `server.euclideesolutions.com`
+
+## SSH (from dev machine `na`)
+
+Credentials file (do not commit the `.pem`):
+
+- `~/Documents/sachinsharma/Server_details.txt`
+- Key: `~/Documents/sachinsharma/server-key.pem`
+
+```bash
+ssh -i ~/Documents/sachinsharma/server-key.pem root@31.97.239.250 -p 22
+```
+
+## App layout on server
+
+| Item | Path |
+|------|------|
+| Project root | `/www/wwwroot/timetrack` |
+| Python package | `/www/wwwroot/timetrack/timetrack/` |
+| Gunicorn config | `/www/wwwroot/timetrack/gunicorn_conf.py` |
+| PID file | `/www/wwwroot/timetrack/gunicorn.pid` |
+| Bind | `0.0.0.0:8080` (behind panel/nginx) |
+| Python venv | `/www/server/pyporject_evn/timetrack312/bin/python3.12` |
+| WSGI | `wsgi:app` |
+| Logs | `/www/wwwlogs/python/timetrack/gunicorn_*.log` |
+| Data | `/www/wwwroot/timetrack/data` |
+
+## Deploy code after local changes (CI — preferred)
+
+**Do not rsync from the laptop by default.** Push to GitHub and use:
+
+- Workflow: `.github/workflows/deploy-web.yml` (`Deploy web`)
+- Auto: push to `main` / `master` / `release/**` when `timetrack/**` changes
+- Manual: Actions → **Deploy web** → Run workflow
+- Secret: `PRODUCTION_SSH_KEY` (same as client release)
+
+### Manual laptop rsync (only if user explicitly asks)
+
+Local repo: `/home/netadmin/networkadminn`. Sync **only** the `timetrack/` tree:
+
+```bash
+rsync -avz --delete \
+  --exclude '__pycache__' --exclude '*.pyc' \
+  -e "ssh -i ~/Documents/sachinsharma/server-key.pem -p 22 -o IdentitiesOnly=yes" \
+  /home/netadmin/networkadminn/timetrack/ \
+  root@31.97.239.250:/www/wwwroot/timetrack/timetrack/
+```
+
+Then reload workers (graceful):
+
+```bash
+ssh -i ~/Documents/sachinsharma/server-key.pem -p 22 -o IdentitiesOnly=yes root@31.97.239.250 \
+  'kill -HUP $(cat /www/wwwroot/timetrack/gunicorn.pid)'
+```
+
+Verify a fix landed, e.g. `grep _apply_offline_overrides /www/wwwroot/timetrack/timetrack/analytics.py`.
+
+## Not production
+
+- `/opt/esstracker/` on the employee PC = **agent client** install only; updating it does **not** update the website.
+
+## Agent default server URL
+
+Packaged agent points at `https://tracker.euclideesolutions.com` (`packaging/linux/defaults.toml`).

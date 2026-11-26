@@ -11,14 +11,15 @@ from __future__ import annotations
 import os
 import random
 import signal
+import sys
 import threading
 import time
 import uuid
 from types import FrameType
 
 from .. import platform as pf
-from ..monitor import extract_url
-from ..platform.screenshot import capture_jpeg
+from ..monitor import clean_url, extract_url, is_browser
+from ..platform.screenshot import capture_jpeg, ensure_macos_screen_recording_access
 from .buffer import AgentBuffer
 from .client import ServerClient
 from .config import AgentConfig, load_agent_config
@@ -31,9 +32,11 @@ class Agent:
         self.buffer = AgentBuffer(self.config.buffer_path)
         self.client = ServerClient(self.config.server_url, self.config.api_token)
         self._running = False
+        self._stop_reason = "quit"
         self._last_window = ("unknown", "")
         self._private = False
         self._private_allowed = True
+        self._tray_logout_allowed, self._tray_quit_allowed = self._load_tray_policy()
         self._shot_blur = False
         self._shot_random = True
         self._shot_interval = self.config.screenshot_interval
@@ -42,7 +45,7 @@ class Agent:
         self.username = ""
         self.display_name = ""
         self.role = ""
-        self.company_name = "Euclidee Software Solutions"
+        self.company_name = "ESS Tracker"
         self._tray = None
         self._loop_thread: threading.Thread | None = None
         self._was_idle = False
@@ -64,6 +67,41 @@ class Agent:
         return self._private_allowed
 
     @property
+    def is_admin(self) -> bool:
+        return (self.role or "").lower() in ("admin", "superadmin")
+
+    @property
+    def tray_logout_allowed(self) -> bool:
+        return self.is_admin or self._tray_logout_allowed
+
+    @property
+    def tray_quit_allowed(self) -> bool:
+        return self.is_admin or self._tray_quit_allowed
+
+    def _tray_policy_path(self) -> str:
+        return os.path.join(os.path.dirname(os.path.abspath(self.config.buffer_path)), "tray_policy.json")
+
+    def _load_tray_policy(self) -> tuple[bool, bool]:
+        """Last policy from the server, so it still applies when starting offline."""
+        import json
+
+        try:
+            with open(self._tray_policy_path(), encoding="utf-8") as fh:
+                data = json.load(fh)
+            return bool(data.get("logout", True)), bool(data.get("quit", True))
+        except (OSError, ValueError, AttributeError):
+            return True, True
+
+    def _save_tray_policy(self) -> None:
+        import json
+
+        try:
+            with open(self._tray_policy_path(), "w", encoding="utf-8") as fh:
+                json.dump({"logout": self._tray_logout_allowed, "quit": self._tray_quit_allowed}, fh)
+        except OSError:
+            pass
+
+    @property
     def online(self) -> bool:
         return self._online
 
@@ -73,6 +111,9 @@ class Agent:
 
     def refresh_server_policy(self) -> None:
         ping = self.client.ping()
+        if not ping and self.client.unauthorized and self._running:
+            if self._relogin():
+                ping = self.client.ping()
         if not ping:
             self._online = False
             if self._tray:
@@ -84,8 +125,23 @@ class Agent:
         self.username = str(ping.get("user") or self.username)
         self.display_name = str(ping.get("name") or self.display_name or self.username)
         self.role = str(ping.get("role") or self.role)
+        policy = (
+            bool(ping.get("tray_logout_allowed", True)),
+            bool(ping.get("tray_quit_allowed", True)),
+        )
+        if policy != (self._tray_logout_allowed, self._tray_quit_allowed):
+            self._tray_logout_allowed, self._tray_quit_allowed = policy
+            self._save_tray_policy()
         if ping.get("company"):
             self.company_name = str(ping["company"])
+        if ping.get("client_update"):
+            from .update_ui import maybe_prompt_update
+
+            maybe_prompt_update(
+                ping["client_update"],
+                server_url=self.config.server_url,
+                state_dir=os.path.dirname(os.path.abspath(self.config.buffer_path)),
+            )
         shots = ping.get("screenshots") or {}
         if "enabled" in shots:
             self._shots_enabled = bool(shots["enabled"]) and self.config.screenshots_enabled
@@ -112,7 +168,7 @@ class Agent:
         if isinstance(rules, dict):
             from ..config import merge_rules
 
-            self.config.rules = merge_rules(rules)
+            self.config.rules = merge_rules(rules, org_only=True)
         if self._tray:
             self._tray.refresh_ui()
 
@@ -161,7 +217,11 @@ class Agent:
         else:
             app, title = window.app, window.title
         self._last_window = (app, title)
-        url = "" if is_idle else extract_url(app, title)
+        url = ""
+        if not is_idle:
+            if is_browser(app):
+                url = clean_url(pf.get_browser_url(window))
+            url = url or extract_url(app, title)
 
         category = "neutral" if is_idle else self.config.categorize(app, title, url=url)
         self.buffer.add_activity(app, title, category, is_idle, elapsed, now, url=url)
@@ -248,6 +308,8 @@ class Agent:
     def run(self, *, tray: bool = True) -> None:
         self._running = True
         self._install_signal_handlers()
+        if sys.platform == "darwin" and self._shots_enabled:
+            ensure_macos_screen_recording_access()
         self.refresh_server_policy()
 
         who = self.display_name or self.username or "??"
@@ -259,6 +321,12 @@ class Agent:
             f"private={'ON' if self._private else 'off'} "
             f"tray={'on' if tray else 'off'}"
         )
+        if pf.backend_name() == "linux" and not pf.idle_detection_available():
+            print(
+                "[timetrack-agent] WARNING: idle detection unavailable — "
+                "install xprintidle (sudo apt install xprintidle) or use an X11 session. "
+                "Away time may be logged as active until fixed."
+            )
 
         if tray:
             from .tray import AgentTray, tray_available
@@ -306,10 +374,30 @@ class Agent:
                     next_flush = mono + cfg.flush_interval
         finally:
             self._safe(self.flush)
+            if self.client.token:
+                self._safe(self.client.notify_stop, self._stop_reason)
             self.buffer.close()
             print("[timetrack-agent] stopped.")
 
+    def _relogin(self) -> bool:
+        """Session ended (30 days or revoked): ask to sign in, or quit if cancelled."""
+        from .login_ui import show_login
+
+        print("[esstracker] session expired — please sign in again")
+        if show_login(self.config):
+            self.client.token = self.config.api_token
+            return True
+        print("[esstracker] sign-in cancelled — stopping")
+        self.request_stop("logout")
+        if self._tray is not None and self._tray._icon is not None:
+            self._tray._icon.stop()
+        return False
+
     def stop(self, *_: object) -> None:
+        self._running = False
+
+    def request_stop(self, reason: str = "quit") -> None:
+        self._stop_reason = reason
         self._running = False
 
     @staticmethod

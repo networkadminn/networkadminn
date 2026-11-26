@@ -73,12 +73,37 @@ def _acquire_single_instance_windows() -> bool:
     return True
 
 
+def _lock_holder_alive() -> bool:
+    """True if agent.lock references a running process (stale after crash)."""
+    try:
+        pid = int(LOCK_PATH.read_text(encoding="utf-8").strip())
+    except (OSError, ValueError):
+        return False
+    if pid <= 0:
+        return False
+    try:
+        os.kill(pid, 0)
+    except OSError:
+        return False
+    return True
+
+
 def _acquire_single_instance_posix() -> bool:
     """fcntl flock — used on Linux/macOS."""
     global _lock_fh
     import fcntl
 
-    _lock_fh = open(LOCK_PATH, "w", encoding="utf-8")
+    try:
+        ensure_data_dirs()
+        if LOCK_PATH.exists() and not _lock_holder_alive():
+            LOCK_PATH.unlink(missing_ok=True)
+        _lock_fh = open(LOCK_PATH, "w", encoding="utf-8")
+    except OSError as exc:
+        print(
+            f"[esstracker] warning: could not use lock file ({exc!r}); "
+            "continuing without single-instance guard"
+        )
+        return True
     try:
         fcntl.flock(_lock_fh.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
     except BlockingIOError:
@@ -112,15 +137,43 @@ def _ensure_signed_in(cfg, *, force_login: bool = False):
     client = ServerClient(cfg.server_url, cfg.api_token)
     if client.ping() is not None:
         return True
-    # Token expired / wrong server → ask again
+    if not client.unauthorized:
+        # No network yet (e.g. Wi-Fi still connecting after boot): keep the saved
+        # sign-in and track offline; the buffer syncs once the server is reachable.
+        print("[esstracker] server not reachable — starting offline")
+        return True
     print("[esstracker] session expired — please sign in again")
     cfg.api_token = ""
     return show_login(cfg)
 
 
+def _notify_already_running() -> None:
+    """Windowed macOS builds have no console — surface a visible hint."""
+    msg = "esstracker is already running. Click the ESS icon in the menu bar."
+    if sys.platform == "darwin":
+        try:
+            import subprocess
+
+            safe = msg.replace('"', "'")[:500]
+            subprocess.run(
+                [
+                    "osascript",
+                    "-e",
+                    f'display notification "{safe}" with title "esstracker"',
+                ],
+                check=False,
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+            )
+            return
+        except Exception:
+            pass
+    print(f"[esstracker] already running (tray). {msg}")
+
+
 def _cmd_run(args: argparse.Namespace) -> int:
     if not _acquire_single_instance():
-        print("[esstracker] already running (tray). Open the ESS tray icon.")
+        _notify_already_running()
         return 0
 
     cfg = load_agent_config(args.config)
@@ -201,6 +254,32 @@ def _cmd_logout(args: argparse.Namespace) -> int:
     return 0
 
 
+def _cmd_preferences(args: argparse.Namespace) -> int:
+    from .prefs_ui import run_preferences_window
+
+    agent = Agent(load_agent_config(args.config))
+    try:
+        agent.refresh_server_policy()
+        run_preferences_window(agent)
+    finally:
+        agent.buffer.close()
+    return 0
+
+
+def _cmd_open_url(args: argparse.Namespace) -> int:
+    """Handle esstracker:// links from the browser (DeskTime-style launch)."""
+    url = (args.url or "").strip()
+    if url:
+        print(f"[esstracker] open {url}")
+    run_args = argparse.Namespace(
+        config=args.config,
+        no_tray=False,
+        no_login=False,
+        login=False,
+    )
+    return _cmd_run(run_args)
+
+
 def build_parser() -> argparse.ArgumentParser:
     p = argparse.ArgumentParser(prog="esstracker-agent", description=__doc__)
     p.add_argument("-c", "--config", help="path to agent.toml")
@@ -228,20 +307,67 @@ def build_parser() -> argparse.ArgumentParser:
     sub.add_parser("logout", help="clear saved login (DeskTime sign-out)").set_defaults(
         func=_cmd_logout
     )
+    sub.add_parser("preferences", help="open the preferences window").set_defaults(
+        func=_cmd_preferences
+    )
     pp = sub.add_parser("private", help="toggle DeskTime-style Private Time")
     pp.add_argument("mode", choices=("on", "off", "status"))
     pp.set_defaults(func=_cmd_private)
+    ou = sub.add_parser("open-url", help="handle esstracker:// URL from the browser")
+    ou.add_argument("url", help="esstracker://…")
+    ou.set_defaults(func=_cmd_open_url)
     return p
 
 
+def _show_fatal_error(exc: BaseException) -> None:
+    """Windowed macOS .app has no terminal — surface startup crashes."""
+    msg = f"{type(exc).__name__}: {exc}"
+    print(f"[esstracker] fatal: {msg}", file=sys.stderr)
+    if sys.platform != "darwin":
+        return
+    try:
+        import subprocess
+
+        safe = msg.replace('"', "'")[:500]
+        subprocess.run(
+            [
+                "osascript",
+                "-e",
+                f'display alert "esstracker could not start" message "{safe}" as critical',
+            ],
+            check=False,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+        )
+    except Exception:
+        pass
+
+
 def main(argv: list[str] | None = None) -> None:
-    raw = list(sys.argv[1:] if argv is None else argv)
-    commands = {"run", "ping", "status", "flush", "private", "logout"}
-    if not raw or raw[0] not in commands:
-        if not (raw and raw[0] in ("-h", "--help")):
-            raw = ["run", *raw]
-    args = build_parser().parse_args(raw)
-    raise SystemExit(args.func(args))
+    try:
+        raw = list(sys.argv[1:] if argv is None else argv)
+        if raw and raw[0].startswith("esstracker://"):
+            raw = ["open-url", raw[0]]
+        commands = {
+            "run",
+            "ping",
+            "status",
+            "flush",
+            "private",
+            "logout",
+            "open-url",
+            "preferences",
+        }
+        if not raw or raw[0] not in commands:
+            if not (raw and raw[0] in ("-h", "--help")):
+                raw = ["run", *raw]
+        args = build_parser().parse_args(raw)
+        raise SystemExit(args.func(args))
+    except SystemExit:
+        raise
+    except Exception as exc:
+        _show_fatal_error(exc)
+        raise SystemExit(1) from exc
 
 
 if __name__ == "__main__":

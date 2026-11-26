@@ -26,6 +26,7 @@ htmlcov/
 *.deb
 *.spec
 packaging/.cache/
+scripts/.gh-bin/
 
 # OS / editor
 .DS_Store
