@@ -64,6 +64,11 @@
         <input name="email" type="email" value="{{ current_user.email }}" maxlength="200" placeholder="you@company.com" autocomplete="email" />
       </label>
       <p class="muted small">Email is used for password reset. Admins can also see it on the Employees page.</p>
+      <label>Time zone
+        <input name="timezone" list="tz-choices" value="{{ current_user.timezone or '' }}" maxlength="64" placeholder="Company default ({{ company_tz_name() }})" autocomplete="off" />
+      </label>
+      <p class="muted small">Your day starts at midnight in this zone. Leave empty to use the company's.</p>
+      <datalist id="tz-choices">{% for z in tz_choices() %}<option value="{{ z }}">{% endfor %}</datalist>
       <button class="btn primary" type="submit">Save profile</button>
     </form>
   </section>

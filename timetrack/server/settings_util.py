@@ -4,6 +4,8 @@ from __future__ import annotations
 
 import json
 import os
+from contextlib import contextmanager
+from functools import lru_cache
 
 from flask import current_app
 from sqlalchemy import inspect, text
@@ -81,6 +83,56 @@ def get_settings(org_id: int | None = None) -> CompanySettings:
 
 def company_tz_name() -> str:
     return (get_settings().timezone or "Asia/Kolkata").strip() or "Asia/Kolkata"
+
+
+def valid_tz_name(name: str | None) -> str | None:
+    """``name`` if it is a known IANA zone, else None."""
+    name = (name or "").strip()
+    if not name:
+        return None
+    try:
+        from zoneinfo import ZoneInfo
+
+        ZoneInfo(name)
+    except Exception:
+        return None
+    return name
+
+
+@lru_cache(maxsize=1)
+def tz_choices() -> list[str]:
+    from zoneinfo import available_timezones
+
+    return sorted(z for z in available_timezones() if "/" in z and not z.startswith("Etc/"))
+
+
+def user_tz_name(user) -> str:
+    """Zone that splits this employee's days (their own, else the company's)."""
+    return valid_tz_name(getattr(user, "timezone", None)) or company_tz_name()
+
+
+def active_tz_name() -> str:
+    """Zone for the current request: the employee in scope, else the company."""
+    from flask import g, has_app_context
+
+    if has_app_context():
+        override = g.get("tz_name")
+        if override:
+            return override
+    return company_tz_name()
+
+
+@contextmanager
+def user_tz(user):
+    """Compute day boundaries in ``user``'s zone for the duration of the block."""
+    from flask import g
+
+    previous = g.get("tz_name")
+    g.tz_name = user_tz_name(user)
+    try:
+        yield
+    finally:
+        g.tz_name = previous
 
 
 def rules_path(org_id: int | None = None) -> str:
@@ -346,6 +398,8 @@ def ensure_schema() -> None:
         ("users", "token_issued_at", "REAL"),
         ("users", "avatar_filename", "VARCHAR(120) DEFAULT ''"),
         ("users", "avatar_updated_at", "REAL"),
+        ("users", "timezone", "VARCHAR(64)"),
+        ("users", "agent_stop_reason", "VARCHAR(32)"),
         ("company_settings", "organization_id", "INTEGER DEFAULT 1"),
         ("users", "organization_id", "INTEGER DEFAULT 1"),
         ("teams", "organization_id", "INTEGER DEFAULT 1"),

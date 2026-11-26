@@ -11,6 +11,8 @@ from .mail import send_email
 from .models import ROLE_ADMIN, ROLE_EMPLOYEE, ROLE_SUPERADMIN, User
 from .settings_util import get_settings
 
+UPDATE_GRACE_SECONDS = 15 * 60
+
 
 def touch_agent_ping(user: User) -> None:
     """Record latest agent heartbeat (ping or activity sync) and client version."""
@@ -119,6 +121,13 @@ def check_stale_trackers(org_id: int, *, stale_seconds: float = 90.0) -> None:
         if gap < stale_seconds or gap > 86400:
             continue
         if u.tracker_stop_alerted_at and u.tracker_stop_alerted_at >= last:
+            continue
+        # The installer may sit on its Finish page for a while before relaunching.
+        if (
+            u.agent_stop_reason == "update"
+            and u.agent_stopped_at
+            and now - float(u.agent_stopped_at) < UPDATE_GRACE_SECONDS
+        ):
             continue
         send_tracker_stop_alert(u, reason="stopped")
 

@@ -96,6 +96,7 @@ class User(UserMixin, db.Model):
     tracker_stop_alerted_at = db.Column(db.Float, nullable=True)
     # Set when the agent reports Quit / Sign out; cleared on its next ping or sync.
     agent_stopped_at = db.Column(db.Float, nullable=True)
+    agent_stop_reason = db.Column(db.String(32), nullable=True)
     # Reported by the agent on every ping/sync (NULL = client older than 0.3.2).
     agent_version = db.Column(db.String(32), nullable=True)
     agent_platform = db.Column(db.String(16), nullable=True)
@@ -103,6 +104,8 @@ class User(UserMixin, db.Model):
     token_issued_at = db.Column(db.Float, nullable=True)
     avatar_filename = db.Column(db.String(120), default="")
     avatar_updated_at = db.Column(db.Float, nullable=True)
+    # IANA zone for this employee's day boundaries (NULL = company time zone).
+    timezone = db.Column(db.String(64), nullable=True)
 
     activities = db.relationship(
         "Activity", backref="user", lazy="dynamic", cascade="all, delete-orphan"
@@ -126,8 +129,36 @@ class User(UserMixin, db.Model):
         return self.display_name or self.username
 
     def rotate_token(self) -> str:
+        """New legacy token and sign out every device session."""
         self.api_token = generate_token()
+        self.token_issued_at = None
+        if self.id is not None:
+            db.session.execute(db.delete(AgentSession).where(AgentSession.user_id == self.id))
         return self.api_token
+
+
+class AgentSession(db.Model):
+    """One signed-in desktop agent; each device has its own token and 30-day window."""
+
+    __tablename__ = "agent_sessions"
+
+    id = db.Column(db.Integer, primary_key=True)
+    user_id = db.Column(
+        db.Integer, db.ForeignKey("users.id"), nullable=False, index=True
+    )
+    token = db.Column(
+        db.String(64), unique=True, nullable=False, index=True, default=generate_token
+    )
+    device_id = db.Column(db.String(64), nullable=False, default="")
+    device_name = db.Column(db.String(200), nullable=False, default="")
+    platform = db.Column(db.String(16), nullable=False, default="")
+    issued_at = db.Column(db.Float, nullable=False)
+    last_seen_at = db.Column(db.Float, nullable=True)
+
+    user = db.relationship(
+        "User",
+        backref=db.backref("agent_sessions", lazy="dynamic", cascade="all, delete-orphan"),
+    )
 
 
 class Activity(db.Model):
@@ -369,6 +400,7 @@ __all__ = [
     "Organization",
     "Team",
     "User",
+    "AgentSession",
     "Activity",
     "Screenshot",
     "Project",
