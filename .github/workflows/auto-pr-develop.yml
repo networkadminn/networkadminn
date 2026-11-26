@@ -1,0 +1,71 @@
+# On every push to develop, open (or reuse) a PR into the release branch.
+# Merge that PR to trigger Deploy web → production.
+
+name: Auto PR from develop
+
+on:
+  push:
+    branches: [develop]
+  workflow_dispatch:
+    inputs:
+      base:
+        description: Base branch for the PR
+        required: false
+        default: release/0.3.0
+        type: string
+
+permissions:
+  contents: read
+  pull-requests: write
+
+jobs:
+  open-pr:
+    name: develop → release PR
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Create or update pull request
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          BASE: ${{ inputs.base || 'release/0.3.0' }}
+        run: |
+          set -euo pipefail
+          git fetch origin "$BASE" develop --quiet
+
+          ahead=$(git rev-list --count "origin/${BASE}..origin/develop" || echo 0)
+          if [ "$ahead" = "0" ]; then
+            echo "develop has no commits ahead of $BASE — nothing to PR"
+            exit 0
+          fi
+
+          body=$(cat <<EOF
+          ## Summary
+          Auto-opened from pushes to \`develop\`.
+
+          ## Ship path
+          1. Review this PR
+          2. Merge into \`${BASE}\`
+          3. **Deploy web** runs on merge (timetrack changes) → production
+
+          _Latest tip: \`${GITHUB_SHA}\`_
+          EOF
+          )
+
+          existing_json=$(gh pr list --base "$BASE" --head develop --state open --json number,url -q '.[0] // empty')
+          if [ -n "$existing_json" ]; then
+            num=$(printf '%s' "$existing_json" | python3 -c 'import sys,json; print(json.load(sys.stdin)["number"])')
+            url=$(printf '%s' "$existing_json" | python3 -c 'import sys,json; print(json.load(sys.stdin)["url"])')
+            echo "PR already open: $url"
+            gh pr edit "$num" --title "Promote develop → ${BASE}" --body "$body" || true
+            echo "$url" >> "$GITHUB_STEP_SUMMARY"
+            exit 0
+          fi
+
+          url=$(gh pr create --base "$BASE" --head develop \
+            --title "Promote develop → ${BASE}" \
+            --body "$body")
+          echo "Opened: $url"
+          echo "$url" >> "$GITHUB_STEP_SUMMARY"
