@@ -1,0 +1,14 @@
+{% macro render(user, class='', kind='who') %}
+  {% set base = 'avatar' if kind == 'dir' else 'who-avatar' %}
+  {% if user.avatar_filename %}
+  <img
+    class="{{ base }} has-photo {{ class }}"
+    src="{{ url_for('views.user_avatar', user_id=user.id, v=(user.avatar_updated_at or 0)|int) }}"
+    alt=""
+    width="{% if kind == 'dir' %}32{% else %}36{% endif %}"
+    height="{% if kind == 'dir' %}32{% else %}36{% endif %}"
+  />
+  {% else %}
+  <span class="{{ base }} {{ class }}" aria-hidden="true">{{ user.name[0]|upper }}</span>
+  {% endif %}
+{% endmacro %}

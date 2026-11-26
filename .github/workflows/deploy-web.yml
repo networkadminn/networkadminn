@@ -62,8 +62,45 @@ jobs:
             ./timetrack/ \
             root@31.97.239.250:/www/wwwroot/timetrack/timetrack/
 
-          $SSH root@31.97.239.250 \
-            'kill -HUP $(cat /www/wwwroot/timetrack/gunicorn.pid) && echo reloaded && test -f /www/wwwroot/timetrack/gunicorn.pid'
+          $SSH root@31.97.239.250 'bash -s' <<'REMOTE'
+          set -euo pipefail
+          APP=/www/wwwroot/timetrack
+          PIDF=$APP/gunicorn.pid
+          PY=/www/server/pyporject_evn/timetrack312/bin/python3.12
+          cd "$APP"
+
+          if [ -f "$PIDF" ]; then
+            pid=$(tr -d ' \n\r' < "$PIDF" || true)
+            if [ -n "${pid:-}" ] && kill -0 "$pid" 2>/dev/null; then
+              kill -HUP "$pid"
+              echo "reloaded pid=$pid"
+            else
+              echo "stale pid ${pid:-none}; clearing"
+              rm -f "$PIDF"
+            fi
+          fi
+
+          if [ ! -f "$PIDF" ] || ! kill -0 "$(tr -d ' \n\r' < "$PIDF")" 2>/dev/null; then
+            if command -v btpython >/dev/null 2>&1 && [ -f /www/server/panel/script/restart_project.py ]; then
+              btpython /www/server/panel/script/restart_project.py python timetrack
+              echo "restarted via aaPanel"
+            else
+              "$PY" -m gunicorn -c gunicorn_conf.py --user www --group www --daemon wsgi:app
+              echo "started gunicorn pid=$(cat "$PIDF")"
+            fi
+          fi
+
+          for _ in 1 2 3 4 5 6 7 8; do
+            if [ -f "$PIDF" ] && kill -0 "$(tr -d ' \n\r' < "$PIDF")" 2>/dev/null; then
+              echo "gunicorn up pid=$(tr -d ' \n\r' < "$PIDF")"
+              exit 0
+            fi
+            sleep 1
+          done
+          echo "gunicorn failed to stay up" >&2
+          tail -40 /www/wwwlogs/python/timetrack/gunicorn_error.log >&2 || true
+          exit 1
+          REMOTE
 
       - name: Smoke check
         run: |
@@ -73,6 +110,7 @@ jobs:
           case "$code" in
             200|302|301) ;;
             *)
-              echo "::warning::Unexpected status from /login: $code"
+              echo "::error::Unexpected status from /login: $code"
+              exit 1
               ;;
           esac

@@ -1,0 +1,54 @@
+        <tbody id="admin-team-tbody">
+          {% for r in rows %}
+          <tr onclick="window.location='{{ url_for('views.admin_user', user_id=r.user.id) }}?day={{ day }}'">
+            <td>
+              <div class="emp">
+                <span class="avatar {% if r.online %}online-ring{% endif %}">{{ r.user.name[0]|upper }}</span>
+                <span>
+                  <strong>{{ r.user.name }}</strong>
+                  <span class="muted">@{{ r.user.username }}</span>
+                </span>
+              </div>
+            </td>
+            <td>
+              {% if r.absent %}<span class="status offline">Absent</span>
+              {% elif off_day %}<span class="status">Off day</span>
+              {% elif r.late %}<span class="status late">Late</span>
+              {% elif r.early %}<span class="status early">Early</span>
+              {% elif r.online %}<span class="status online">Online</span>
+              {% else %}<span class="status offline">Offline</span>{% endif %}
+              {% if r.online and r.live %}
+              <div class="table-now muted">{{ r.live.app }}{% if r.live.domain %} · {{ r.live.domain }}{% endif %}</div>
+              {% endif %}
+            </td>
+            <td class="client-ver">
+              {% if r.user.agent_version %}
+              <span title="Last reported by esstracker desktop app">v{{ r.user.agent_version }}</span>
+              {% if r.user.agent_platform %}<span class="muted"> · {{ r.user.agent_platform|title }}</span>{% endif %}
+              {% if client_outdated(r.user.agent_version) %}<span class="pill warn" style="margin-left:4px;font-size:0.65rem">Update</span>{% endif %}
+              {% else %}
+              <span class="muted">—</span>
+              {% endif %}
+            </td>
+            <td>{{ r.arrived }}</td>
+            <td>{{ r.left }}</td>
+            <td>
+              <div class="prod-cell">
+                <div class="minibar"><div class="minibar-fill" style="width:{{ r.dt_productivity }}%"></div></div>
+                <span>{{ r.dt_productivity }}%</span>
+              </div>
+            </td>
+            <td>
+              <span class="eff-badge {% if r.dt_effectiveness >= 80 %}good{% elif r.dt_effectiveness >= 50 %}ok{% endif %}">{{ r.dt_effectiveness }}%</span>
+            </td>
+            <td class="num">{{ humanize(r.desktime_seconds) }}</td>
+            <td class="num prod-t">{{ humanize(r.summary.productive_seconds) }}</td>
+            <td class="num">{{ humanize(r.summary.unproductive_seconds) }}</td>
+            <td class="num">{{ humanize(r.summary.idle_seconds) }}</td>
+            <td class="num">{{ r.shots }}</td>
+          </tr>
+          {% endfor %}
+          {% if not rows %}
+          <tr><td colspan="12" class="empty">No employees yet. Add them under Team members.</td></tr>
+          {% endif %}
+        </tbody>

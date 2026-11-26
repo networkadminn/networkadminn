@@ -1,0 +1,40 @@
+  <section class="live-board panel dash-panel" id="live-now" aria-label="Who is online now">
+    <div class="panel-head">
+      {% set live_rows = rows|selectattr('online')|list %}
+      <h2>Live now <span class="dash-count">{{ live_rows|length }}</span></h2>
+      <span class="muted">online = activity in last {{ online_window }}s</span>
+    </div>
+    {% if live_rows %}
+    <div class="live-grid">
+      {% for r in live_rows %}
+      <a class="live-card {% if r.live.idle %}is-idle{% endif %}" href="{{ url_for('views.admin_user', user_id=r.user.id) }}?day={{ day }}">
+        <div class="live-card-top">
+          <span class="avatar">{{ r.user.name[0]|upper }}</span>
+          <div class="live-who">
+            <strong>{{ r.user.name }}</strong>
+            <span class="live-ago">{% if r.live.idle %}Idle{% else %}Active{% endif %} · {{ r.live.ago }}</span>
+          </div>
+          <span class="live-dot {% if r.live.idle %}idle{% else %}on{% endif %}" aria-hidden="true"></span>
+        </div>
+        <div class="live-now-app">
+          <span class="tag {{ r.live.category }}">{{ r.live.category }}</span>
+          <strong class="live-app-name">{{ r.live.app }}</strong>
+        </div>
+        {% if r.live.domain %}
+        <div class="live-domain">{{ r.live.domain }}</div>
+        {% elif r.live.title %}
+        <div class="live-title" title="{{ r.live.title }}">{{ r.live.title }}</div>
+        {% else %}
+        <div class="live-title muted">—</div>
+        {% endif %}
+      </a>
+      {% endfor %}
+    </div>
+    {% else %}
+    <p class="empty">No one online right now. Agents must be running and syncing.</p>
+    {% endif %}
+    {% set offline_n = rows|selectattr('online', 'equalto', false)|list|length %}
+    {% if offline_n %}
+    <p class="metric-hint">{{ offline_n }} offline · <a href="#team-table">See full team table</a></p>
+    {% endif %}
+  </section>

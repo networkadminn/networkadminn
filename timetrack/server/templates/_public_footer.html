@@ -1,0 +1,28 @@
+<footer class="dt-footer">
+  <div class="pub-container dt-footer-grid">
+    <div class="pub-footer-brand">
+      <a class="pub-logo" href="{{ url_for('views.home') }}">
+        <img src="{{ url_for('static', filename='brand/ess-mark.png') }}" alt="" />
+        <span><strong>esstracker</strong><small>ESS Tracker</small></span>
+      </a>
+      <p>Automatic time tracking &amp; productivity insights — self-hosted for teams that own their data.</p>
+    </div>
+    <div>
+      <h4>Product</h4>
+      <a href="{{ url_for('views.home') }}#solutions">Solutions</a>
+      <a href="{{ url_for('views.blog_index') }}">Blog</a>
+      <a href="{{ url_for('views.home') }}#tour">Tour</a>
+      <a href="/login?next=/download">Download app</a>
+    </div>
+    <div>
+      <h4>Account</h4>
+      <a href="{{ url_for('auth.login') }}">Sign in</a>
+      <a href="{{ url_for('auth.login') }}">Start free</a>
+      <a href="{{ url_for('views.home') }}#faq">Help</a>
+    </div>
+  </div>
+  <div class="pub-container pub-footer-bottom">
+    <img src="{{ url_for('static', filename='brand/euclidee-logo.png') }}" alt="ESS Tracker" />
+    <p>© 2026 ESS Tracker · esstracker</p>
+  </div>
+</footer>

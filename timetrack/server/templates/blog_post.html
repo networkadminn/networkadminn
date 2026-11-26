@@ -1,0 +1,71 @@
+{% extends "blog_layout.html" %}
+{% block title %}{{ post.title }} · esstracker blog{% endblock %}
+{% block blog_head %}
+<meta name="description" content="{{ post.excerpt }}" />
+<link rel="canonical" href="{{ public_url }}/blog/{{ post.slug }}" />
+<meta property="og:type" content="article" />
+<meta property="og:title" content="{{ post.title }}" />
+<meta property="og:description" content="{{ post.excerpt }}" />
+<meta name="twitter:card" content="summary" />
+{% endblock %}
+{% block blog_content %}
+<header class="blog-hub-article-banner">
+  <div class="pub-container blog-hub-article-banner-inner">
+    <nav class="blog-breadcrumb" aria-label="Breadcrumb">
+      <a href="{{ url_for('views.blog_index') }}">Blog</a>
+      <span aria-hidden="true">/</span>
+      <span>{{ post.category }}</span>
+    </nav>
+    <span class="blog-cat-pill" data-cat="{{ post.category | category_slug }}">{{ post.category }}</span>
+    <h1>{{ post.title }}</h1>
+    <p class="blog-article-dek">{{ post.excerpt }}</p>
+    <p class="blog-hub-article-meta">
+      <span class="blog-hub-author">{{ post.author }}</span>
+      <time datetime="{{ post.published }}">{{ post.published | blog_date }}</time>
+      <span>{{ post.read_minutes }} min read</span>
+    </p>
+  </div>
+</header>
+
+<div class="pub-container blog-hub-article-wrap">
+  <article class="blog-hub-article">
+    <div class="blog-article-body">
+      {{ post.body_html | safe }}
+    </div>
+    <footer class="blog-hub-article-foot">
+      <a class="pub-btn-outline" href="{{ url_for('views.blog_index') }}">← Back to blog</a>
+      <a class="pub-btn" href="{{ url_for('auth.login') }}">Open esstracker</a>
+    </footer>
+  </article>
+
+  {% if same_category %}
+  <aside class="blog-hub-article-aside" aria-label="More in this topic">
+    <h2>More on {{ post.category }}</h2>
+    <ul>
+      {% for p in same_category %}
+      <li><a href="{{ url_for('views.blog_post', slug=p.slug) }}">{{ p.title }}</a></li>
+      {% endfor %}
+    </ul>
+  </aside>
+  {% endif %}
+</div>
+
+{% if related %}
+<section class="blog-hub-related pub-container" aria-labelledby="blog-related-heading">
+  <h2 id="blog-related-heading">Recommended reading</h2>
+  <div class="blog-hub-related-grid">
+    {% for p in related %}
+    <article class="blog-hub-card blog-hub-card-flat">
+      <a href="{{ url_for('views.blog_post', slug=p.slug) }}" class="blog-hub-card-link">
+        <span class="blog-cat-pill blog-cat-pill-sm" data-cat="{{ p.category | category_slug }}">{{ p.category }}</span>
+        <h3>{{ p.title }}</h3>
+        <footer>
+          <time datetime="{{ p.published }}">{{ p.published | blog_date }}</time>
+        </footer>
+      </a>
+    </article>
+    {% endfor %}
+  </div>
+</section>
+{% endif %}
+{% endblock %}

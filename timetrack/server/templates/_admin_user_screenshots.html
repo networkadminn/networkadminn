@@ -1,0 +1,57 @@
+<div class="panel-head">
+  <h2>Screenshots</h2>
+  <span class="muted">
+    {% if shot_total|default(0) %}
+      {{ shot_total }} for {{ day }}
+    {% else %}
+      {{ day }}
+    {% endif %}
+    {% if subject %}
+      · <a href="{{ url_for('views.screenshots_browser', day=day, user_id=subject.id) }}">Open gallery</a>
+    {% endif %}
+  </span>
+</div>
+
+{% set pages = shot_pages|default(1) %}
+{% set page = shot_page|default(1) %}
+{% if pages > 1 %}
+<nav class="gallery-pager" aria-label="Screenshot pages">
+  {% if page > 1 %}
+  <a class="gallery-pager-num gallery-pager-arrow" href="?day={{ day }}&bar={{ bar_mode|default('work') }}&shot_page={{ page - 1 }}" aria-label="Previous page">&larr;</a>
+  {% endif %}
+  {% for n in shot_page_numbers|default([1]) %}
+  {% if n is none %}
+  <span class="gallery-pager-ellipsis" aria-hidden="true">…</span>
+  {% elif n == page %}
+  <span class="gallery-pager-num is-on" aria-current="page">{{ n }}</span>
+  {% else %}
+  <a class="gallery-pager-num" href="?day={{ day }}&bar={{ bar_mode|default('work') }}&shot_page={{ n }}">{{ n }}</a>
+  {% endif %}
+  {% endfor %}
+  {% if page < pages %}
+  <a class="gallery-pager-num gallery-pager-arrow" href="?day={{ day }}&bar={{ bar_mode|default('work') }}&shot_page={{ page + 1 }}" aria-label="Next page">&rarr;</a>
+  {% endif %}
+</nav>
+{% endif %}
+
+{% if screenshots %}
+<div class="gallery gallery-compact" data-screenshots-gallery>
+  {% for s in screenshots %}
+  <a class="shot {% if s.is_unproductive %}is-unproductive{% endif %}" href="{{ url_for('views.screenshot', shot_id=s.id) }}" target="_blank" rel="noopener"
+     title="{{ s.app }} — {{ s.title }}">
+    {% if s.is_unproductive %}<span class="shot-flag">Unproductive</span>{% endif %}
+    {% if s.blurred %}<span class="shot-flag blur">Blurred</span>{% endif %}
+    <img loading="lazy" decoding="async" src="{{ url_for('views.thumb', shot_id=s.id) }}" alt="{{ s.app or 'Screenshot' }}" />
+    <span class="shot-meta">
+      <span class="shot-time">{{ s.ts|clock }}</span>
+      <span class="shot-app">{{ s.app or '—' }}</span>
+    </span>
+  </a>
+  {% endfor %}
+</div>
+{% else %}
+<div class="empty-state compact">
+  <h3>No screenshots</h3>
+  <p>Nothing captured for this day.</p>
+</div>
+{% endif %}

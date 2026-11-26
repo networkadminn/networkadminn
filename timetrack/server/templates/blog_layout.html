@@ -1,0 +1,36 @@
+{% extends "base.html" %}
+{% block head %}
+<link rel="stylesheet" href="{{ url_for('static', filename='public.css') }}?v=40" />
+{% block blog_head %}{% endblock %}
+{% endblock %}
+{% block body %}
+<div class="pub-page dt-home blog-page">
+  <div class="pub-progress" id="scrollProgress" aria-hidden="true"></div>
+  {% include "_public_nav.html" %}
+  {% block blog_content %}{% endblock %}
+  {% include "_public_footer.html" %}
+</div>
+{% endblock %}
+{% block scripts %}
+<script>
+(function () {
+  var progressBar = document.getElementById("scrollProgress");
+  var header = document.querySelector(".pub-header");
+  var navToggle = document.getElementById("navToggle");
+  if (progressBar) {
+    window.addEventListener("scroll", function () {
+      var h = document.documentElement.scrollHeight - window.innerHeight;
+      progressBar.style.width = (h > 0 ? (window.scrollY / h) * 100 : 0) + "%";
+      if (header) header.classList.toggle("is-scrolled", window.scrollY > 24);
+    }, { passive: true });
+  }
+  if (navToggle && header) {
+    navToggle.addEventListener("click", function () {
+      var open = header.classList.toggle("is-open");
+      navToggle.setAttribute("aria-expanded", open ? "true" : "false");
+    });
+  }
+})();
+</script>
+{% block blog_scripts %}{% endblock %}
+{% endblock %}

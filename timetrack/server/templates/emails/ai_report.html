@@ -1,0 +1,21 @@
+{% extends "emails/base.html" %}
+{% block title %}AI day report — {{ employee_name }}{% endblock %}
+{% block content %}
+<h1 style="margin:0 0 8px;font-size:20px;font-weight:700;color:#0F172A;letter-spacing:-0.02em;">AI day report</h1>
+<p style="margin:0 0 24px;font-size:14px;color:#64748B;">
+  <strong style="color:#0F172A;">{{ employee_name }}</strong> · @{{ username }} · {{ report_day }}
+</p>
+<div style="margin:0 0 24px;padding:20px 22px;background:linear-gradient(180deg,#F0FDF4 0%,#FFFFFF 100%);border:1px solid #BBF7D0;border-radius:12px;">
+  <p style="margin:0 0 10px;font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:0.06em;color:#047857;">Summary</p>
+  <div style="font-size:15px;line-height:1.65;color:#334155;white-space:pre-wrap;">{{ summary }}</div>
+</div>
+<table role="presentation" cellspacing="0" cellpadding="0" border="0">
+  <tr>
+    <td style="border-radius:10px;background-color:#0B7A4B;">
+      <a href="{{ employee_day_url }}" target="_blank" style="display:inline-block;padding:12px 24px;font-size:14px;font-weight:700;color:#ffffff;text-decoration:none;">View full day in esstracker</a>
+    </td>
+  </tr>
+</table>
+<p style="margin:20px 0 0;font-size:12px;color:#94A3B8;">Generated automatically by esstracker AI (Gemini).</p>
+{% endblock %}
+{% block footer_note %}AI productivity report for administrators.{% endblock %}

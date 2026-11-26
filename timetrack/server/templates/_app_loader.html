@@ -1,0 +1,30 @@
+<div id="app-loader" class="app-loader" role="status" aria-live="polite" aria-busy="true" aria-label="Loading">
+  <div class="app-loader-backdrop" aria-hidden="true"></div>
+  <div class="app-loader-stage">
+    <svg class="app-loader-orbit" viewBox="0 0 200 200" aria-hidden="true">
+      <defs>
+        <path id="appLoaderRingPath" d="M 100, 100 m -74, 0 a 74, 74 0 1, 1 148, 0 a 74, 74 0 1, 1 -148, 0" />
+      </defs>
+      <circle class="app-loader-orbit-track" cx="100" cy="100" r="74" fill="none" />
+      <g class="app-loader-orbit-spin">
+        <text class="app-loader-orbit-text">
+          <textPath href="#appLoaderRingPath" startOffset="0%">
+            EUCLIDEE · SOLUTIONS · EUCLIDEE · SOLUTIONS ·
+          </textPath>
+        </text>
+      </g>
+    </svg>
+    <div class="app-loader-core">
+      <img
+        class="app-loader-logo"
+        src="{{ url_for('static', filename='brand/ess-mark.png') }}"
+        alt=""
+        width="56"
+        height="56"
+        decoding="sync"
+        fetchpriority="high"
+      />
+      <span class="app-loader-word">Euclidee</span>
+    </div>
+  </div>
+</div>
