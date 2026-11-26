@@ -77,7 +77,7 @@ def test_employee_me_page(client):
     assert resp.status_code == 200
     assert b"Productivity timeline" in resp.data or b"Productivity bar" in resp.data
     assert b"Arrival" in resp.data
-    assert b"Desktime" in resp.data
+    assert b"Desk time" in resp.data
 
 
 def test_admin_delete_employee(client, app):
@@ -187,8 +187,9 @@ def test_admin_approves_offline_request_keeps_productive_category(client, app):
         "/offline",
         data={
             "day": day,
-            "start": f"{day}T14:00",
-            "end": f"{day}T14:30",
+            # Outside the default 13:30–14:15 lunch block, which can't be filled.
+            "start": f"{day}T15:00",
+            "end": f"{day}T15:30",
             "category": "productive",
             "note": "Client call",
             "fill_kind": "offline",
