@@ -1,4 +1,4 @@
-"""Linux desktop capture (X11 via mss, Wayland via grim / gnome-screenshot)."""
+"""Linux desktop capture (X11 via mss; Wayland via gnome-screenshot / spectacle / grim)."""
 
 from __future__ import annotations
 
@@ -15,13 +15,18 @@ def _is_wayland() -> bool:
     return bool(os.environ.get("WAYLAND_DISPLAY"))
 
 
-def _image_mostly_black(img, *, sample: int = 4000, threshold: float = 14.0) -> bool:
-    px = list(img.getdata())
-    if not px:
+def _image_mostly_black(img, *, threshold: float = 14.0) -> bool:
+    """True when the *whole* frame is near-black (failed XWayland/permission capture).
+
+    Averages every pixel (computed in C from the histogram), so a dark top panel
+    or a dark-themed editor at the top of the screen does not reject a real capture.
+    """
+    from PIL import ImageStat  # type: ignore
+
+    if img.width <= 0 or img.height <= 0:
         return True
-    n = min(sample, len(px))
-    avg = sum(sum(p) for p in px[:n]) / (n * 3)
-    return avg < threshold
+    mean = ImageStat.Stat(img.convert("RGB")).mean
+    return (sum(mean) / 3.0) < threshold
 
 
 def _capture_grim():
@@ -107,17 +112,63 @@ def _capture_mss():
     from PIL import Image  # type: ignore
 
     with mss.mss() as sct:
-        monitor = sct.monitors[1] if len(sct.monitors) > 1 else sct.monitors[0]
-        raw = sct.grab(monitor)
+        # monitors[0] is the union of all displays, so a second screen is not missed.
+        raw = sct.grab(sct.monitors[0])
         return Image.frombytes("RGB", raw.size, raw.bgra, "raw", "BGRX")
 
 
+def _capture_spectacle():
+    """KDE Plasma (Wayland or X11): ``spectacle`` in background mode, full screen."""
+    from PIL import Image  # type: ignore
+
+    tool = shutil.which("spectacle")
+    if not tool:
+        return None
+    fd, path = tempfile.mkstemp(prefix="esstracker-shot-", suffix=".png")
+    os.close(fd)
+    try:
+        proc = subprocess.run(
+            [tool, "--background", "--nonotify", "--fullscreen", "--output", path],
+            capture_output=True,
+            timeout=15,
+            check=False,
+        )
+        if proc.returncode != 0 or not os.path.getsize(path):
+            return None
+        return Image.open(path).convert("RGB")
+    except (OSError, subprocess.SubprocessError):
+        return None
+    finally:
+        try:
+            os.remove(path)
+        except OSError:
+            pass
+
+
+def _desktop() -> str:
+    return (
+        os.environ.get("XDG_CURRENT_DESKTOP") or os.environ.get("XDG_SESSION_DESKTOP") or ""
+    ).lower()
+
+
 def capture_linux_pil():
-    """Return a PIL RGB image of the primary display, or ``None``."""
+    """Return a PIL RGB image of the desktop (all monitors where the tool allows), or ``None``."""
     if _is_wayland():
-        order = (_capture_grim, _capture_gnome_screenshot, _capture_mss, _capture_import_root)
+        desktop = _desktop()
+        if "kde" in desktop or "plasma" in desktop:
+            first = (_capture_spectacle,)
+        elif "gnome" in desktop or "unity" in desktop:
+            first = (_capture_gnome_screenshot,)
+        else:  # wlroots compositors (Sway, Hyprland, …)
+            first = (_capture_grim,)
+        rest = tuple(
+            f
+            for f in (_capture_grim, _capture_gnome_screenshot, _capture_spectacle, _capture_mss, _capture_import_root)
+            if f not in first
+        )
+        order = first + rest
     else:
-        order = (_capture_mss, _capture_import_root, _capture_grim, _capture_gnome_screenshot)
+        order = (_capture_mss, _capture_import_root, _capture_grim, _capture_gnome_screenshot, _capture_spectacle)
 
     for fn in order:
         try:

@@ -51,6 +51,7 @@ DATAS = [
 
 HIDDEN = [
     "engineio.async_drivers.threading",
+    "certifi",
     "mss",
     "PIL",
     "PIL.ImageTk",
@@ -302,16 +303,55 @@ def _install_icons(deb_root: Path) -> None:
         shutil.copy2(master, pix / "esstracker.png")
 
 
-def _install_agent_venv(optdir: Path) -> None:
-    """Venv + source tree so tray uses system python3-gi (AppIndicator menu)."""
+def _deb_target_python() -> str:
+    """Python the .deb runs on: the build host's *system* python3.
+
+    The venv's compiled wheels (Pillow, psutil) and its lib/pythonX.Y folder only
+    work with the same Python version, and postinst re-points the venv at
+    /usr/bin/python3. Building it with a CI interpreter (e.g. setup-python 3.12)
+    produced a package that could not load its packages on Ubuntu 22.04 (3.10).
+    """
+    return os.environ.get("ESSTRACKER_DEB_PYTHON") or (
+        "/usr/bin/python3" if Path("/usr/bin/python3").exists() else sys.executable
+    )
+
+
+def _python_minor(python: str) -> tuple[int, int]:
+    out = subprocess.run(
+        [python, "-c", "import sys; print(sys.version_info[0], sys.version_info[1])"],
+        check=True,
+        capture_output=True,
+        text=True,
+    ).stdout.split()
+    return int(out[0]), int(out[1])
+
+
+# Oldest system Python the agent source supports (str.removeprefix, PEP 604 types
+# at runtime in a few places); older hosts (Ubuntu 20.04: 3.8) get the frozen binary.
+_MIN_VENV_PYTHON = (3, 10)
+
+
+def _install_agent_venv(optdir: Path) -> tuple[int, int] | None:
+    """Venv + source tree so tray uses system python3-gi (AppIndicator menu).
+
+    Returns the (major, minor) Python version the venv was built for, or None when
+    the build host's python3 is too old: the package then runs the bundled frozen
+    binary only (and must not be pinned to a python3 version).
+    """
     venv = optdir / "venv"
     app = optdir / "app"
     if venv.exists():
         shutil.rmtree(venv)
     if app.exists():
         shutil.rmtree(app)
+    python = _deb_target_python()
+    version = _python_minor(python)
+    if version < _MIN_VENV_PYTHON:
+        print(f"{python} is Python {version[0]}.{version[1]}: skipping venv, frozen binary only")
+        return None
+    print(f"Agent venv uses {python} (Python {version[0]}.{version[1]})")
     subprocess.run(
-        [sys.executable, "-m", "venv", "--system-site-packages", str(venv)],
+        [python, "-m", "venv", "--system-site-packages", str(venv)],
         check=True,
     )
     pip = venv / "bin" / "pip"
@@ -325,11 +365,15 @@ def _install_agent_venv(optdir: Path) -> None:
             "Pillow>=10",
             "pystray>=0.19",
             "tzdata>=2024",
+            "certifi>=2024.2.2",
+            # tomllib is 3.11+; the agent falls back to tomli (else it ignores agent.toml).
+            *(["tomli>=2.0"] if version < (3, 11) else []),
         ],
         check=True,
     )
     shutil.copytree(ROOT / "timetrack", app / "timetrack")
     _relink_venv_python_for_deb(venv)
+    return version
 
 
 def _relink_venv_python_for_deb(venv: Path) -> None:
@@ -374,7 +418,10 @@ def _write_wrapper(path: Path, target: str, *, default_args: str = "") -> None:
         'PYTHON_APP="/opt/esstracker/app"\n'
         f'BIN="/opt/esstracker/{target}"\n'
         'run_agent() {\n'
-        '  if [ -x "$PYTHON_VENV" ] && [ -d "$PYTHON_APP/timetrack" ]; then\n'
+        "  # Use the venv only if its packages load with this system's python3\n"
+        "  # (a Python version mismatch would otherwise start without tray/screenshots).\n"
+        '  if [ -x "$PYTHON_VENV" ] && [ -d "$PYTHON_APP/timetrack" ] && \\\n'
+        '     PYTHONPATH="$PYTHON_APP" "$PYTHON_VENV" -c "import PIL._imaging, psutil, mss; from timetrack.agent import config; assert config.tomllib" >/dev/null 2>&1; then\n'
         '    export PYTHONPATH="$PYTHON_APP${PYTHONPATH:+:$PYTHONPATH}"\n'
         '    if [ "$#" -eq 0 ]; then\n'
         f'      exec "$PYTHON_VENV" -m timetrack.agent {default_args}\n'
@@ -433,7 +480,14 @@ def build_deb() -> Path:
         os.chmod(dst, 0o755)
 
     print("Installing agent venv (tray menu via system AppIndicator)…")
-    _install_agent_venv(optdir)
+    venv_python = _install_agent_venv(optdir)
+    # The venv only works with the Python version it was built for.
+    python_dep = (
+        f"python3 (>= {venv_python[0]}.{venv_python[1]}), "
+        f"python3 (<< {venv_python[0]}.{venv_python[1] + 1}), "
+        if venv_python
+        else ""
+    )
 
     # Client wrappers only
     _write_wrapper(bindir / "esstracker-agent", "timetrack-agent", default_args="run")
@@ -494,7 +548,7 @@ Section: utils
 Priority: optional
 Architecture: {deb_arch}
 Maintainer: ESS Tracker <noreply@euclideesolutions.com>
-Depends: libc6 (>= 2.31), libgtk-3-0t64 | libgtk-3-0, libnotify-bin, libayatana-appindicator3-1 | libappindicator3-1, gir1.2-gtk-3.0, gir1.2-ayatanaappindicator3-0.1 | gir1.2-appindicator3-0.1, python3-gi, python3-tk, libx11-6, libxss1, xprintidle, xdotool, gnome-screenshot
+Depends: libc6 (>= 2.31), {python_dep}libgtk-3-0t64 | libgtk-3-0, libnotify-bin, libayatana-appindicator3-1 | libappindicator3-1, gir1.2-gtk-3.0, gir1.2-ayatanaappindicator3-0.1 | gir1.2-appindicator3-0.1, python3-gi, python3-tk, libx11-6, libxss1, xprintidle, xdotool, gnome-screenshot
 Recommends: grim, x11-utils, gnome-shell-extension-appindicator | gnome-shell-extension-ubuntu-appindicators
 Provides: timetrack
 Conflicts: timetrack
@@ -720,6 +774,75 @@ def _patch_macos_app_bundle(app_dir: Path) -> None:
         ["plutil", "-replace", "CFBundleShortVersionString", "-string", VERSION, str(plist)]
     )
     _run(["plutil", "-replace", "CFBundleVersion", "-string", VERSION, str(plist)])
+    # Shown by macOS when the agent asks System Events for the frontmost app.
+    _run(
+        [
+            "plutil", "-replace", "NSAppleEventsUsageDescription", "-string",
+            "esstracker reads the name of the app you are using to track work time.",
+            str(plist),
+        ]
+    )
+
+
+_MAC_ENTITLEMENTS = """<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <!-- PyInstaller's bootloader loads the bundled Python and its extension modules. -->
+  <key>com.apple.security.cs.allow-unsigned-executable-memory</key><true/>
+  <key>com.apple.security.cs.disable-library-validation</key><true/>
+  <!-- osascript fallback: frontmost app name, alerts and notifications. -->
+  <key>com.apple.security.automation.apple-events</key><true/>
+</dict>
+</plist>
+"""
+
+
+def sign_macos_app(app_dir: Path) -> None:
+    """Code-sign the .app.
+
+    With ESSTRACKER_MAC_SIGN_IDENTITY ("Developer ID Application: …") the bundle is
+    signed with the hardened runtime, which notarization requires. A stable
+    signature also keeps the Screen Recording permission across updates (macOS
+    ties the permission to the app's signing identity). Without it the app is
+    ad-hoc signed, so Apple Silicon can run it, but Gatekeeper will warn and the
+    permission must be granted again after each update.
+    """
+    identity = os.environ.get("ESSTRACKER_MAC_SIGN_IDENTITY", "").strip()
+    if not identity:
+        _run(["codesign", "--force", "--deep", "--sign", "-", str(app_dir)])
+        print("macOS app ad-hoc signed (set ESSTRACKER_MAC_SIGN_IDENTITY for Developer ID)")
+        return
+    ent = BUILD / "esstracker.entitlements"
+    ent.parent.mkdir(parents=True, exist_ok=True)
+    ent.write_text(_MAC_ENTITLEMENTS, encoding="utf-8")
+    _run(
+        [
+            "codesign", "--force", "--deep", "--timestamp", "--options", "runtime",
+            "--entitlements", str(ent), "--sign", identity, str(app_dir),
+        ]
+    )
+    _run(["codesign", "--verify", "--deep", "--strict", "--verbose=2", str(app_dir)])
+    print(f"macOS app signed: {identity}")
+
+
+def notarize_macos_dmg(dmg_path: Path) -> None:
+    """Notarize + staple when ESSTRACKER_MAC_NOTARY_PROFILE (notarytool keychain profile) is set."""
+    profile = os.environ.get("ESSTRACKER_MAC_NOTARY_PROFILE", "").strip()
+    if not profile:
+        print("Not notarized (set ESSTRACKER_MAC_NOTARY_PROFILE): Gatekeeper will warn on other Macs.")
+        return
+    identity = os.environ.get("ESSTRACKER_MAC_SIGN_IDENTITY", "").strip()
+    if identity:
+        _run(["codesign", "--force", "--timestamp", "--sign", identity, str(dmg_path)])
+    _run(
+        [
+            "xcrun", "notarytool", "submit", str(dmg_path),
+            "--keychain-profile", profile, "--wait",
+        ]
+    )
+    _run(["xcrun", "stapler", "staple", str(dmg_path)])
+    print(f"Notarized + stapled: {dmg_path}")
 
 
 def build_dmg(*, arch: str = "") -> Path:
@@ -779,6 +902,7 @@ def build_dmg(*, arch: str = "") -> Path:
             "Foundation",
             "objc",
             "PyObjCTools.MachSignals",
+            "PyObjCTools.AppHelper",
             "pystray._darwin",
         ):
             cmd.extend(["--hidden-import", mod])
@@ -791,13 +915,17 @@ def build_dmg(*, arch: str = "") -> Path:
         sys.exit(f"missing macOS app bundle under {out}")
 
     _patch_macos_app_bundle(app_dir)
+    sign_macos_app(app_dir)
 
     # Stage DMG contents
     stage = BUILD / "dmg-stage"
     if stage.exists():
         shutil.rmtree(stage)
     stage.mkdir(parents=True)
-    shutil.copytree(app_dir, stage / app_dir.name)
+    # Keep the bundle's internal symlinks: dereferencing them changes the sealed
+    # resources and invalidates the signature applied above.
+    shutil.copytree(app_dir, stage / app_dir.name, symlinks=True)
+    _run(["codesign", "--verify", "--deep", "--strict", str(stage / app_dir.name)])
     # Symlink Applications for drag-install (DeskTime pattern)
     try:
         os.symlink("/Applications", stage / "Applications")
@@ -824,9 +952,7 @@ def build_dmg(*, arch: str = "") -> Path:
         ]
     )
     print(f"macOS DMG: {dmg_path}")
-    print(
-        "Next (required for other Macs): codesign + notarize with Apple Developer ID."
-    )
+    notarize_macos_dmg(dmg_path)
     return dmg_path
 
 

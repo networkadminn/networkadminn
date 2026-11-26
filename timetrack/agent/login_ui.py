@@ -9,11 +9,18 @@ dev installs, then CLI.
 from __future__ import annotations
 
 import os
+import queue
 import sys
-import tkinter as tk
+import threading
 from pathlib import Path
-from tkinter import messagebox, ttk
 from typing import Callable
+
+try:  # python3-tk is optional on Linux / Homebrew Python: fall back to GTK or the CLI.
+    import tkinter as tk
+    from tkinter import ttk
+except Exception:  # pragma: no cover - depends on the host Python build
+    tk = None  # type: ignore[assignment]
+    ttk = None  # type: ignore[assignment]
 
 from .client import ServerClient
 from .config import AgentConfig, DEFAULT_SERVER_URL, save_agent_config
@@ -74,6 +81,18 @@ def _logo_path() -> str | None:
 
 def _server_url(cfg: AgentConfig) -> str:
     return (cfg.server_url or DEFAULT_SERVER_URL).rstrip("/")
+
+
+def normalize_server_url(raw: str) -> str:
+    """``tracker.example.com`` -> ``https://tracker.example.com`` ('' if unusable)."""
+    url = (raw or "").strip().rstrip("/")
+    if not url or " " in url:
+        return ""
+    if "://" not in url:
+        url = "https://" + url
+    if not url.startswith(("https://", "http://")):
+        return ""
+    return url
 
 
 def _save_login(cfg: AgentConfig, server: str, data: dict) -> None:
@@ -192,6 +211,9 @@ def _tk_login(
     on_success: Callable[[AgentConfig], None] | None = None,
 ) -> bool:
     """Tkinter login — works inside the frozen .deb on Ubuntu 20/22/24."""
+    if tk is None:
+        print("[esstracker] Tk login unavailable (tkinter not installed)")
+        return False
     try:
         root = tk.Tk()
     except Exception as exc:
@@ -206,7 +228,7 @@ def _tk_login(
     root.configure(bg="#E8F3EC")
 
     # Center on screen
-    w, h = 400, 460
+    w, h = 400, 530
     root.update_idletasks()
     x = (root.winfo_screenwidth() - w) // 2
     y = (root.winfo_screenheight() - h) // 2
@@ -215,7 +237,7 @@ def _tk_login(
     _configure_tk_login_styles(root)
 
     card = tk.Frame(root, bg="#FFFFFF", highlightbackground="#D5E5DB", highlightthickness=1)
-    card.place(relx=0.5, rely=0.5, anchor="center", width=340, height=400)
+    card.place(relx=0.5, rely=0.5, anchor="center", width=340, height=470)
 
     logo = _logo_path()
     if logo:
@@ -264,6 +286,14 @@ def _tk_login(
     pass_entry = ttk.Entry(form, textvariable=pass_var, show="•", font=("Sans", 11))
     pass_entry.pack(fill="x", ipady=6, pady=(2, 8))
 
+    tk.Label(form, text="SERVER", font=("Sans", 8, "bold"), fg="#3D5A4C", bg="#FFFFFF").pack(
+        anchor="w"
+    )
+    server_var = tk.StringVar(value=server)
+    ttk.Entry(form, textvariable=server_var, font=("Sans", 10)).pack(
+        fill="x", ipady=3, pady=(2, 8)
+    )
+
     err_var = tk.StringVar()
     err_lab = tk.Label(
         form, textvariable=err_var, font=("Sans", 9), fg="#C0392B", bg="#FFFFFF", wraplength=280
@@ -271,37 +301,55 @@ def _tk_login(
     err_lab.pack(anchor="w", pady=(0, 6))
 
     status = {"busy": False}
+    # The login request runs in a worker thread (the window would otherwise show
+    # "Not responding" for up to the 15 s timeout); only the Tk thread touches widgets.
+    replies: queue.Queue = queue.Queue()
+
+    def finish_attempt(server_used: str, data: dict) -> None:
+        if not data.get("api_token"):
+            err_var.set(str(data.get("error") or "Sign-in failed — check credentials"))
+            status["busy"] = False
+            btn.configure(state="normal", text="Sign in & start tracking")
+            return
+        _save_login(cfg, server_used, data)
+        result["ok"] = True
+        if on_success:
+            on_success(cfg)
+        root.destroy()
+
+    def poll_reply() -> None:
+        try:
+            server_used, data = replies.get_nowait()
+        except queue.Empty:
+            root.after(100, poll_reply)
+            return
+        finish_attempt(server_used, data)
 
     def do_login(_event=None) -> None:
         if status["busy"]:
             return
         username = user_var.get().strip()
         password = pass_var.get()
+        server_used = normalize_server_url(server_var.get())
         err_var.set("")
         if not username or not password:
             err_var.set("Enter your username and password.")
             return
+        if not server_used:
+            err_var.set("Enter the server address, e.g. https://tracker.example.com")
+            return
         status["busy"] = True
         btn.configure(state="disabled", text="Signing in…")
-        root.update_idletasks()
-        try:
-            client = ServerClient(server, "")
-            data = client.login(username, password) or {}
-        except Exception as exc:
-            err_var.set(f"Could not reach server: {exc}")
-            status["busy"] = False
-            btn.configure(state="normal", text="Sign in & start tracking")
-            return
-        if not data.get("api_token"):
-            err_var.set(str(data.get("error") or "Sign-in failed — check credentials"))
-            status["busy"] = False
-            btn.configure(state="normal", text="Sign in & start tracking")
-            return
-        _save_login(cfg, server, data)
-        result["ok"] = True
-        if on_success:
-            on_success(cfg)
-        root.destroy()
+
+        def work() -> None:
+            try:
+                data = ServerClient(server_used, "").login(username, password) or {}
+            except Exception as exc:
+                data = {"error": f"Could not reach server: {exc}"}
+            replies.put((server_used, data))
+
+        threading.Thread(target=work, daemon=True, name="esstracker-login").start()
+        root.after(100, poll_reply)
 
     if sys.platform == "darwin":
         btn = ttk.Button(
@@ -340,6 +388,11 @@ def _tk_login(
     user_entry.focus_set()
 
     root.protocol("WM_DELETE_WINDOW", root.destroy)
+    # Opened from the tray (child process) it would otherwise appear behind windows.
+    root.lift()
+    root.attributes("-topmost", True)
+    root.after(600, lambda: root.attributes("-topmost", False))
+    root.focus_force()
     try:
         root.mainloop()
     except Exception as exc:
