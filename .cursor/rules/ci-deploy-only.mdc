@@ -1,0 +1,22 @@
+---
+description: Production releases and GitHub — use CI only, not the dev laptop
+alwaysApply: true
+---
+
+# CI deploy — do not use the dev laptop
+
+When publishing **client builds** (`.deb`, Windows installer), **web/server code**, or uploading to **production**:
+
+- **Do** rely on **GitHub Actions**:
+  - Client installers: `client-release.yml` (tag `v*` or `workflow_dispatch`)
+  - Web / `timetrack/` Python: `deploy-web.yml` (push to `main` / `master` / `release/**` under `timetrack/**`, or `workflow_dispatch`)
+- **Do** deploy via the `PRODUCTION_SSH_KEY` secret on the runner.
+- **Do** fix the workflow and **re-run** the failed job (or `workflow_dispatch`) if deploy fails.
+
+**Do not** (unless the user **explicitly** asks for a manual laptop deploy):
+
+- `rsync` / `scp` / `ssh` to `31.97.239.250` from the **local laptop** using `~/Documents/sachinsharma/server-key.pem`.
+- `gh run download` + manual rsync as a default fallback when CI deploy fails.
+- `gh secret set` or other `gh` release/secret operations from the laptop without the user asking.
+
+If CI deploy is broken, report the log error and fix the workflow; do not silently bypass CI from the laptop.

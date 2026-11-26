@@ -391,9 +391,14 @@ def timeline_buckets(
     return buckets
 
 
-def humanize(seconds: float) -> str:
-    seconds = int(round(seconds))
-    h, rem = divmod(seconds, 3600)
+def humanize(seconds: float | None) -> str:
+    try:
+        if seconds is None:
+            seconds = 0.0
+        seconds = int(round(float(seconds)))
+    except (TypeError, ValueError):
+        seconds = 0
+    h, rem = divmod(max(seconds, 0), 3600)
     m, s = divmod(rem, 60)
     if h:
         return f"{h}h {m}m"

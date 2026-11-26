@@ -2134,6 +2134,21 @@ def admin():
             client_outdated=client_outdated,
         )
 
+    total_desktime = float(team.get("active") or 0.0)
+    total_idle = float(team.get("idle") or 0.0)
+    total_productive = float(team.get("productive") or 0.0)
+    total_unproductive = float(team.get("unproductive") or 0.0)
+    total_all = max(total_desktime + total_idle, 1.0)
+    split_prod = round(100.0 * total_productive / total_all, 1)
+    split_unprod = round(100.0 * total_unproductive / total_all, 1)
+    split_neutral = round(
+        100.0
+        * max(0.0, total_desktime - total_productive - total_unproductive)
+        / total_all,
+        1,
+    )
+    split_idle = round(100.0 * total_idle / total_all, 1)
+
     return render_template(
         "admin.html",
         **_day_nav(day),
@@ -2156,6 +2171,14 @@ def admin():
         teams=teams,
         team_id=team_id,
         online_window=int(cfg.online_window),
+        total_desktime=total_desktime,
+        total_productive=total_productive,
+        total_unproductive=total_unproductive,
+        total_idle=total_idle,
+        split_prod=split_prod,
+        split_unprod=split_unprod,
+        split_neutral=split_neutral,
+        split_idle=split_idle,
     )
 
 
