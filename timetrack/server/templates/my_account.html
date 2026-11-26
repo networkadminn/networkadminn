@@ -1,0 +1,120 @@
+{% extends "base.html" %}
+{% from "_user_avatar.html" import render as user_avatar %}
+{% block title %}My profile · esstracker{% endblock %}
+{% block content %}
+<div class="page-head">
+  <div>
+    <p class="page-kicker">Account</p>
+    <h1>My profile</h1>
+    <p class="page-sub">Update how you appear in esstracker and change your sign-in password.</p>
+  </div>
+</div>
+
+<section class="panel account-photo-panel">
+  <div class="panel-head">
+    <h2>Profile photo</h2>
+  </div>
+  <div class="account-photo-row">
+    <div class="account-photo-preview">
+      {% if current_user.avatar_filename %}
+      <img
+        class="account-photo-img"
+        src="{{ url_for('views.user_avatar', user_id=current_user.id, v=(current_user.avatar_updated_at or 0)|int) }}"
+        alt="Your profile photo"
+        width="96"
+        height="96"
+      />
+      {% else %}
+      <span class="account-photo-placeholder" aria-hidden="true">{{ current_user.name[0]|upper }}</span>
+      {% endif %}
+    </div>
+    <div class="account-photo-actions">
+      <form method="post" enctype="multipart/form-data" class="stack-form tight">
+        <input type="hidden" name="action" value="photo" />
+        <label>Upload image
+          <input type="file" name="photo" accept="image/jpeg,image/png,image/webp" required />
+        </label>
+        <p class="muted small">Square crop from the center. Max 5 MB. Saved as JPEG.</p>
+        <button class="btn primary inline" type="submit">Upload photo</button>
+      </form>
+      {% if current_user.avatar_filename %}
+      <form method="post" class="account-photo-remove">
+        <input type="hidden" name="action" value="remove_photo" />
+        <button class="btn ghost inline" type="submit">Remove photo</button>
+      </form>
+      {% endif %}
+    </div>
+  </div>
+</section>
+
+<div class="two-col dash-admin-cols account-cols">
+  <section class="panel">
+    <div class="panel-head">
+      <h2>Profile</h2>
+    </div>
+    <form method="post" class="stack-form">
+      <input type="hidden" name="action" value="profile" />
+      <label>Username
+        <input value="{{ current_user.username }}" disabled autocomplete="username" />
+      </label>
+      <label>Display name
+        <input name="name" value="{{ current_user.display_name }}" maxlength="200" placeholder="{{ current_user.username }}" autocomplete="name" />
+      </label>
+      <label>Email
+        <input name="email" type="email" value="{{ current_user.email }}" maxlength="200" placeholder="you@company.com" autocomplete="email" />
+      </label>
+      <p class="muted small">Email is used for password reset. Admins can also see it on the Employees page.</p>
+      <button class="btn primary" type="submit">Save profile</button>
+    </form>
+  </section>
+
+  <section class="panel">
+    <div class="panel-head">
+      <h2>Password</h2>
+    </div>
+    <form method="post" class="stack-form">
+      <input type="hidden" name="action" value="password" />
+      <label>Current password
+        <input type="password" name="current_password" required minlength="1" autocomplete="current-password" />
+      </label>
+      <label>New password
+        <input type="password" name="password" required minlength="6" autocomplete="new-password" />
+      </label>
+      <label>Confirm new password
+        <input type="password" name="confirm" required minlength="6" autocomplete="new-password" />
+      </label>
+      <button class="btn primary" type="submit">Update password</button>
+    </form>
+  </section>
+</div>
+
+<section class="panel account-meta-panel">
+  <div class="panel-head">
+    <h2>Organization &amp; desktop app</h2>
+  </div>
+  <dl class="account-meta">
+    <div>
+      <dt>Organization</dt>
+      <dd>{{ profile_org_name }}</dd>
+    </div>
+    <div>
+      <dt>Role</dt>
+      <dd><span class="role {{ current_user.role }}">{{ current_user.role }}</span></dd>
+    </div>
+    <div>
+      <dt>Desktop app</dt>
+      <dd>
+        {% if profile_agent_online %}
+        <span class="status online">Connected{% if profile_agent_version %} · v{{ profile_agent_version }}{% endif %}</span>
+        {% else %}
+        <span class="status offline">Not detected</span>
+        {% endif %}
+      </dd>
+    </div>
+  </dl>
+  <p class="muted small">
+    <a href="{{ url_for('views.download_page') }}">Download esstracker</a>
+    or use <strong>Launch esstracker app</strong> from the menu above.
+  </p>
+</section>
+{% endblock %}

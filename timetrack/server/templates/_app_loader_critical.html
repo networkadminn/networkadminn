@@ -1,0 +1,57 @@
+{# In <head> so splash paints before ~200KB server.css downloads #}
+<link rel="preload" as="image" href="{{ url_for('static', filename='brand/ess-mark.png') }}" />
+<style id="app-loader-critical">
+  html.app-loader-on { background: #061f16; }
+  body.app-loader-active { overflow: hidden; }
+  html.app-loader-on body > *:not(#app-loader) { visibility: hidden; }
+  .app-loader {
+    position: fixed; inset: 0; z-index: 10050;
+    display: flex; align-items: center; justify-content: center;
+    opacity: 1; visibility: visible;
+    transition: opacity 0.42s ease, visibility 0.42s ease;
+  }
+  .app-loader.is-done { opacity: 0; visibility: hidden; pointer-events: none; }
+  .app-loader-backdrop {
+    position: absolute; inset: 0;
+    background: radial-gradient(ellipse 80% 70% at 50% 40%, #0f4d35 0%, #061f16 55%, #040f0b 100%);
+  }
+  .app-loader-stage {
+    position: relative; width: min(220px, 58vw); aspect-ratio: 1;
+    display: flex; align-items: center; justify-content: center;
+  }
+  .app-loader-orbit { position: absolute; inset: 0; width: 100%; height: 100%; overflow: visible; }
+  .app-loader-orbit-track { stroke: rgba(255,255,255,0.08); stroke-width: 2; }
+  .app-loader-orbit-spin {
+    transform-origin: 100px 100px;
+    animation: app-loader-orbit-spin 14s linear infinite;
+  }
+  .app-loader-orbit-text {
+    fill: rgba(232,245,238,0.92);
+    font: 700 11px system-ui, sans-serif;
+    letter-spacing: 0.28em; text-transform: uppercase;
+  }
+  .app-loader-core {
+    position: relative; z-index: 1;
+    display: flex; flex-direction: column; align-items: center; gap: 10px; text-align: center;
+  }
+  .app-loader-logo {
+    width: 56px; height: 56px; border-radius: 16px;
+    box-shadow: 0 12px 32px rgba(0,0,0,0.35);
+    animation: app-loader-pulse 1.8s ease-in-out infinite;
+  }
+  .app-loader-word {
+    font: 700 1.05rem system-ui, sans-serif;
+    letter-spacing: 0.06em; color: #e8f5ee;
+  }
+  @keyframes app-loader-orbit-spin { to { transform: rotate(360deg); } }
+  @keyframes app-loader-pulse {
+    0%, 100% { transform: scale(1); opacity: 1; }
+    50% { transform: scale(1.04); opacity: 0.92; }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .app-loader-orbit-spin, .app-loader-logo { animation: none; }
+  }
+</style>
+<script>
+  document.documentElement.classList.add("app-loader-on");
+</script>

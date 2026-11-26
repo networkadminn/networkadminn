@@ -1,0 +1,410 @@
+{% extends "base.html" %}
+{% block title %}Download esstracker{% endblock %}
+{% block content %}
+<div class="dl-page" data-dl-page>
+  <div class="page-head">
+    <div>
+      <p class="page-kicker">Desktop app</p>
+      <h1>Get esstracker</h1>
+      <p class="page-sub">Install the tray app on your computer, sign in once, and your time syncs to this workspace.</p>
+    </div>
+  </div>
+
+  <section class="dl-banner" aria-labelledby="dlHeroTitle">
+    <div class="dl-banner-glow" aria-hidden="true"></div>
+    <div class="dl-banner-grid">
+      <div>
+        <div class="dl-hero-badges">
+          <span class="dl-pill">Latest · v{{ releases.version }}</span>
+          {% if profile_agent_online %}
+          <span class="dl-pill">Connected{% if profile_agent_version %} · v{{ profile_agent_version }}{% endif %}</span>
+          {% elif client_update_banner %}
+          <span class="dl-pill is-warn">Update · v{{ client_update_banner.latest }}</span>
+          {% else %}
+          <span class="dl-pill muted-pill">App not detected in browser</span>
+          {% endif %}
+        </div>
+        <h2 id="dlHeroTitle">Download for your computer</h2>
+        <p class="dl-banner-lead" id="dlHeroLead">We detect your OS and surface the right installer. One sign-in — tracking runs quietly from the tray.</p>
+        <div class="dl-banner-actions">
+          <a class="btn primary inline" id="dlHeroBtn" href="#platforms">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M12 3v12M7 10l5 5 5-5M5 21h14"/></svg>
+            Choose download
+          </a>
+          <a class="btn ghost inline" href="esstracker://launch" data-launch-esstracker>Launch app</a>
+        </div>
+        <p class="dl-banner-meta" id="dlHeroMeta" hidden></p>
+      </div>
+      <aside class="dl-device-mock" aria-hidden="true">
+        <div class="dl-device-mock-head">
+          <span>Tray app</span>
+          <span>Live sync</span>
+        </div>
+        <div class="dl-device-mock-logo">
+          <img src="{{ url_for('static', filename='brand/ess-mark.png') }}" alt="" />
+        </div>
+        <strong>esstracker</strong>
+        <p>Tracking active · syncing to {{ profile_org_name or 'your workspace' }}</p>
+        <div class="dl-device-tray">
+          <i></i>
+          <span>Running in background</span>
+          <div class="dl-device-dots"><span></span><span></span><span></span></div>
+        </div>
+      </aside>
+    </div>
+  </section>
+
+  <div class="dl-features">
+    <div class="dl-feat">
+      <div class="dl-feat-icon" aria-hidden="true">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2v4M12 18v4M4.93 4.93l2.83 2.83M16.24 16.24l2.83 2.83M2 12h4M18 12h4M4.93 19.07l2.83-2.83M16.24 7.76l2.83-2.83"/></svg>
+      </div>
+      <div><strong>Tray-first</strong><span>Stays in the notification area while you work</span></div>
+    </div>
+    <div class="dl-feat">
+      <div class="dl-feat-icon" aria-hidden="true">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 12a9 9 0 1 1-3-6.7"/><path d="M21 3v6h-6"/></svg>
+      </div>
+      <div><strong>Auto sync</strong><span>Activity flows to My Day within minutes</span></div>
+    </div>
+    <div class="dl-feat">
+      <div class="dl-feat-icon" aria-hidden="true">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="5" width="18" height="14" rx="2"/><circle cx="9" cy="11" r="2"/></svg>
+      </div>
+      <div><strong>Screenshots</strong><span>When enabled by your organization</span></div>
+    </div>
+    <div class="dl-feat">
+      <div class="dl-feat-icon" aria-hidden="true">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 20V10"/><path d="M18 20V4"/><path d="M6 20v-6"/></svg>
+      </div>
+      <div><strong>Gap friendly</strong><span>Pair with Fill time &amp; approvals on the web</span></div>
+    </div>
+  </div>
+
+  <p class="dl-section-label" id="platforms">Choose platform</p>
+  <div class="dl-os-cards" role="tablist" aria-label="Operating system">
+    <button type="button" class="dl-os-card" role="tab" data-os="windows" aria-selected="false" id="tab-windows">
+      <div class="dl-os-card-top">
+        <span class="dl-os-card-icon"><svg viewBox="0 0 24 24"><path fill="currentColor" d="M3 5.5 10.5 4.4v7.1H3V5.5zm0 13 7.5 1.1v-7.2H3v6.1zM11.5 4.2 21 3v8.5h-9.5V4.2zm0 16.6L21 22v-8.6h-9.5v7.4z"/></svg></span>
+        <span class="dl-os-card-tag">For you</span>
+      </div>
+      <h3>Windows</h3>
+      <p>10 / 11 · 64-bit installer</p>
+    </button>
+    <button type="button" class="dl-os-card" role="tab" data-os="mac" aria-selected="false" id="tab-mac">
+      <div class="dl-os-card-top">
+        <span class="dl-os-card-icon"><svg viewBox="0 0 24 24"><path fill="currentColor" d="M16.4 12.4c0-2.3 1.9-3.4 2-3.5-1.1-1.6-2.8-1.8-3.4-1.8-1.4-.2-2.8.9-3.5.9s-1.8-.8-3-.8c-1.5 0-3 .9-3.8 2.3-1.6 2.8-.4 7 1.2 9.3.8 1.1 1.7 2.3 2.9 2.3 1.2 0 1.6-.7 3-.7s1.8.7 3 .7 2-.9 2.8-2c.9-1.2 1.3-2.4 1.3-2.5-.1 0-2.5-1-2.5-3.9zM14.4 5.8c.6-.8 1.1-1.9.9-3-.9 0-2 .6-2.6 1.4-.6.7-1.1 1.8-.9 2.9 1 .1 2-.5 2.6-1.3z"/></svg></span>
+        <span class="dl-os-card-tag">For you</span>
+      </div>
+      <h3>macOS</h3>
+      <p>Apple Silicon &amp; Intel .dmg</p>
+    </button>
+    <button type="button" class="dl-os-card" role="tab" data-os="linux" aria-selected="false" id="tab-linux">
+      <div class="dl-os-card-top">
+        <span class="dl-os-card-icon"><svg viewBox="0 0 24 24"><path fill="currentColor" d="M12.5 2c-.4 1.4-1.5 2.5-2.8 2.7.5 1.8 2.1 3.1 4 3.1 1.2 0 2.3-.5 3.1-1.4C15.5 4.7 14 2.9 12.5 2zM8.2 9.1C6 9.1 4 11.4 4 14.2c0 3.4 2.2 5.6 4.9 5.6 1.1 0 1.7-.4 2.5-.4.8 0 1.2.4 2.5.4 2.7 0 3.9-2.5 3.9-2.5s-2.4-1-2.4-3.5c0-2.2 1.8-3.3 1.8-3.3s-1.7-1.4-3.6-1.4c-1.2 0-1.7.4-2.6.4-.8 0-1.6-.4-2.8-.4z"/></svg></span>
+        <span class="dl-os-card-tag">For you</span>
+      </div>
+      <h3>Linux</h3>
+      <p>Ubuntu / Debian .deb</p>
+    </button>
+  </div>
+
+  <section class="panel dl-platform-panel dl-os-panel" data-os-panel="windows" id="panel-windows" role="tabpanel" aria-labelledby="tab-windows">
+    <div class="dl-platform-head">
+      <div>
+        <h3>Windows 10 / 11 · 64-bit</h3>
+        <p>Installer adds Start Menu entry, tray icon, and autostart.</p>
+      </div>
+      {% if releases.windows.ready %}<span class="dl-ready-tag">Ready</span>{% endif %}
+    </div>
+    {% if releases.windows.ready and releases.windows.file %}
+    <div class="dl-download-stack">
+      <div class="dl-download-row">
+        <span class="dl-file-icon" aria-hidden="true">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6"/></svg>
+        </span>
+        <div class="dl-file-body">
+          <strong>{% if releases.windows.kind == 'setup' %}esstracker Setup (.exe){% elif releases.windows.kind == 'zip' %}Windows kit (.zip){% else %}Windows build{% endif %}</strong>
+          <span>{{ releases.windows.file.size_label }} · v{{ releases.version }}</span>
+        </div>
+        <a class="btn primary inline" data-primary-windows href="{{ url_for('views.download_file', platform='windows', filename=releases.windows.file.name) }}">Download</a>
+      </div>
+    </div>
+    {% if releases.windows.kind == 'setup' %}
+    <p class="dl-note-box">Run the installer → Next → Finish. If SmartScreen appears, choose <strong>More info → Run anyway</strong> for unsigned builds.</p>
+    {% elif releases.windows.kind == 'zip' %}
+    <p class="dl-note-box">Unzip, then right-click <code>install.ps1</code> → Run with PowerShell.</p>
+    {% endif %}
+    {% else %}
+    <p class="dl-note-box">Windows installer is not on the server yet. Ask your admin to publish a build.</p>
+    {% endif %}
+    <ul class="dl-checklist">
+      <li>Best for most company PCs</li>
+      <li>Sign-in window on first launch</li>
+      <li>Runs from the notification area</li>
+    </ul>
+  </section>
+
+  <section class="panel dl-platform-panel dl-os-panel" data-os-panel="mac" id="panel-mac" role="tabpanel" aria-labelledby="tab-mac">
+    <div class="dl-platform-head">
+      <div>
+        <h3>macOS Monterey 12+</h3>
+        <p>Pick Apple Silicon or Intel, then drag to Applications.</p>
+      </div>
+      {% if releases.mac.ready %}<span class="dl-ready-tag">Ready</span>{% endif %}
+    </div>
+    <div class="dl-download-stack">
+      {% if releases.mac.arm %}
+      <div class="dl-download-row">
+        <span class="dl-file-icon" aria-hidden="true">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 3v12M7 10l5 5 5-5"/></svg>
+        </span>
+        <div class="dl-file-body">
+          <strong>Apple Silicon (.dmg)</strong>
+          <span>{{ releases.mac.arm.size_label }}</span>
+        </div>
+        <a class="btn primary inline" data-primary-mac href="{{ url_for('views.download_file', platform='mac', filename=releases.mac.arm.name) }}">Download</a>
+      </div>
+      {% endif %}
+      {% if releases.mac.intel %}
+      <div class="dl-download-row">
+        <span class="dl-file-icon" aria-hidden="true">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 3v12M7 10l5 5 5-5"/></svg>
+        </span>
+        <div class="dl-file-body">
+          <strong>Intel Mac (.dmg)</strong>
+          <span>{{ releases.mac.intel.size_label }}</span>
+        </div>
+        <a class="btn ghost inline" href="{{ url_for('views.download_file', platform='mac', filename=releases.mac.intel.name) }}">Download</a>
+      </div>
+      {% endif %}
+      {% if not releases.mac.arm and not releases.mac.intel %}
+      <p class="dl-note-box">macOS builds are not published yet. They must be built and notarized on a Mac.</p>
+      {% endif %}
+    </div>
+    <ul class="dl-checklist">
+      <li>Grant <strong>Accessibility</strong> and <strong>Screen Recording</strong> when prompted</li>
+      <li>App must live in <strong>/Applications</strong></li>
+      <li>Gatekeeper may block unsigned builds until approved</li>
+    </ul>
+  </section>
+
+  <section class="panel dl-platform-panel dl-os-panel" data-os-panel="linux" id="panel-linux" role="tabpanel" aria-labelledby="tab-linux">
+    <div class="dl-platform-head">
+      <div>
+        <h3>Ubuntu / Debian · amd64</h3>
+        <p>.deb package with tray dependencies included.</p>
+      </div>
+      <span class="dl-ready-tag">Ready</span>
+    </div>
+    {% if releases.linux.ubuntu %}
+    <div class="dl-field">
+      <label for="ubuntuVersion">Ubuntu version</label>
+      <select id="ubuntuVersion">
+        {% for d in releases.linux.ubuntu %}
+        <option value="{{ url_for('views.download_file', platform='linux', filename=d.name) }}" data-size="{{ d.size_label }}" data-label="{{ d.label }}"{% if loop.last %} selected{% endif %}>{{ d.label }}</option>
+        {% endfor %}
+      </select>
+    </div>
+    <div class="dl-download-stack" style="margin-top:12px">
+      <div class="dl-download-row">
+        <span class="dl-file-icon" aria-hidden="true">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 3v12M7 10l5 5 5-5"/></svg>
+        </span>
+        <div class="dl-file-body">
+          <strong id="linuxDebLabel">{{ releases.linux.ubuntu[-1].label }}</strong>
+          <span id="linuxSize">{{ releases.linux.ubuntu[-1].size_label }} · .deb</span>
+        </div>
+        <a class="btn primary inline" id="linuxDownload" data-primary-linux href="{{ url_for('views.download_file', platform='linux', filename=releases.linux.ubuntu[-1].name) }}">Download</a>
+      </div>
+    </div>
+    <p class="dl-note-box muted small">Not sure? Run <code>lsb_release -rs</code>. The 22.04 package usually works on 24.04 as well.</p>
+    {% elif releases.linux.ready and releases.linux.deb %}
+    <div class="dl-download-stack">
+      <div class="dl-download-row">
+        <span class="dl-file-icon" aria-hidden="true">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 3v12M7 10l5 5 5-5"/></svg>
+        </span>
+        <div class="dl-file-body">
+          <strong>esstracker .deb</strong>
+          <span>{{ releases.linux.deb.size_label }}</span>
+        </div>
+        <a class="btn primary inline" data-primary-linux href="{{ url_for('views.download_file', platform='linux', filename=releases.linux.deb.name) }}">Download</a>
+      </div>
+    </div>
+    {% else %}
+    <p class="dl-note-box">Linux .deb is not available on the server.</p>
+    {% endif %}
+    <ul class="dl-checklist">
+      <li>Install: <code>sudo apt install ./esstracker_*.deb</code></li>
+      <li>Best accuracy on X11; Wayland may hide window titles</li>
+      <li>GNOME may need the AppIndicator extension for the tray</li>
+    </ul>
+  </section>
+
+  <div class="dl-steps-row">
+    <article class="dl-step-card">
+      <div class="dl-step-num">1</div>
+      <strong>Install</strong>
+      <p>Download and run the installer for your OS.</p>
+    </article>
+    <article class="dl-step-card">
+      <div class="dl-step-num">2</div>
+      <strong>Sign in</strong>
+      <p>Use your esstracker username and password — no manual server URL.</p>
+    </article>
+    <article class="dl-step-card">
+      <div class="dl-step-num">3</div>
+      <strong>Track</strong>
+      <p>Keep the tray app running; activity syncs to My Day automatically.</p>
+    </article>
+  </div>
+
+  <div class="dl-trust">
+    <div><strong>5m</strong><span>Activity blocks on your timeline</span></div>
+    <div><strong>24h</strong><span>Full day visibility in the dashboard</span></div>
+    <div><strong>IST</strong><span>Office hours aligned for your org</span></div>
+  </div>
+
+  <details class="dl-fold">
+    <summary>IT install commands</summary>
+    <div class="dl-fold-body">
+      <div class="dl-details-grid">
+        <div class="dl-details-block">
+          <h4>Windows</h4>
+          <pre><code>esstracker-Setup-{{ releases.version }}.exe
+# Silent: esstracker-Setup-{{ releases.version }}.exe /VERYSILENT</code></pre>
+        </div>
+        <div class="dl-details-block">
+          <h4>Linux</h4>
+          <pre><code>sudo apt install ./esstracker_*.deb
+# Applications → esstracker → Sign in</code></pre>
+        </div>
+      </div>
+    </div>
+  </details>
+
+  <details class="dl-fold">
+    <summary>Platform notes &amp; accuracy</summary>
+    <div class="dl-fold-body">
+      <div class="dl-details-grid">
+        <div>
+          <h4 style="margin:0 0 8px;font-size:0.95rem">Windows</h4>
+          <ul class="dl-acc-list">
+            <li>Active window tracking via Win32 is generally reliable</li>
+            <li>Idle detection uses last keyboard/mouse input</li>
+            <li>Screenshots require an unlocked desktop session</li>
+          </ul>
+        </div>
+        <div>
+          <h4 style="margin:0 0 8px;font-size:0.95rem">macOS</h4>
+          <ul class="dl-acc-list">
+            <li>Accessibility permission required for window titles</li>
+            <li>Screen Recording required for screenshots</li>
+            <li>Notarized builds avoid Gatekeeper blocks</li>
+          </ul>
+        </div>
+        <div>
+          <h4 style="margin:0 0 8px;font-size:0.95rem">Linux</h4>
+          <ul class="dl-acc-list">
+            <li>X11 + xdotool / xprintidle gives the best results</li>
+            <li>Must run inside a graphical session, not SSH-only</li>
+            <li>Wayland limits title capture for many apps</li>
+          </ul>
+        </div>
+      </div>
+    </div>
+  </details>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+(function () {
+  var ua = navigator.userAgent || "";
+  var platform = navigator.platform || "";
+  var os = "windows";
+  if (/Win/i.test(ua)) os = "windows";
+  else if (/Mac/i.test(ua) || /Macintosh/i.test(platform)) os = "mac";
+  else if (/Linux/i.test(ua) && !/Android/i.test(ua)) os = "linux";
+
+  var tabs = document.querySelectorAll(".dl-os-card");
+  var panels = document.querySelectorAll(".dl-os-panel");
+  var heroBtn = document.getElementById("dlHeroBtn");
+  var heroTitle = document.getElementById("dlHeroTitle");
+  var heroLead = document.getElementById("dlHeroLead");
+  var heroMeta = document.getElementById("dlHeroMeta");
+
+  var labels = { windows: "Windows", mac: "macOS", linux: "Linux" };
+  var downloadSvg = '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M12 3v12M7 10l5 5 5-5M5 21h14"/></svg>';
+
+  function primaryUrlFor(osKey) {
+    if (osKey === "windows") {
+      var w = document.querySelector("[data-primary-windows]");
+      return w ? w.getAttribute("href") : null;
+    }
+    if (osKey === "mac") {
+      var m = document.querySelector("[data-primary-mac]");
+      return m ? m.getAttribute("href") : null;
+    }
+    var l = document.querySelector("[data-primary-linux]");
+    return l ? l.getAttribute("href") : null;
+  }
+
+  function updateHero(osKey) {
+    var url = primaryUrlFor(osKey);
+    var name = labels[osKey] || "your OS";
+    heroTitle.textContent = "Download for " + name;
+    heroLead.textContent = "Your " + name + " build is ready below — or grab it instantly with the button.";
+    if (url) {
+      heroBtn.href = url;
+      heroBtn.innerHTML = downloadSvg + " Download for " + name;
+      var sizeEl = document.querySelector('[data-os-panel="' + osKey + '"] .dl-download-row span');
+      if (sizeEl) {
+        heroMeta.hidden = false;
+        heroMeta.textContent = sizeEl.textContent.trim();
+      }
+    } else {
+      heroBtn.href = "#platforms";
+      heroBtn.innerHTML = downloadSvg + " View " + name + " options";
+      heroMeta.hidden = true;
+    }
+  }
+
+  function selectOs(osKey) {
+    tabs.forEach(function (tab) {
+      var on = tab.getAttribute("data-os") === osKey;
+      tab.classList.toggle("is-active", on);
+      tab.setAttribute("aria-selected", on ? "true" : "false");
+    });
+    panels.forEach(function (panel) {
+      panel.classList.toggle("is-active", panel.getAttribute("data-os-panel") === osKey);
+    });
+    updateHero(osKey);
+  }
+
+  tabs.forEach(function (tab) {
+    if (tab.getAttribute("data-os") === os) tab.classList.add("is-recommended");
+    tab.addEventListener("click", function () {
+      selectOs(tab.getAttribute("data-os"));
+    });
+  });
+
+  selectOs(os);
+
+  var sel = document.getElementById("ubuntuVersion");
+  if (sel) {
+    sel.addEventListener("change", function () {
+      var opt = sel.options[sel.selectedIndex];
+      var link = document.getElementById("linuxDownload");
+      if (link) link.href = opt.value;
+      var size = document.getElementById("linuxSize");
+      if (size) size.textContent = opt.dataset.size + " · .deb";
+      var lab = document.getElementById("linuxDebLabel");
+      if (lab) lab.textContent = opt.dataset.label || opt.textContent;
+      if (os === "linux") updateHero("linux");
+    });
+  }
+})();
+</script>
+{% endblock %}

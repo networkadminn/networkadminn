@@ -1,0 +1,87 @@
+{% extends "blog_layout.html" %}
+{% block title %}Blog · esstracker{% endblock %}
+{% block blog_head %}
+<meta name="description" content="Guides on rolling out time tracking, manager workflows, productivity metrics, and self-hosted workforce analytics." />
+<link rel="canonical" href="{{ public_url }}/blog" />
+{% endblock %}
+{% block blog_content %}
+<header class="blog-hub-banner">
+  <div class="pub-container blog-hub-banner-inner">
+    <div class="blog-hub-banner-copy">
+      <p class="dt-eyebrow">ESS Tracker insights</p>
+      <h1>Workforce time, explained for real teams</h1>
+      <p>Rollout playbooks, manager habits, and product FAQs — written for HR, IT, and team leads running esstracker on their own server.</p>
+    </div>
+    <dl class="blog-hub-stats" aria-label="Blog at a glance">
+      <div><dt>Articles</dt><dd>{{ posts|length }}</dd></div>
+      <div><dt>Topics</dt><dd>{{ categories|length }}</dd></div>
+      <div><dt>Updated</dt><dd>{% if posts %}{{ posts[0].published | blog_date }}{% else %}—{% endif %}</dd></div>
+    </dl>
+  </div>
+</header>
+
+<main class="pub-container blog-hub-main">
+  <div class="blog-hub-layout">
+    <div class="blog-hub-feed">
+      {% if posts %}
+      <article class="blog-hub-feature">
+        <a href="{{ url_for('views.blog_post', slug=posts[0].slug) }}" class="blog-hub-feature-link">
+          <span class="blog-cat-pill" data-cat="{{ posts[0].category | category_slug }}">{{ posts[0].category }}</span>
+          <h2>{{ posts[0].title }}</h2>
+          <p>{{ posts[0].excerpt }}</p>
+          <footer>
+            <span>{{ posts[0].author }}</span>
+            <time datetime="{{ posts[0].published }}">{{ posts[0].published | blog_date }}</time>
+            <span>{{ posts[0].read_minutes }} min</span>
+          </footer>
+        </a>
+      </article>
+      {% endif %}
+
+      <div class="blog-hub-grid">
+        {% for post in posts %}
+        {% if loop.index0 > 0 %}
+        <article class="blog-hub-card">
+          <a href="{{ url_for('views.blog_post', slug=post.slug) }}" class="blog-hub-card-link">
+            <span class="blog-cat-pill blog-cat-pill-sm" data-cat="{{ post.category | category_slug }}">{{ post.category }}</span>
+            <h3>{{ post.title }}</h3>
+            <p>{{ post.excerpt }}</p>
+            <footer>
+              <time datetime="{{ post.published }}">{{ post.published | blog_date }}</time>
+              <span>{{ post.read_minutes }} min read</span>
+            </footer>
+          </a>
+        </article>
+        {% endif %}
+        {% endfor %}
+      </div>
+    </div>
+
+    <aside class="blog-hub-aside" aria-label="Blog sidebar">
+      <section class="blog-hub-panel">
+        <h2>Topics</h2>
+        <ul class="blog-hub-topics">
+          {% for name, slug, count in categories %}
+          <li>
+            <a href="#topic-{{ slug }}"><span>{{ name }}</span><span class="blog-hub-count">{{ count }}</span></a>
+          </li>
+          {% endfor %}
+        </ul>
+      </section>
+      <section class="blog-hub-panel blog-hub-panel-accent">
+        <h2>Start here</h2>
+        <ul class="blog-hub-starts">
+          <li><a href="{{ url_for('views.blog_post', slug='roll-out-esstracker-30-days') }}">30-day rollout plan</a></li>
+          <li><a href="{{ url_for('views.blog_post', slug='what-the-desktop-agent-tracks') }}">What the agent tracks</a></li>
+          <li><a href="{{ url_for('views.blog_post', slug='employee-monitoring-without-losing-trust') }}">Monitoring without losing trust</a></li>
+        </ul>
+      </section>
+      <section class="blog-hub-panel blog-hub-panel-cta">
+        <h2>Your workspace</h2>
+        <p>Install the desktop agent and open My Day after you sign in.</p>
+        <a class="pub-btn pub-btn-block" href="{{ url_for('auth.login') }}">Sign in</a>
+      </section>
+    </aside>
+  </div>
+</main>
+{% endblock %}
