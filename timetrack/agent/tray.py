@@ -315,7 +315,45 @@ class AgentTray:
         ]
         return pystray.Menu(*items)
 
+    def _on_ui_thread(self, fn: Callable[[], None]) -> None:
+        """Run ``fn`` on the tray's thread where the backend requires it.
+
+        The macOS (AppKit) status item may only be touched from the main thread; the
+        tracking loop calls ``refresh_ui`` from its own thread. Win32 and the GTK
+        backends already marshal icon updates themselves.
+        """
+        if sys.platform == "darwin" and threading.current_thread() is not threading.main_thread():
+            try:
+                from PyObjCTools import AppHelper  # type: ignore
+
+                AppHelper.callAfter(fn)
+                return
+            except Exception as exc:
+                print(f"[esstracker] could not schedule tray update: {exc!r}")
+                return
+        fn()
+
+    def stop_icon(self) -> None:
+        """Close the tray (safe from any thread); the process then exits."""
+        icon = self._icon
+        if icon is not None:
+            self._on_ui_thread(icon.stop)
+
+    def notify(self, title: str, body: str) -> bool:
+        """Balloon / toast through the tray icon (Windows); False if unsupported."""
+        icon = self._icon
+        if icon is None or not getattr(icon, "HAS_NOTIFICATION", False):
+            return False
+        try:
+            icon.notify(body, title)
+            return True
+        except Exception:
+            return False
+
     def refresh_ui(self) -> None:
+        self._on_ui_thread(self._refresh_ui_now)
+
+    def _refresh_ui_now(self) -> None:
         icon = self._icon
         if icon is None:
             return
@@ -328,10 +366,18 @@ class AgentTray:
             print(f"[esstracker] tray refresh failed: {exc!r}")
 
     def _toggle_private(self, icon=None, item=None) -> None:
+        # Network calls run off the tray thread so the menu never freezes.
+        threading.Thread(
+            target=self._toggle_private_work, daemon=True, name="esstracker-private"
+        ).start()
+
+    def _toggle_private_work(self) -> None:
+        from .idle_ui import notify
+
         want = not self.agent.private
         data = self.agent.client.set_private(want)
         if data is None:
-            print("[esstracker] could not toggle Private Time")
+            notify("esstracker", "Could not change Private Time — check your connection")
             return
         self.agent.private = bool(data.get("active"))
         self.agent.refresh_server_policy()
@@ -416,9 +462,12 @@ class AgentTray:
         webbrowser.open(self.agent.config.server_url.rstrip("/") + "/download")
 
     def _flush_now(self, icon=None, item=None) -> None:
-        a, s = self.agent.flush()
-        print(f"[esstracker] tray sync: {a} activities, {s} screenshots")
-        self.refresh_ui()
+        def work() -> None:
+            a, s = self.agent.flush()
+            print(f"[esstracker] tray sync: {a} activities, {s} screenshots")
+            self.refresh_ui()
+
+        threading.Thread(target=work, daemon=True, name="esstracker-sync").start()
 
     def _menu_quit(self, icon=None, item=None) -> None:
         if not self.agent.tray_quit_allowed:
@@ -439,8 +488,7 @@ class AgentTray:
 
     def _quit(self, icon=None, item=None, *, reason: str = "quit") -> None:
         self.agent.request_stop(reason)
-        if self._icon is not None:
-            self._icon.stop()
+        self.stop_icon()
 
     def run(self, on_ready: Callable[[], None] | None = None) -> None:
         import pystray
@@ -488,6 +536,14 @@ class AgentTray:
             self._title(),
             self._rebuild_menu(),
         )
+        if sys.platform in ("win32", "darwin"):
+            from .idle_ui import set_notifier
+
+            set_notifier(self.notify)
+        if backend == "darwin":
+            from ..platform import macos
+
+            macos.appkit_loop_running = True
         loop = None
         if on_ready:
             loop = threading.Thread(target=on_ready, daemon=True)

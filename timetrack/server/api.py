@@ -239,7 +239,10 @@ def agent_stop():
     u.agent_stopped_at = max(time.time(), _last_seen(u.id) or 0.0)
     db.session.commit()
 
-    send_tracker_stop_alert(u, reason=reason)
+    # An installer upgrade stops the agent and relaunches it a moment later:
+    # don't email admins about it.
+    if reason != "update":
+        send_tracker_stop_alert(u, reason=reason)
     if reason in ("logout", "quit"):
         from .ai_report import maybe_send_ai_report_on_logout
 

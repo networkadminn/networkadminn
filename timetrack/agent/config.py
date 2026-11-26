@@ -11,10 +11,13 @@ from ..config import Config as _CoreConfig
 from ..config import merge_rules as _merge_rules
 from ..userdirs import config_dir, data_dir, expand_path, install_dir
 
-try:
+try:  # Python 3.11+
     import tomllib
-except ModuleNotFoundError:  # pragma: no cover
-    tomllib = None  # type: ignore[assignment]
+except ModuleNotFoundError:  # pragma: no cover - Ubuntu 22.04 ships Python 3.10
+    try:
+        import tomli as tomllib  # type: ignore[no-redef]
+    except ModuleNotFoundError:
+        tomllib = None  # type: ignore[assignment]
 
 DEFAULT_SERVER_URL = "https://tracker.euclideesolutions.com"
 DEFAULT_BUFFER_PATH = str(data_dir() / "agent-buffer.db")
@@ -216,7 +219,6 @@ def _save_destination(cfg: AgentConfig, path: str | os.PathLike[str] | None) -> 
 def save_agent_config(cfg: AgentConfig, path: str | os.PathLike[str] | None = None) -> Path:
     """Write agent.toml so next launch needs no setup (DeskTime-style)."""
     dest = _save_destination(cfg, path)
-    dest.parent.mkdir(parents=True, exist_ok=True)
 
     def q(s: str) -> str:
         return '"' + s.replace("\\", "\\\\").replace('"', '\\"') + '"'
@@ -230,11 +232,23 @@ def save_agent_config(cfg: AgentConfig, path: str | os.PathLike[str] | None = No
         f"idle_threshold = {float(cfg.idle_threshold)}\n"
         f"screenshots_enabled = {'true' if cfg.screenshots_enabled else 'false'}\n"
         f"screenshot_interval = {float(cfg.screenshot_interval)}\n"
+        f"screenshot_max_width = {int(cfg.screenshot_max_width)}\n"
         f"flush_interval = {float(cfg.flush_interval)}\n"
+        f"batch_size = {int(cfg.batch_size)}\n"
         f"buffer_path = {q(cfg.buffer_path)}\n"
         f"shots_dir = {q(cfg.shots_dir)}\n"
     )
-    dest.write_text(text, encoding="utf-8")
+    try:
+        dest.parent.mkdir(parents=True, exist_ok=True)
+        dest.write_text(text, encoding="utf-8")
+    except PermissionError:
+        if dest == USER_CONFIG_PATH:
+            raise
+        # e.g. config loaded from /etc/esstracker/agent.toml: leave it alone and
+        # write the user's own copy, which is searched first on the next launch.
+        dest = USER_CONFIG_PATH
+        dest.parent.mkdir(parents=True, exist_ok=True)
+        dest.write_text(text, encoding="utf-8")
     try:
         os.chmod(dest, 0o600)
     except OSError:

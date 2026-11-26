@@ -21,8 +21,11 @@ from pathlib import Path
 
 try:  # Python 3.11+
     import tomllib
-except ModuleNotFoundError:  # pragma: no cover
-    tomllib = None  # type: ignore[assignment]
+except ModuleNotFoundError:  # pragma: no cover - Ubuntu 22.04 ships Python 3.10
+    try:
+        import tomli as tomllib  # type: ignore[no-redef]
+    except ModuleNotFoundError:
+        tomllib = None  # type: ignore[assignment]
 
 PRODUCTIVE = "productive"
 UNPRODUCTIVE = "unproductive"

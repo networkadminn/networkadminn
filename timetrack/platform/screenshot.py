@@ -87,15 +87,54 @@ def _cgimage_to_image(cg_image) -> "object | None":
 
 
 def _capture_pil_darwin():
-    """Primary display via Quartz (needs Screen Recording permission on Catalina+)."""
+    """All active displays via Quartz, stitched in point coordinates.
+
+    Needs Screen Recording permission on Catalina+. Each display is captured with
+    ``CGDisplayCreateImage`` (Retina displays come back at pixel size) and scaled
+    to its size in points so mixed-DPI setups line up.
+    """
     try:
-        from Quartz import CGDisplayCreateImage, CGMainDisplayID  # type: ignore
+        from PIL import Image  # type: ignore
+        from Quartz import (  # type: ignore
+            CGDisplayBounds,
+            CGDisplayCreateImage,
+            CGGetActiveDisplayList,
+            CGMainDisplayID,
+        )
     except Exception:
         return None
-    cg = CGDisplayCreateImage(CGMainDisplayID())
-    if cg is None:
+
+    try:
+        err, ids, count = CGGetActiveDisplayList(16, None, None)
+        displays = list(ids[:count]) if err == 0 and count else [CGMainDisplayID()]
+    except Exception:
+        displays = [CGMainDisplayID()]
+
+    parts = []
+    for did in displays:
+        cg = CGDisplayCreateImage(did)
+        if cg is None:
+            continue
+        img = _cgimage_to_image(cg)
+        if img is None:
+            continue
+        b = CGDisplayBounds(did)
+        parts.append((img, int(b.origin.x), int(b.origin.y), int(b.size.width), int(b.size.height)))
+    if not parts:
         return None
-    return _cgimage_to_image(cg)
+    if len(parts) == 1:
+        return parts[0][0]
+
+    min_x = min(p[1] for p in parts)
+    min_y = min(p[2] for p in parts)
+    width = max(p[1] + p[3] for p in parts) - min_x
+    height = max(p[2] + p[4] for p in parts) - min_y
+    canvas = Image.new("RGB", (max(1, width), max(1, height)), (0, 0, 0))
+    for img, x, y, w, h in parts:
+        if img.size != (w, h) and w > 0 and h > 0:
+            img = img.resize((w, h))
+        canvas.paste(img, (x - min_x, y - min_y))
+    return canvas
 
 
 def _capture_pil_mss():
@@ -103,10 +142,21 @@ def _capture_pil_mss():
     from PIL import Image  # type: ignore
 
     with mss.mss() as sct:
-        # monitors[0] = union of all displays; [1] = primary (often better on macOS).
-        monitor = sct.monitors[1] if len(sct.monitors) > 1 else sct.monitors[0]
-        raw = sct.grab(monitor)
+        # monitors[0] is the union of all displays, so a second screen is not missed.
+        raw = sct.grab(sct.monitors[0])
         return Image.frombytes("RGB", raw.size, raw.bgra, "raw", "BGRX")
+
+
+def effective_max_width(width: int, height: int, max_width: int) -> int:
+    """Allow wider output for side-by-side multi-monitor captures (up to 2x).
+
+    One 16:9 screen keeps ``max_width``; a 32:9 two-screen desktop gets twice the
+    width so each screen stays readable instead of being squeezed to half size.
+    """
+    if width <= 0 or height <= 0:
+        return max_width
+    screens_wide = max(1, round((width / height) / (16 / 9)))
+    return max_width * min(2, screens_wide)
 
 
 def _capture_pil():
@@ -142,9 +192,10 @@ def _finish_jpeg(
     if img is None:
         return None
     width, height = img.size
-    if width > max_width and width > 0:
-        ratio = max_width / float(width)
-        img = img.resize((max_width, max(1, int(height * ratio))))
+    limit = effective_max_width(width, height, max_width)
+    if width > limit and width > 0:
+        ratio = limit / float(width)
+        img = img.resize((limit, max(1, int(height * ratio))))
     if blur:
         img = img.filter(ImageFilter.GaussianBlur(radius=max(4, blur_radius)))
     buf = io.BytesIO()

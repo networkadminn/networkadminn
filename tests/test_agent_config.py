@@ -9,6 +9,16 @@ import pytest
 from timetrack.agent import config as agent_config
 
 
+@pytest.fixture(autouse=True)
+def _isolated_profile(tmp_path, monkeypatch):
+    """Keep the developer's real %APPDATA% / ~/.config agent.toml out of these tests."""
+    home = tmp_path / "home"
+    home.mkdir()
+    monkeypatch.setattr(agent_config, "config_dir", lambda *a, **k: tmp_path / "profile")
+    monkeypatch.setattr(agent_config.os.path, "expanduser", lambda p: str(p).replace("~", str(home), 1))
+    monkeypatch.setattr(agent_config, "_defaults_paths", lambda: [])
+
+
 def test_prefers_profile_token_over_empty_cwd(tmp_path, monkeypatch):
     install = tmp_path / "install"
     profile = tmp_path / "profile"

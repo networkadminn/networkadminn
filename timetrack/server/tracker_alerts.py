@@ -67,6 +67,7 @@ def send_tracker_stop_alert(user: User, *, reason: str = "stopped") -> None:
         "logout": "Signed out from tray",
         "signal": "Agent closed",
         "stopped": "Tracker stopped",
+        "uninstall": "Tracker uninstalled",
     }.get(reason, reason)
 
     subject = f"[esstracker] Tracker stopped — {name}"

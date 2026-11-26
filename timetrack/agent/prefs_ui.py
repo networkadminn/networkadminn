@@ -3,8 +3,6 @@
 from __future__ import annotations
 
 import os
-import shutil
-import subprocess
 import sys
 import threading
 import time
@@ -56,15 +54,6 @@ def _prefs_already_open() -> bool:
     return True
 
 
-def _spawn_prefs_command() -> list[str]:
-    if getattr(sys, "frozen", False):
-        return [sys.executable, "preferences"]
-    agent_bin = shutil.which("esstracker-agent")
-    if agent_bin:
-        return [agent_bin, "preferences"]
-    return [sys.executable, "-m", "timetrack.agent", "preferences"]
-
-
 def open_preferences(agent: Agent) -> None:
     """Open preferences in a child process (Tk must run on that process main thread)."""
     global _spawning
@@ -73,19 +62,9 @@ def open_preferences(agent: Agent) -> None:
             return
         _spawning = True
     try:
-        cmd = _spawn_prefs_command()
-        if agent.config.config_path:
-            cmd.extend(["-c", agent.config.config_path])
-        subprocess.Popen(
-            cmd,
-            env=os.environ.copy(),
-            start_new_session=True,
-            close_fds=True,
-            stdout=subprocess.DEVNULL,
-            stderr=subprocess.PIPE,
-        )
-    except Exception as exc:
-        print(f"[esstracker] could not open preferences: {exc!r}")
+        from .ui_process import spawn_ui
+
+        spawn_ui("preferences", config_path=agent.config.config_path or None)
     finally:
         with _lock:
             _spawning = False

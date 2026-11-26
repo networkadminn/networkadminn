@@ -73,31 +73,28 @@ def _acquire_single_instance_windows() -> bool:
     return True
 
 
-def _lock_holder_alive() -> bool:
-    """True if agent.lock references a running process (stale after crash)."""
+def _lock_holder_pid() -> int:
+    """PID written in agent.lock by the running agent (0 if unknown)."""
     try:
-        pid = int(LOCK_PATH.read_text(encoding="utf-8").strip())
+        return int(LOCK_PATH.read_text(encoding="utf-8").strip() or 0)
     except (OSError, ValueError):
-        return False
-    if pid <= 0:
-        return False
-    try:
-        os.kill(pid, 0)
-    except OSError:
-        return False
-    return True
+        return 0
 
 
 def _acquire_single_instance_posix() -> bool:
-    """fcntl flock — used on Linux/macOS."""
+    """fcntl flock — used on Linux/macOS.
+
+    The file is opened *without* truncating, and only rewritten once the lock is
+    held: truncating first wiped the running agent's PID, and a stale-file check
+    could then delete the file and let a second agent lock a fresh inode. flock
+    locks are released by the kernel when a process dies, so no stale check is needed.
+    """
     global _lock_fh
     import fcntl
 
     try:
         ensure_data_dirs()
-        if LOCK_PATH.exists() and not _lock_holder_alive():
-            LOCK_PATH.unlink(missing_ok=True)
-        _lock_fh = open(LOCK_PATH, "w", encoding="utf-8")
+        _lock_fh = open(LOCK_PATH, "a+", encoding="utf-8")
     except OSError as exc:
         print(
             f"[esstracker] warning: could not use lock file ({exc!r}); "
@@ -106,10 +103,12 @@ def _acquire_single_instance_posix() -> bool:
         return True
     try:
         fcntl.flock(_lock_fh.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
-    except BlockingIOError:
+    except OSError:
         _lock_fh.close()
         _lock_fh = None
         return False
+    _lock_fh.seek(0)
+    _lock_fh.truncate()
     _lock_fh.write(str(os.getpid()))
     _lock_fh.flush()
 
@@ -280,6 +279,36 @@ def _cmd_open_url(args: argparse.Namespace) -> int:
     return _cmd_run(run_args)
 
 
+def _cmd_login(args: argparse.Namespace) -> int:
+    """Sign-in window only (used by the running agent when a session expires)."""
+    from .login_ui import show_login
+
+    cfg = load_agent_config(args.config)
+    return 0 if show_login(cfg) else 1
+
+
+def _cmd_update_popup(args: argparse.Namespace) -> int:
+    from .update_ui import run_popup
+
+    run_popup(args.latest, args.url, args.page, args.state_dir)
+    return 0
+
+
+def _cmd_idle_countdown(args: argparse.Namespace) -> int:
+    from .idle_ui import run_countdown_window
+
+    return 0 if run_countdown_window(args.seconds) else 1
+
+
+def _cmd_stop(args: argparse.Namespace) -> int:
+    """Ask a running agent to sync and exit (used by the Windows installer on upgrade)."""
+    from .stop_signal import request_running_agent_stop
+
+    stopped = request_running_agent_stop(timeout=float(args.wait), reason=args.reason)
+    print("[esstracker] agent stopped" if stopped else "[esstracker] agent still running")
+    return 0 if stopped else 1
+
+
 def build_parser() -> argparse.ArgumentParser:
     p = argparse.ArgumentParser(prog="esstracker-agent", description=__doc__)
     p.add_argument("-c", "--config", help="path to agent.toml")
@@ -316,6 +345,28 @@ def build_parser() -> argparse.ArgumentParser:
     ou = sub.add_parser("open-url", help="handle esstracker:// URL from the browser")
     ou.add_argument("url", help="esstracker://…")
     ou.set_defaults(func=_cmd_open_url)
+    sub.add_parser("login", help="show the sign-in window and exit").set_defaults(
+        func=_cmd_login
+    )
+    st = sub.add_parser("stop", help="ask the running agent to sync and quit")
+    st.add_argument("--wait", default="25", help="seconds to wait for it to exit")
+    st.add_argument(
+        "--reason",
+        default="quit",
+        choices=("quit", "update", "uninstall"),
+        help="reported to the server (update = installer upgrade, no admin alert)",
+    )
+    st.set_defaults(func=_cmd_stop)
+    # Internal: windows the tray process opens in a child process.
+    up = sub.add_parser("update-popup")
+    up.add_argument("--latest", required=True)
+    up.add_argument("--url", required=True)
+    up.add_argument("--page", required=True)
+    up.add_argument("--state-dir", required=True)
+    up.set_defaults(func=_cmd_update_popup)
+    ic = sub.add_parser("idle-countdown")
+    ic.add_argument("seconds", type=int)
+    ic.set_defaults(func=_cmd_idle_countdown)
     return p
 
 
@@ -357,10 +408,21 @@ def main(argv: list[str] | None = None) -> None:
             "logout",
             "open-url",
             "preferences",
+            "login",
+            "stop",
+            "update-popup",
+            "idle-countdown",
         }
-        if not raw or raw[0] not in commands:
-            if not (raw and raw[0] in ("-h", "--help")):
-                raw = ["run", *raw]
+        # Skip the top-level "-c/--config PATH" so "-c x login" is not treated as "run".
+        pos = 0
+        while pos < len(raw) and raw[pos] in ("-c", "--config"):
+            pos += 2
+        if pos < len(raw) and raw[pos].startswith("--config="):
+            pos += 1
+        rest = raw[pos:]
+        if not rest or rest[0] not in commands:
+            if not (rest and rest[0] in ("-h", "--help")):
+                raw = [*raw[:pos], "run", *rest]
         args = build_parser().parse_args(raw)
         raise SystemExit(args.func(args))
     except SystemExit:

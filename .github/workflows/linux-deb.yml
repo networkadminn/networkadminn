@@ -25,7 +25,7 @@ jobs:
           sudo apt-get install -y -qq \
             libgirepository1.0-dev libcairo2-dev pkg-config gir1.2-gtk-3.0 \
             libayatana-appindicator3-1 gir1.2-ayatanaappindicator3-0.1 \
-            libnotify-bin python3-tk tk-dev dpkg-dev fakeroot xvfb
+            libnotify-bin python3-tk python3-venv tk-dev dpkg-dev fakeroot xvfb
 
       - name: Python packages
         run: |

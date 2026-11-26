@@ -55,16 +55,28 @@ Root: HKCU; Subkey: "Software\Classes\esstracker"; ValueType: string; ValueName:
 Root: HKCU; Subkey: "Software\Classes\esstracker"; ValueName: "URL Protocol"; ValueType: string; ValueData: ""
 Root: HKCU; Subkey: "Software\Classes\esstracker\DefaultIcon"; ValueType: string; ValueName: ""; ValueData: "{app}\esstracker-Agent.exe,0"
 Root: HKCU; Subkey: "Software\Classes\esstracker\shell\open\command"; ValueType: string; ValueName: ""; ValueData: """{app}\esstracker-Agent.exe"" ""%1"""
+; "Launch at login" in the tray writes this value; remove it on uninstall so Windows
+; does not try to start a deleted exe at every sign-in.
+Root: HKCU; Subkey: "Software\Microsoft\Windows\CurrentVersion\Run"; ValueType: none; ValueName: "esstracker"; Flags: uninsdeletevalue dontcreatekey
 
 [UninstallRun]
+; Ask the agent to upload its buffer and quit; force-close only if it is still running.
+Filename: "{app}\esstracker-Agent.exe"; Parameters: "stop --wait 25 --reason uninstall"; Flags: runhidden waituntilterminated skipifdoesntexist; RunOnceId: "StopAgent"
 Filename: "{sys}\taskkill.exe"; Parameters: "/IM esstracker-Agent.exe /F"; Flags: runhidden; RunOnceId: "KillAgent"
 
 [Code]
 function PrepareToInstall(var NeedsRestart: Boolean): String;
 var
   ResultCode: Integer;
+  OldExe: String;
 begin
-  { Stop a running tray client so its exe can be replaced on upgrade. }
+  { Stop a running tray client so its exe can be replaced on upgrade.
+    First ask it to quit cleanly: it uploads its buffer and tells the server it is
+    updating, so admins get no "tracker stopped" email. Versions without the "stop"
+    command, or a hung agent, are then force-closed. }
+  OldExe := ExpandConstant('{app}\esstracker-Agent.exe');
+  if FileExists(OldExe) then
+    Exec(OldExe, 'stop --wait 25 --reason update', '', SW_HIDE, ewWaitUntilTerminated, ResultCode);
   Exec(ExpandConstant('{sys}\taskkill.exe'), '/IM esstracker-Agent.exe /F', '', SW_HIDE, ewWaitUntilTerminated, ResultCode);
   Result := '';
 end;
