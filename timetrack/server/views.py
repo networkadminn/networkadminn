@@ -133,22 +133,19 @@ def _day_metrics(
 
 
 def _week_strip(user_id: int | None, day: datetime) -> list[dict]:
-    """Mon–Sun strip with productivity for DeskTime-style week navigation."""
+    """Mon–Sun strip with productivity for DeskTime-style week navigation.
+
+    Team-wide strips (``user_id is None``) are intentionally lightweight — the
+    admin dashboard no longer renders week chips, and recomputing every member's
+    metrics for 7 days was taking ~15s.
+    """
     monday = day.date() - timedelta(days=day.weekday())
-    expected = _expected_seconds()
     out = []
     for i in range(7):
         d = datetime.combine(monday + timedelta(days=i), datetime.min.time())
         if user_id is None:
-            # Team average for that day
-            users = db.session.execute(db.select(User)).scalars().all()
-            prods = []
-            for u in users:
-                dm = _day_metrics(u.id, d)
-                if dm.desktime_seconds > 0:
-                    prods.append(dm.dt_productivity)
-            pct = round(sum(prods) / len(prods), 1) if prods else 0.0
-            seconds = sum(_day_metrics(u.id, d).desktime_seconds for u in users)
+            pct = 0.0
+            seconds = 0.0
         else:
             dm = _day_metrics(user_id, d)
             pct = dm.dt_productivity
@@ -309,12 +306,13 @@ def _admin_team_row(
     last_seen: float | None = None,
     shot_count: int | None = None,
     live: dict | None = None,
+    manuals: list[ManualEntry] | None = None,
 ) -> dict:
     """One employee's row on the team board, in the active (employee's) zone."""
     start, end = day_bounds(day, tz_name=_tz())
     if acts is None:
         acts = _activities_for(u.id, day)
-    manual = _manual_for(u.id, day)
+    manual = manuals if manuals is not None else _manual_for(u.id, day)
     dm = compute_day_metrics(acts, manual, start, end, expected)
     s = dm.summary
     manual_seconds = dm.manual_total_seconds
@@ -397,6 +395,9 @@ def _admin_team_day_state(
     start, end = day_bounds(day, tz_name=_tz())
     shot_counts: dict[int, int] = {}
     last_map: dict[int, float] = {}
+    acts_by_user: dict[int, list[Activity]] = {uid: [] for uid in user_ids}
+    manuals_by_user: dict[int, list[ManualEntry]] = {uid: [] for uid in user_ids}
+    lunch = _lunch_range(day)
     if user_ids:
         shot_counts = {
             int(uid): int(n)
@@ -419,9 +420,24 @@ def _admin_team_day_state(
             ).all()
             if ts is not None
         }
+        # One activities query for the whole team day (was N round-trips).
+        for act in db.session.execute(
+            db.select(Activity)
+            .filter(Activity.user_id.in_(user_ids))
+            .filter(Activity.end_ts >= start, Activity.start_ts < end)
+            .order_by(Activity.start_ts.asc())
+        ).scalars():
+            acts_by_user.setdefault(int(act.user_id), []).append(act)
+        for entry in db.session.execute(
+            db.select(ManualEntry)
+            .filter(ManualEntry.user_id.in_(user_ids))
+            .filter(ManualEntry.start_ts >= start, ManualEntry.start_ts < end)
+            .order_by(ManualEntry.start_ts.desc())
+        ).scalars():
+            manuals_by_user.setdefault(int(entry.user_id), []).append(entry)
     for u in users:
         with user_tz(u):
-            acts = _activities_for(u.id, day)
+            acts = _without_lunch(acts_by_user.get(u.id, []), lunch)
             live = None
             # Only hit latest-activity when this person looks online.
             tentative_last = last_map.get(u.id)
@@ -452,6 +468,7 @@ def _admin_team_day_state(
                 last_seen=last_map.get(u.id),
                 shot_count=shot_counts.get(u.id, 0),
                 live=live,
+                manuals=manuals_by_user.get(u.id),
             )
         rows.append(row)
         s = row["summary"]
@@ -2414,7 +2431,6 @@ def admin():
         1,
     )
     split_idle = round(100.0 * total_idle / total_all, 1)
-    week = _week_strip(None, day)
     day_label = day.strftime("%a, %B %d, %Y")
     tracked_today = float(team.get("active") or 0.0) + float(team.get("idle") or 0.0)
     team_hour_bars, team_has_hour_data = _team_hourly_bars(
@@ -2425,7 +2441,6 @@ def admin():
         "admin.html",
         **_day_nav(day),
         day_label=day_label,
-        week=week,
         tracked_today=tracked_today,
         team_hour_bars=team_hour_bars,
         team_has_hour_data=team_has_hour_data,
