@@ -179,6 +179,87 @@ jobs:
           if ($bad) { exit 1 }
           "Defender: no threats found" | Tee-Object -Append $env:GITHUB_STEP_SUMMARY
 
+      - name: Build Microsoft Store package (MSIX)
+        shell: pwsh
+        env:
+          # Partner Center > Product identity; placeholders are used until these repo variables exist.
+          ESSTRACKER_MSIX_NAME: ${{ vars.MSIX_IDENTITY_NAME }}
+          ESSTRACKER_MSIX_PUBLISHER: ${{ vars.MSIX_PUBLISHER }}
+          ESSTRACKER_MSIX_PUBLISHER_DISPLAY: ${{ vars.MSIX_PUBLISHER_DISPLAY }}
+        run: .venv\Scripts\python.exe packaging\build.py msix
+
+      - name: Install, run and remove the MSIX (test-signed copy)
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = "Stop"
+          $msix = (Get-ChildItem dist\releases\esstracker-*-x64.msix)[0].FullName
+          [xml]$m = Get-Content build\msix\AppxManifest.xml
+          $publisher = $m.Package.Identity.Publisher
+          $name = $m.Package.Identity.Name
+
+          # Sideloading needs a trusted signature; the Store signs the real package itself.
+          $cert = New-SelfSignedCertificate -Type Custom -Subject $publisher -KeyUsage DigitalSignature `
+            -CertStoreLocation Cert:\CurrentUser\My -FriendlyName "esstracker MSIX test" `
+            -TextExtension @("2.5.29.37={text}1.3.6.1.5.5.7.3.3", "2.5.29.19={text}")
+          $pw = ConvertTo-SecureString -String "test" -Force -AsPlainText
+          $pfx = Join-Path $env:RUNNER_TEMP "msix-test.pfx"
+          Export-PfxCertificate -Cert $cert -FilePath $pfx -Password $pw | Out-Null
+          $cer = Join-Path $env:RUNNER_TEMP "msix-test.cer"
+          Export-Certificate -Cert $cert -FilePath $cer | Out-Null
+          Import-Certificate -FilePath $cer -CertStoreLocation Cert:\LocalMachine\TrustedPeople | Out-Null
+
+          $test = Join-Path $env:RUNNER_TEMP "esstracker-test.msix"
+          Copy-Item $msix $test
+          $signtool = (Get-ChildItem "${env:ProgramFiles(x86)}\Windows Kits\10\bin\*\x64\signtool.exe" | Sort-Object FullName | Select-Object -Last 1).FullName
+          & $signtool sign /fd SHA256 /f $pfx /p test $test
+          if ($LASTEXITCODE -ne 0) { throw "test signing failed" }
+
+          Add-AppxPackage -Path $test
+          $pkg = Get-AppxPackage -Name $name
+          if (-not $pkg) { throw "package $name not installed" }
+          "Installed: $($pkg.PackageFullName)"
+
+          $alias = Join-Path $env:LOCALAPPDATA "Microsoft\WindowsApps\esstracker-agent.exe"
+          if (-not (Test-Path $alias)) { throw "execution alias missing: $alias" }
+          $s = Start-Process $alias -ArgumentList 'status' -Wait -PassThru -WindowStyle Hidden
+          if ($s.ExitCode -ne 0) { throw "packaged agent status exit code $($s.ExitCode)" }
+
+          Start-Process "shell:AppsFolder\$($pkg.PackageFamilyName)!esstracker"
+          Start-Sleep -Seconds 20
+          $proc = Get-Process -Name "esstracker-Agent" -ErrorAction SilentlyContinue
+          if (-not $proc) { throw "packaged agent is not running 20 s after launch" }
+          "packaged agent ran 20 s without crashing"
+          $proc | Stop-Process -Force
+
+          Remove-AppxPackage -Package $pkg.PackageFullName
+          if (Get-AppxPackage -Name $name) { throw "package still installed after removal" }
+          "MSIX removed cleanly"
+
+      - name: Windows App Certification Kit (Store pre-check)
+        continue-on-error: true
+        timeout-minutes: 25
+        shell: pwsh
+        run: |
+          $appcert = "${env:ProgramFiles(x86)}\Windows Kits\10\App Certification Kit\appcert.exe"
+          if (-not (Test-Path $appcert)) { "::warning::App Certification Kit not installed on this runner; skipped"; exit 0 }
+          $msix = (Get-ChildItem dist\releases\esstracker-*-x64.msix)[0].FullName
+          New-Item -ItemType Directory -Force dist\wack | Out-Null
+          & $appcert reset
+          & $appcert test -appxpackagepath $msix -reportoutputpath dist\wack\wack-report.xml
+          if (Test-Path dist\wack\wack-report.xml) {
+            [xml]$r = Get-Content dist\wack\wack-report.xml
+            "WACK overall result: $($r.REPORT.OVERALL_RESULT)" | Tee-Object -Append $env:GITHUB_STEP_SUMMARY
+            $r.SelectNodes("//TEST[RESULT='FAIL']") | ForEach-Object { "FAIL: $($_.NAME)" } | Tee-Object -Append $env:GITHUB_STEP_SUMMARY
+          }
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: windows-store
+          path: |
+            dist/releases/esstracker-*-x64.msix
+            dist/wack/
+          if-no-files-found: warn
+
       - name: SHA-256 of files to share
         shell: pwsh
         run: |

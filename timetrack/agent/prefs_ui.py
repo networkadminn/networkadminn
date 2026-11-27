@@ -123,7 +123,9 @@ def _window(agent: Agent) -> None:
 
     heading("Startup")
     startup_var = tk.BooleanVar(value=autostart.is_enabled())
-    startup_msg = info("")
+    from .msix import is_packaged
+
+    startup_msg = info("Change this in Windows Settings > Apps > Startup." if is_packaged() else "")
 
     def toggle_startup() -> None:
         try:
@@ -168,15 +170,23 @@ def _window(agent: Agent) -> None:
             if data is None:
                 text, color = "Could not reach the server.", red
             elif upd:
-                text, color = f"Version {upd.get('latest')} is available.", green
-                from .update_ui import maybe_prompt_update
+                from .msix import STORE_UPDATES_URI, is_packaged
 
-                maybe_prompt_update(
-                    upd,
-                    server_url=agent.config.server_url,
-                    state_dir=os.path.dirname(os.path.abspath(agent.config.buffer_path)),
-                    force=True,
-                )
+                text, color = f"Version {upd.get('latest')} is available.", green
+                if is_packaged():
+                    import webbrowser
+
+                    text += " Update it from Microsoft Store."
+                    webbrowser.open(STORE_UPDATES_URI)
+                else:
+                    from .update_ui import maybe_prompt_update
+
+                    maybe_prompt_update(
+                        upd,
+                        server_url=agent.config.server_url,
+                        state_dir=os.path.dirname(os.path.abspath(agent.config.buffer_path)),
+                        force=True,
+                    )
             else:
                 text, color = "You have the latest version.", green
             root.after(0, lambda: update_msg.config(text=text, fg=color))

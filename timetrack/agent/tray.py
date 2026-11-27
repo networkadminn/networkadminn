@@ -450,9 +450,14 @@ class AgentTray:
             if data is None:
                 notify("esstracker", "Could not reach the server")
             elif upd:
+                from .msix import STORE_UPDATES_URI, is_packaged
+
                 latest = upd.get("latest") or "new"
                 notify("esstracker", f"Version {latest} available")
-                webbrowser.open(base + str(upd.get("page") or "/download"))
+                if is_packaged():
+                    webbrowser.open(STORE_UPDATES_URI)
+                else:
+                    webbrowser.open(base + str(upd.get("page") or "/download"))
             else:
                 notify("esstracker", f"You have the latest version ({__version__})")
 
