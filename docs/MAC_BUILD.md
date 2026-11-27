@@ -62,6 +62,36 @@ bash packaging/build_mac.sh
 
 Or use CI: push tag `vX.Y.Z` and download artifact from **macOS dmg**.
 
+## GitHub self-hosted runner (your Mac laptop)
+
+Use this when you want CI to build on your own Mac (`runs-on: self-hosted`).
+
+1. On GitHub: **Settings → Actions → Runners → New self-hosted runner → macOS** (pick **x64** for Intel or **arm64** for Apple Silicon).
+2. On the Mac, in Terminal, run the commands GitHub shows, for example:
+   ```bash
+   mkdir actions-runner && cd actions-runner
+   curl -o actions-runner-osx-x64-2.338.2.tar.gz -L \
+     https://github.com/actions/runner/releases/download/v2.338.2/actions-runner-osx-x64-2.338.2.tar.gz
+   tar xzf ./actions-runner-osx-x64-2.338.2.tar.gz
+   ./config.sh --url https://github.com/OWNER/REPO --token ONE_TIME_TOKEN
+   ```
+   Replace the download URL with the exact version from GitHub’s page (Apple Silicon uses `osx-arm64`, not `osx-x64`).
+3. Optional extra label so only this Mac takes dmg jobs:
+   ```bash
+   ./config.sh --url ... --token ... --labels self-hosted,macOS,esstracker-mac
+   ```
+   If you use that label, change `runs-on` in `.github/workflows/macos-dmg-self-hosted.yml` to `[self-hosted, esstracker-mac]`.
+4. Start the runner (leave it running while you build):
+   ```bash
+   ./run.sh
+   ```
+   Or install as a service: `./svc.sh install` then `./svc.sh start`.
+5. One-time on the Mac: **Xcode Command Line Tools** (`xcode-select --install`) and **Python 3.12** (see Prerequisites above).
+6. On GitHub: **Actions → macOS dmg (self-hosted) → Run workflow** (pick branch `agent-test/0.3.18` or `develop`).
+7. When the job finishes, download the **esstracker-macos-self-hosted-…** artifact (DMG).
+
+**Intel vs Apple Silicon:** each Mac only builds for its own CPU (`x86_64` or `arm64`). Use an Intel Mac runner for Intel DMGs; M-series for arm64.
+
 ## Install on employee Macs
 
 1. Open the **correct** DMG (Intel vs Apple Silicon).
