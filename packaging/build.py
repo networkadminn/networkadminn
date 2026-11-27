@@ -174,6 +174,39 @@ def _platform_dist() -> Path:
     return DIST / "linux"
 
 
+WINDOWS_PUBLISHER = "Euclidee Software Solutions Pvt Ltd"
+
+
+def _windows_version_file(work: Path) -> Path:
+    """PyInstaller VSVersionInfo for the agent exe (Properties → Details)."""
+    nums = [int(p) for p in re.findall(r"\d+", VERSION)[:3]]
+    nums += [0] * (4 - len(nums))
+    ver = tuple(nums[:4])
+    path = work / "esstracker_version_info.txt"
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(
+        f"""VSVersionInfo(
+  ffi=FixedFileInfo(filevers={ver}, prodvers={ver}, mask=0x3f, flags=0x0, OS=0x40004,
+                    fileType=0x1, subtype=0x0, date=(0, 0)),
+  kids=[
+    StringFileInfo([StringTable('040904B0', [
+      StringStruct('CompanyName', '{WINDOWS_PUBLISHER}'),
+      StringStruct('FileDescription', 'esstracker employee time tracker'),
+      StringStruct('FileVersion', '{VERSION}'),
+      StringStruct('InternalName', 'esstracker-Agent'),
+      StringStruct('LegalCopyright', 'Copyright (c) {WINDOWS_PUBLISHER}'),
+      StringStruct('OriginalFilename', 'esstracker-Agent.exe'),
+      StringStruct('ProductName', 'esstracker'),
+      StringStruct('ProductVersion', '{VERSION}')])]),
+    VarFileInfo([VarStruct('Translation', [1033, 1200])])
+  ]
+)
+""",
+        encoding="utf-8",
+    )
+    return path
+
+
 def build_binaries(*, onefile: bool, apps: tuple[tuple[str, str], ...] | None = None) -> Path:
     """Build PyInstaller binaries for the current platform. Returns output dir."""
     _ensure_pyinstaller()
@@ -211,11 +244,15 @@ def build_binaries(*, onefile: bool, apps: tuple[tuple[str, str], ...] | None = 
             cmd.append("--onefile")
         else:
             cmd.append("--onedir")
+        # UPX-packed executables are a classic antivirus false-positive trigger.
+        cmd.append("--noupx")
         # Agent: no console when launched from Start Menu / Startup
         if name == "timetrack-agent" and platform.system() == "Windows":
             cmd.append("--windowed")
             if win_icon is not None:
                 cmd.extend(["--icon", str(win_icon)])
+            # Publisher / version details shown in Properties and read by SmartScreen / AV.
+            cmd.extend(["--version-file", str(_windows_version_file(work))])
             cmd.extend(["--collect-all", "tkinter", "--collect-all", "pystray"])
             # Browser address-bar URLs (UI Automation); comtypes builds COM wrappers at runtime.
             cmd.extend(["--collect-all", "uiautomation", "--collect-all", "comtypes"])
@@ -715,16 +752,24 @@ def build_exe_client() -> Path:
             "Run packaging/build_windows.ps1 on a Windows machine.",
             file=sys.stderr,
         )
-    out = build_binaries(onefile=True, apps=CLIENT_APPS)
-    src = out / "timetrack-agent.exe"
-    if not src.exists():
-        src = out / "timetrack-agent"
+    # One-folder build: a self-extracting onefile exe is what antivirus most often
+    # false-flags, and it unpacks to %TEMP% on every start.
+    out = build_binaries(onefile=False, apps=CLIENT_APPS)
+    bundle = out / "timetrack-agent"
     dst = out / "esstracker-Agent.exe"
-    if src.exists():
-        if dst.exists():
-            dst.unlink()
-        src.rename(dst)
-        sign_windows(dst)
+    if bundle.is_dir():
+        # Flatten so esstracker-Agent.exe sits next to _internal\ (installer + kit layout).
+        for item in bundle.iterdir():
+            target = out / ("esstracker-Agent.exe" if item.name == "timetrack-agent.exe" else item.name)
+            if target.is_dir():
+                shutil.rmtree(target)
+            elif target.exists():
+                target.unlink()
+            shutil.move(str(item), str(target))
+        bundle.rmdir()
+    if not dst.exists() or not (out / "_internal").is_dir():
+        sys.exit(f"Windows one-folder build incomplete in {out}")
+    sign_windows(dst)
 
     # Ship company defaults + installer next to the agent (Ubuntu /etc equivalent)
     defaults = WINDOWS / "defaults.toml"
@@ -753,14 +798,13 @@ def build_exe_client() -> Path:
     )
 
     print(f"Windows client: {dst}")
-    if dst.exists():
-        _publish_release(dst)
-        # Also zip the install kit for the download page
-        kit = DIST / "releases" / f"esstracker-{VERSION}-windows.zip"
-        if kit.exists():
-            kit.unlink()
-        shutil.make_archive(str(kit.with_suffix("")), "zip", out)
-        print(f"Windows install kit: {kit}")
+    # The exe needs its _internal folder, so ship the zip kit (and the installer), not a bare exe.
+    kit = DIST / "releases" / f"esstracker-{VERSION}-windows.zip"
+    kit.parent.mkdir(parents=True, exist_ok=True)
+    if kit.exists():
+        kit.unlink()
+    shutil.make_archive(str(kit.with_suffix("")), "zip", out)
+    print(f"Windows install kit: {kit}")
     return dst
 
 

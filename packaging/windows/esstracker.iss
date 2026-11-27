@@ -12,9 +12,16 @@ AppId={{7F3C9A52-5B1E-4C8D-9E21-3A6B0C4D8E11}
 AppName=esstracker
 AppVersion={#AppVersion}
 AppVerName=esstracker {#AppVersion}
-AppPublisher=Euclidee Solutions
+AppPublisher=Euclidee Software Solutions Pvt Ltd
 AppPublisherURL=https://tracker.euclideesolutions.com/
 AppSupportURL=https://tracker.euclideesolutions.com/
+AppCopyright=Copyright (c) Euclidee Software Solutions Pvt Ltd
+; Version resource on Setup.exe (Properties > Details); unsigned installers without it look more suspicious.
+VersionInfoVersion={#AppVersion}
+VersionInfoCompany=Euclidee Software Solutions Pvt Ltd
+VersionInfoDescription=esstracker employee time tracker setup
+VersionInfoProductName=esstracker
+VersionInfoProductVersion={#AppVersion}
 ; Per-user install: no admin prompt, matches defaults.toml lookup in agent/config.py.
 PrivilegesRequired=lowest
 DefaultDirName={localappdata}\Programs\esstracker
@@ -39,8 +46,13 @@ Name: "english"; MessagesFile: "compiler:Default.isl"
 [Tasks]
 Name: "autostart"; Description: "Start esstracker automatically when I sign in to Windows"; GroupDescription: "Startup:"
 
+[InstallDelete]
+; One-folder build: drop the previous version's libraries so stale files never mix in.
+Type: filesandordirs; Name: "{app}\_internal"
+
 [Files]
 Source: "..\..\dist\windows\esstracker-Agent.exe"; DestDir: "{app}"; Flags: ignoreversion
+Source: "..\..\dist\windows\_internal\*"; DestDir: "{app}\_internal"; Flags: ignoreversion recursesubdirs createallsubdirs
 Source: "defaults.toml"; DestDir: "{app}"; Flags: ignoreversion
 
 [Icons]

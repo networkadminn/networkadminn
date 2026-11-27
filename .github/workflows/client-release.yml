@@ -63,6 +63,23 @@ jobs:
           xvfb-run -a dist/linux/timetrack-agent --help >/dev/null
           echo "binary starts OK"
 
+      - name: Install, run and remove the .deb
+        run: |
+          set -euo pipefail
+          deb=$(ls dist/esstracker_*_ubuntu${{ matrix.ubuntu }}_amd64.deb)
+          sudo apt-get install -y -qq "./$deb"
+          dpkg -s esstracker | grep -E '^(Status|Version):'
+          command -v esstracker-agent
+          xvfb-run -a esstracker-agent --help >/dev/null
+          xvfb-run -a esstracker-agent status
+          # The tray agent must start and stay up (it waits on the sign-in window here).
+          xvfb-run -a timeout 20 esstracker-agent run && rc=0 || rc=$?
+          if [ "$rc" -ne 124 ]; then echo "::error::agent exited early (rc=$rc)"; exit 1; fi
+          echo "agent ran 20 s without crashing"
+          sudo apt-get remove -y -qq esstracker
+          ! command -v esstracker-agent
+          sha256sum "$deb" | tee -a "$GITHUB_STEP_SUMMARY"
+
       - uses: actions/upload-artifact@v4
         with:
           name: linux-ubuntu${{ matrix.ubuntu }}
@@ -110,6 +127,64 @@ jobs:
         shell: pwsh
         run: |
           Get-ChildItem dist\releases\esstracker-Setup-*.exe, dist\releases\esstracker-*-windows.zip | Format-Table Name, Length
+
+      - name: Install, run and uninstall (silent)
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = "Stop"
+          $setup = (Get-ChildItem dist\releases\esstracker-Setup-*.exe)[0].FullName
+          $p = Start-Process $setup -ArgumentList '/VERYSILENT', '/SUPPRESSMSGBOXES', '/NORESTART', '/TASKS=' -Wait -PassThru
+          if ($p.ExitCode -ne 0) { throw "installer exit code $($p.ExitCode)" }
+
+          $app = Join-Path $env:LOCALAPPDATA 'Programs\esstracker'
+          $exe = Join-Path $app 'esstracker-Agent.exe'
+          foreach ($f in @($exe, "$app\_internal", "$app\defaults.toml", "$app\unins000.exe")) {
+            if (-not (Test-Path $f)) { throw "missing after install: $f" }
+          }
+          $vi = (Get-Item $exe).VersionInfo
+          "Company: $($vi.CompanyName) | Product: $($vi.ProductName) | Version: $($vi.FileVersion)"
+          if (-not $vi.CompanyName) { throw "agent exe has no version/publisher info" }
+          "Signature: $((Get-AuthenticodeSignature $exe).Status)"
+
+          $s = Start-Process $exe -ArgumentList 'status' -Wait -PassThru -WindowStyle Hidden
+          if ($s.ExitCode -ne 0) { throw "esstracker-Agent.exe status exit code $($s.ExitCode)" }
+
+          # The tray agent must start and stay up (it waits on the sign-in window here).
+          $run = Start-Process $exe -ArgumentList 'run' -PassThru
+          Start-Sleep -Seconds 20
+          if ($run.HasExited) { throw "agent exited early with code $($run.ExitCode)" }
+          "agent ran 20 s without crashing"
+          Stop-Process -Id $run.Id -Force
+
+          Start-Process "$app\unins000.exe" -ArgumentList '/VERYSILENT', '/SUPPRESSMSGBOXES', '/NORESTART' -Wait
+          for ($i = 0; $i -lt 30 -and (Test-Path $exe); $i++) { Start-Sleep -Seconds 2 }
+          if (Test-Path $exe) { throw "uninstall left $exe behind" }
+          "uninstall removed the app"
+
+      - name: Microsoft Defender scan
+        shell: pwsh
+        run: |
+          $mp = Join-Path $env:ProgramFiles 'Windows Defender\MpCmdRun.exe'
+          $status = try { Get-MpComputerStatus } catch { $null }
+          if (-not (Test-Path $mp) -or -not $status -or -not $status.AntivirusEnabled) {
+            "::warning::Microsoft Defender is not active on this runner; scan skipped"
+            exit 0
+          }
+          try { Update-MpSignature -ErrorAction Stop } catch { "signature update failed: $_" }
+          $bad = 0
+          foreach ($f in @((Get-ChildItem dist\releases\esstracker-Setup-*.exe)[0].FullName, (Resolve-Path dist\windows).Path)) {
+            & $mp -Scan -ScanType 3 -File $f -DisableRemediation
+            if ($LASTEXITCODE -eq 2) { "::error::Defender flagged $f"; $bad++ }
+          }
+          if ($bad) { exit 1 }
+          "Defender: no threats found" | Tee-Object -Append $env:GITHUB_STEP_SUMMARY
+
+      - name: SHA-256 of files to share
+        shell: pwsh
+        run: |
+          Get-ChildItem dist\releases\esstracker-Setup-*.exe, dist\releases\esstracker-*-windows.zip |
+            Get-FileHash -Algorithm SHA256 | ForEach-Object { "$($_.Hash)  $(Split-Path $_.Path -Leaf)" } |
+            Tee-Object -Append $env:GITHUB_STEP_SUMMARY
 
       - uses: actions/upload-artifact@v4
         with:
