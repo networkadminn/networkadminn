@@ -304,25 +304,44 @@ def _admin_team_row(
     now_ts: float,
     online_window: float,
     private_period: PrivatePeriod | None = None,
+    *,
+    acts: list[Activity] | None = None,
+    last_seen: float | None = None,
+    shot_count: int | None = None,
+    live: dict | None = None,
 ) -> dict:
     """One employee's row on the team board, in the active (employee's) zone."""
     start, end = day_bounds(day, tz_name=_tz())
-    acts = _activities_for(u.id, day)
+    if acts is None:
+        acts = _activities_for(u.id, day)
     manual = _manual_for(u.id, day)
     dm = compute_day_metrics(acts, manual, start, end, expected)
     s = dm.summary
     manual_seconds = dm.manual_total_seconds
-    last = _last_seen(u.id)
+    last = last_seen if last_seen is not None else _last_seen(u.id)
+    # Prefer day's last activity end when it is newer (avoids a second full-table scan).
+    if acts:
+        day_last = float(acts[-1].end_ts)
+        last = max(float(last or 0.0), day_last) or None
     online = _is_online(u, last, now_ts, online_window)
     late = _is_late(s.arrival_ts, day)
     absent = (not off_day) and s.total_seconds <= 0 and manual_seconds <= 0
-    live = _live_snapshot(u.id, now_ts=now_ts, online_window=online_window)
+    if live is None:
+        live = _live_snapshot(u.id, now_ts=now_ts, online_window=online_window)
     if not online and isinstance(live, dict):
         live["fresh"] = False
     private_active = private_period is not None
     stale_private = False
     if private_period:
         stale_private = (now_ts - private_period.start_ts) > 86400 * 2
+    if shot_count is None:
+        shot_count = db.session.execute(
+            db.select(db.func.count(Screenshot.id)).filter(
+                Screenshot.user_id == u.id,
+                Screenshot.ts >= start,
+                Screenshot.ts < end,
+            )
+        ).scalar_one()
     return {
         "user": u,
         "private_active": private_active,
@@ -340,13 +359,8 @@ def _admin_team_row(
         "online": online,
         "last_seen": last,
         "live": live,
-        "shots": db.session.execute(
-            db.select(db.func.count(Screenshot.id)).filter(
-                Screenshot.user_id == u.id,
-                Screenshot.ts >= start,
-                Screenshot.ts < end,
-            )
-        ).scalar_one(),
+        "shots": int(shot_count or 0),
+        "_acts": acts,
         "arrived": format_clock(s.arrival_ts, tz_name=_tz()),
         "left": format_clock(s.last_seen_ts, tz_name=_tz()),
         "late": late and not absent,
@@ -378,9 +392,54 @@ def _admin_team_day_state(
         "late": 0,
         "absent": 0,
     }
-    priv_map = _active_private_map([u.id for u in users])
+    user_ids = [u.id for u in users]
+    priv_map = _active_private_map(user_ids)
+    start, end = day_bounds(day, tz_name=_tz())
+    shot_counts: dict[int, int] = {}
+    last_map: dict[int, float] = {}
+    if user_ids:
+        shot_counts = {
+            int(uid): int(n)
+            for uid, n in db.session.execute(
+                db.select(Screenshot.user_id, db.func.count(Screenshot.id))
+                .filter(
+                    Screenshot.user_id.in_(user_ids),
+                    Screenshot.ts >= start,
+                    Screenshot.ts < end,
+                )
+                .group_by(Screenshot.user_id)
+            ).all()
+        }
+        last_map = {
+            int(uid): float(ts)
+            for uid, ts in db.session.execute(
+                db.select(Activity.user_id, db.func.max(Activity.end_ts))
+                .filter(Activity.user_id.in_(user_ids))
+                .group_by(Activity.user_id)
+            ).all()
+            if ts is not None
+        }
     for u in users:
         with user_tz(u):
+            acts = _activities_for(u.id, day)
+            live = None
+            # Only hit latest-activity when this person looks online.
+            tentative_last = last_map.get(u.id)
+            if acts:
+                tentative_last = max(float(tentative_last or 0.0), float(acts[-1].end_ts))
+            if _is_online(u, tentative_last, now_ts, online_window):
+                live = _live_snapshot(u.id, now_ts=now_ts, online_window=online_window)
+            else:
+                live = {
+                    "app": "—",
+                    "title": "",
+                    "domain": "",
+                    "category": "neutral",
+                    "idle": False,
+                    "ago": "offline",
+                    "end_ts": tentative_last,
+                    "fresh": False,
+                }
             row = _admin_team_row(
                 u,
                 day,
@@ -389,6 +448,10 @@ def _admin_team_day_state(
                 now_ts,
                 online_window,
                 private_period=priv_map.get(u.id),
+                acts=acts,
+                last_seen=last_map.get(u.id),
+                shot_count=shot_counts.get(u.id, 0),
+                live=live,
             )
         rows.append(row)
         s = row["summary"]
@@ -432,7 +495,12 @@ def _admin_team_day_state(
     return rows, team, team_apps, avg_prod, avg_eff, off_day
 
 
-def _team_hourly_bars(users: list[User], day: datetime) -> tuple[list[dict], bool]:
+def _team_hourly_bars(
+    users: list[User],
+    day: datetime,
+    *,
+    preloaded_acts: list | None = None,
+) -> tuple[list[dict], bool]:
     """Hourly team productivity columns for the admin dashboard bar."""
     settings = get_settings()
     start, end = day_bounds(day, tz_name=_tz())
@@ -445,9 +513,12 @@ def _team_hourly_bars(users: list[User], day: datetime) -> tuple[list[dict], boo
     if view_end <= view_start:
         view_start, view_end = start, end
 
-    acts: list = []
-    for u in users:
-        acts.extend(_activities_for(u.id, day))
+    if preloaded_acts is not None:
+        acts = list(preloaded_acts)
+    else:
+        acts = []
+        for u in users:
+            acts.extend(_activities_for(u.id, day))
 
     h0 = max(0, int(office_start_h))
     h1 = max(h0, int(math.ceil(office_end_h)) - 1)
@@ -2269,6 +2340,9 @@ def admin():
         now_ts=now_ts,
         online_window=cfg.online_window,
     )
+    preloaded_acts: list = []
+    for r in rows:
+        preloaded_acts.extend(r.pop("_acts", []) or [])
 
     tracked = [r for r in rows if not r["absent"]]
     top_productive = sorted(
@@ -2311,6 +2385,8 @@ def admin():
     from .releases import is_outdated as client_outdated
 
     if request.args.get("partial") == "live":
+        for r in rows:
+            r.pop("_acts", None)
         return render_template(
             "_admin_live_partial.html",
             rows=rows,
@@ -2341,7 +2417,9 @@ def admin():
     week = _week_strip(None, day)
     day_label = day.strftime("%a, %B %d, %Y")
     tracked_today = float(team.get("active") or 0.0) + float(team.get("idle") or 0.0)
-    team_hour_bars, team_has_hour_data = _team_hourly_bars(users, day)
+    team_hour_bars, team_has_hour_data = _team_hourly_bars(
+        users, day, preloaded_acts=preloaded_acts
+    )
 
     return render_template(
         "admin.html",
@@ -3465,6 +3543,8 @@ def reports():
                 online_window=cfg.online_window,
             )
         )
+        for r in rows:
+            r.pop("_acts", None)
         viz_q = f"&scope=team&range={range_days}"
         if team_id:
             viz_q += f"&team_id={team_id}"
