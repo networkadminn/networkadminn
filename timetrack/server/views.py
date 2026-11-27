@@ -266,6 +266,30 @@ def _spark_polyline(values: list[float], *, width: float = 120.0, height: float 
     return line, area
 
 
+def _active_private_map(user_ids: list[int]) -> dict[int, PrivatePeriod]:
+    """Users with Private Time currently ON (active period row)."""
+    if not user_ids:
+        return {}
+    periods = list(
+        db.session.execute(
+            db.select(PrivatePeriod).filter(
+                PrivatePeriod.user_id.in_(user_ids),
+                PrivatePeriod.active.is_(True),
+            )
+        ).scalars()
+    )
+    return {p.user_id: p for p in periods}
+
+
+def _private_duration_label(start_ts: float, now_ts: float) -> str:
+    ago_s = max(0, int(now_ts - start_ts))
+    if ago_s < 60:
+        return f"{ago_s}s"
+    if ago_s < 3600:
+        return f"{ago_s // 60}m"
+    return f"{ago_s // 3600}h {(ago_s % 3600) // 60}m"
+
+
 def _admin_team_row(
     u: User,
     day: datetime,
@@ -273,6 +297,7 @@ def _admin_team_row(
     off_day: bool,
     now_ts: float,
     online_window: float,
+    private_period: PrivatePeriod | None = None,
 ) -> dict:
     """One employee's row on the team board, in the active (employee's) zone."""
     start, end = day_bounds(day, tz_name=_tz())
@@ -288,8 +313,16 @@ def _admin_team_row(
     live = _live_snapshot(u.id, now_ts=now_ts, online_window=online_window)
     if not online and isinstance(live, dict):
         live["fresh"] = False
+    private_active = private_period is not None
     return {
         "user": u,
+        "private_active": private_active,
+        "private_started": format_clock(private_period.start_ts, tz_name=_tz())
+        if private_period
+        else "",
+        "private_ago": _private_duration_label(private_period.start_ts, now_ts)
+        if private_period
+        else "",
         "summary": s,
         "manual_seconds": manual_seconds,
         "desktime_seconds": dm.desktime_seconds,
@@ -334,9 +367,18 @@ def _admin_team_day_state(
         "late": 0,
         "absent": 0,
     }
+    priv_map = _active_private_map([u.id for u in users])
     for u in users:
         with user_tz(u):
-            row = _admin_team_row(u, day, expected, off_day, now_ts, online_window)
+            row = _admin_team_row(
+                u,
+                day,
+                expected,
+                off_day,
+                now_ts,
+                online_window,
+                private_period=priv_map.get(u.id),
+            )
         rows.append(row)
         s = row["summary"]
         team["active"] += s.active_seconds
@@ -1710,6 +1752,11 @@ def _employee_day_context(user: User, day: datetime, *, is_self: bool) -> dict:
     )
     ai_report = None
     gemini_configured = False
+    private_period = db.session.execute(
+        db.select(PrivatePeriod)
+        .filter_by(user_id=user.id, active=True)
+        .order_by(PrivatePeriod.start_ts.desc())
+    ).scalar_one_or_none()
     if not is_self:
         from .ai_report import get_day_report, load_gemini_api_key
 
@@ -1804,6 +1851,14 @@ def _employee_day_context(user: User, day: datetime, *, is_self: bool) -> dict:
         ),
         "ai_report": ai_report,
         "gemini_configured": gemini_configured,
+        "private_active": private_period is not None,
+        "private_started": format_clock(private_period.start_ts, tz_name=_tz())
+        if private_period
+        else "",
+        "private_ago": _private_duration_label(private_period.start_ts, now_ts)
+        if private_period
+        else "",
+        "company_settings": settings,
     }
 
 
@@ -2324,6 +2379,33 @@ def admin_user(user_id: int):
     return render_template("user.html", **ctx)
 
 
+@views_bp.route("/admin/user/<int:user_id>/settings", methods=["POST"])
+@admin_required
+def admin_user_settings(user_id: int):
+    """Per-employee policy overrides (screenshots, private time, timezone)."""
+    user = _org_user_or_404(user_id)
+    day_s = (request.form.get("day") or "").strip()
+    user.private_time_allowed = bool(request.form.get("private_time_allowed"))
+    user.view_own_screenshots = bool(request.form.get("view_own_screenshots"))
+    mode = request.form.get("shot_mode") or "company"
+    if mode == "company":
+        user.screenshots_enabled = None
+        user.screenshot_interval = None
+    elif mode == "off":
+        user.screenshots_enabled = False
+        user.screenshot_interval = None
+    else:
+        user.screenshots_enabled = True
+        interval = request.form.get("interval", type=int) or 300
+        user.screenshot_interval = max(60, min(interval, 3600))
+    if not _apply_timezone_field(user):
+        flash("Invalid time zone.", "error")
+        return redirect(url_for("views.admin_user", user_id=user.id, day=day_s or None))
+    db.session.commit()
+    flash(f"Settings saved for {user.username}.", "info")
+    return redirect(url_for("views.admin_user", user_id=user.id, day=day_s or None))
+
+
 @views_bp.route("/admin/user/<int:user_id>/categories", methods=["POST"])
 @admin_required
 def admin_user_categories(user_id: int):
@@ -2736,16 +2818,20 @@ def employees():
     )
     now_ts = datetime.now().timestamp()
     cfg = current_app.config["TIMETRACK_SERVER_CONFIG"]
+    priv_map = _active_private_map([u.id for u in users])
     rows = []
     metrics_by_id: dict[int, dict] = {}
     for u in users:
         last = _last_seen(u.id)
         online = _is_online(u, last, now_ts, cfg.online_window)
+        pp = priv_map.get(u.id)
         rows.append(
             {
                 "user": u,
                 "online": online,
                 "last_seen": last,
+                "private_active": pp is not None,
+                "private_ago": _private_duration_label(pp.start_ts, now_ts) if pp else "",
             }
         )
         acts = _activities_for(u.id, day)

@@ -11,7 +11,14 @@ import pytest
 from timetrack.config import NEUTRAL, PRODUCTIVE, UNPRODUCTIVE, Config, _domain_matches
 from timetrack.server import create_app
 from timetrack.server.extensions import db
-from timetrack.server.models import ROLE_ADMIN, ROLE_EMPLOYEE, Activity, Screenshot, User
+from timetrack.server.models import (
+    ROLE_ADMIN,
+    ROLE_EMPLOYEE,
+    Activity,
+    PrivatePeriod,
+    Screenshot,
+    User,
+)
 
 
 @pytest.fixture()
@@ -169,3 +176,37 @@ def test_invalid_time_zone_is_rejected(client, app):
     )
     with app.app_context():
         assert db.session.get(User, app.config["_EMP_ID"]).timezone == "Europe/London"
+
+
+def test_admin_dashboard_shows_private_time_on(client, app):
+    with app.app_context():
+        emp_id = app.config["_EMP_ID"]
+        db.session.add(
+            PrivatePeriod(user_id=emp_id, start_ts=time.time() - 120, active=True)
+        )
+        db.session.commit()
+    client.post("/login", data={"username": "boss", "password": "adminpass"})
+    resp = client.get("/admin")
+    assert resp.status_code == 200
+    assert b"Private Time ON" in resp.data
+    assert b"Alice" in resp.data
+
+
+def test_admin_user_settings_save(client, app):
+    client.post("/login", data={"username": "boss", "password": "adminpass"})
+    emp_id = app.config["_EMP_ID"]
+    resp = client.post(
+        f"/admin/user/{emp_id}/settings",
+        data={
+            "day": "2026-11-27",
+            "private_time_allowed": "1",
+            "view_own_screenshots": "1",
+            "shot_mode": "off",
+        },
+        follow_redirects=True,
+    )
+    assert resp.status_code == 200
+    with app.app_context():
+        u = db.session.get(User, emp_id)
+        assert u.view_own_screenshots is True
+        assert u.screenshots_enabled is False
