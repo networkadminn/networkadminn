@@ -9,11 +9,23 @@
   ('other', 'Other'),
 ] %}
 <div class="es-page">
-  <a class="es-back" href="{{ url_for('views.employees') }}">&larr; Back to all team members</a>
+  <a class="es-back" href="{{ url_for('views.employees') }}">&larr; Team members</a>
 
   <header class="es-head">
-    <h1>{{ subject.name }} settings</h1>
-    <p class="es-lead">Individual team member settings take priority over company defaults.</p>
+    <div class="es-head-main">
+      <span class="avatar es-avatar">{{ subject.name[0]|upper }}</span>
+      <div>
+        <p class="page-kicker">Employee settings</p>
+        <h1>{{ subject.name }}</h1>
+        <p class="es-lead">Overrides company defaults for this person only.</p>
+      </div>
+    </div>
+    <div class="es-head-meta">
+      <span class="es-pill {% if subject.enabled %}ok{% else %}off{% endif %}">
+        {% if subject.enabled %}Active{% else %}Disabled{% endif %}
+      </span>
+      <span class="es-pill soft">{{ subject.role|capitalize }}</span>
+    </div>
   </header>
 
   <nav class="es-tabs" aria-label="Settings sections">
@@ -24,87 +36,86 @@
   </nav>
 
   {% if tab == 'general' %}
-  <section class="es-section">
-    <div class="es-copy">
+  <section class="es-panel">
+    <header class="es-panel-head">
       <h2>Team member details</h2>
-      <p>Edit this person’s name, contact details, role, team, and time zone.</p>
-    </div>
-    <div class="es-card">
-      <form method="post" class="es-form">
-        <input type="hidden" name="action" value="general" />
-        <input type="hidden" name="tab" value="general" />
-        <div class="es-avatar-row">
-          <span class="avatar es-avatar">{{ subject.name[0]|upper }}</span>
-          <div>
-            <strong>{{ subject.name }}</strong>
-            <p class="muted">@{{ subject.username }}</p>
-          </div>
-        </div>
-        <label>Name <input name="name" value="{{ subject.display_name }}" required /></label>
-        <label>User ID <input value="{{ subject.id }}" disabled /></label>
-        <div class="es-two">
-          <label>Email <input name="email" type="email" value="{{ subject.email }}" placeholder="name@company.com" /></label>
-          <label>Username <input value="{{ subject.username }}" disabled /></label>
-        </div>
-        <div class="es-two">
-          <label>Team
-            <select name="team_id">
-              <option value="">— None —</option>
-              {% for t in teams %}
-              <option value="{{ t.id }}" {% if subject.team_id == t.id %}selected{% endif %}>{{ t.name }}</option>
-              {% endfor %}
-            </select>
-          </label>
-          <label>Role
-            <select name="role">
-              <option value="employee" {% if subject.role == 'employee' %}selected{% endif %}>Employee</option>
-              <option value="admin" {% if subject.role == 'admin' %}selected{% endif %}>Admin</option>
-            </select>
-          </label>
-        </div>
-        <label>Time zone
+    </header>
+    <form method="post" class="es-body">
+      <input type="hidden" name="action" value="general" />
+      <input type="hidden" name="tab" value="general" />
+      <div class="es-grid">
+        <label class="es-field">Name
+          <input name="name" value="{{ subject.display_name }}" required />
+        </label>
+        <label class="es-field">User ID
+          <input value="{{ subject.id }}" disabled />
+        </label>
+        <label class="es-field">Email
+          <input name="email" type="email" value="{{ subject.email }}" placeholder="name@company.com" />
+        </label>
+        <label class="es-field">Username
+          <input value="{{ subject.username }}" disabled />
+        </label>
+        <label class="es-field">Team
+          <select name="team_id">
+            <option value="">— None —</option>
+            {% for t in teams %}
+            <option value="{{ t.id }}" {% if subject.team_id == t.id %}selected{% endif %}>{{ t.name }}</option>
+            {% endfor %}
+          </select>
+        </label>
+        <label class="es-field">Role
+          <select name="role">
+            <option value="employee" {% if subject.role == 'employee' %}selected{% endif %}>Employee</option>
+            <option value="admin" {% if subject.role == 'admin' %}selected{% endif %}>Admin</option>
+          </select>
+        </label>
+        <label class="es-field es-span-2">Time zone
           <input name="timezone" list="tz-choices" value="{{ subject.timezone or '' }}" maxlength="64"
             placeholder="Company default" autocomplete="off" />
         </label>
+      </div>
+      <div class="es-footer">
         <p class="es-meta muted">Created {% if subject.created_at %}{{ subject.created_at.strftime('%b %d, %Y') }}{% else %}—{% endif %}</p>
-        <button class="btn primary" type="submit">Save changes</button>
-      </form>
-    </div>
+        <button class="btn primary inline" type="submit">Save changes</button>
+      </div>
+    </form>
   </section>
 
   {% elif tab == 'tracking' %}
-  <section class="es-section">
-    <div class="es-copy">
+  <section class="es-panel">
+    <header class="es-panel-head">
       <h2>Private time &amp; tracking</h2>
-      <p>Control whether this person can pause tracking and related permissions.</p>
-    </div>
-    <div class="es-card">
-      <form method="post" class="es-form">
-        <input type="hidden" name="action" value="tracking" />
-        <input type="hidden" name="tab" value="tracking" />
-        <label class="es-check">
-          <input type="checkbox" name="private_time_allowed" value="1" {% if subject.private_time_allowed %}checked{% endif %} />
-          <span>
-            <strong>Enable private time</strong>
-            <small>Allow switching to private time, during which activity tracking is paused.</small>
-          </span>
-        </label>
-        <button class="btn primary" type="submit">Save tracking</button>
-      </form>
-    </div>
+      <p>Control whether this person can pause tracking.</p>
+    </header>
+    <form method="post" class="es-body">
+      <input type="hidden" name="action" value="tracking" />
+      <input type="hidden" name="tab" value="tracking" />
+      <label class="es-toggle">
+        <input type="checkbox" name="private_time_allowed" value="1" {% if subject.private_time_allowed %}checked{% endif %} />
+        <span>
+          <strong>Enable private time</strong>
+          <small>Allow switching to private time, during which activity tracking is paused.</small>
+        </span>
+      </label>
+      <div class="es-footer">
+        <span></span>
+        <button class="btn primary inline" type="submit">Save tracking</button>
+      </div>
+    </form>
   </section>
 
   {% elif tab == 'screenshots' %}
-  <section class="es-section">
-    <div class="es-copy">
+  <section class="es-panel">
+    <header class="es-panel-head">
       <h2>Screenshots</h2>
-      <p>Adjust screenshot capture, intervals, and whether they can see their own shots.</p>
-    </div>
-    <div class="es-card">
-      <form method="post" class="es-form">
-        <input type="hidden" name="action" value="screenshots" />
-        <input type="hidden" name="tab" value="screenshots" />
-        <label>Screenshot mode
+      <p>Capture mode, interval, and My Day visibility.</p>
+    </header>
+    <form method="post" class="es-body">
+      <input type="hidden" name="action" value="screenshots" />
+      <input type="hidden" name="tab" value="screenshots" />
+      <div class="es-grid">
+        <label class="es-field">Screenshot mode
           <select name="shot_mode">
             <option value="company" {% if subject.screenshots_enabled is none %}selected{% endif %}>
               Company default{% if company_settings.screenshots_enabled %} (on){% else %} (off){% endif %}
@@ -113,92 +124,100 @@
             <option value="off" {% if subject.screenshots_enabled == false %}selected{% endif %}>Force OFF</option>
           </select>
         </label>
-        <label>Screenshot interval (seconds)
+        <label class="es-field">Interval (seconds)
           <input type="number" name="interval" min="60" max="3600"
             value="{{ subject.screenshot_interval or company_settings.screenshot_interval or 300 }}" />
         </label>
-        <label class="es-check">
-          <input type="checkbox" name="view_own_screenshots" value="1" {% if subject.view_own_screenshots %}checked{% endif %} />
-          <span>
-            <strong>Show screenshots on My Day</strong>
-            <small>Allow this employee to view their own screenshots.</small>
-          </span>
-        </label>
-        <button class="btn primary" type="submit">Save screenshots</button>
-      </form>
-    </div>
+      </div>
+      <label class="es-toggle">
+        <input type="checkbox" name="view_own_screenshots" value="1" {% if subject.view_own_screenshots %}checked{% endif %} />
+        <span>
+          <strong>Show screenshots on My Day</strong>
+          <small>Allow this employee to view their own screenshots.</small>
+        </span>
+      </label>
+      <div class="es-footer">
+        <span></span>
+        <button class="btn primary inline" type="submit">Save screenshots</button>
+      </div>
+    </form>
   </section>
 
   {% elif tab == 'security' %}
-  <section class="es-section">
-    <div class="es-copy">
-      <h2>Password management</h2>
-      <p>Change this team member’s password.</p>
-    </div>
-    <div class="es-card">
-      <form method="post" class="es-form">
-        <input type="hidden" name="action" value="password" />
-        <input type="hidden" name="tab" value="security" />
-        <label>New password
+  <section class="es-panel">
+    <header class="es-panel-head">
+      <h2>Password</h2>
+    </header>
+    <form method="post" class="es-body">
+      <input type="hidden" name="action" value="password" />
+      <input type="hidden" name="tab" value="security" />
+      <div class="es-grid">
+        <label class="es-field es-span-2">New password
           <input type="password" name="password" required minlength="6" placeholder="Min. 6 characters" />
         </label>
-        <button class="btn primary" type="submit">Change password</button>
-      </form>
-    </div>
+      </div>
+      <div class="es-footer">
+        <span></span>
+        <button class="btn primary inline" type="submit">Change password</button>
+      </div>
+    </form>
   </section>
 
-  <section class="es-section">
-    <div class="es-copy">
+  <section class="es-panel">
+    <header class="es-panel-head">
       <h2>API token</h2>
-      <p>Rotate the agent API token if this device should re-authenticate.</p>
-    </div>
-    <div class="es-card">
+      <p>Rotate if this device should re-authenticate.</p>
+    </header>
+    <div class="es-body">
       <code class="es-token">{{ subject.api_token }}</code>
-      <form method="post" class="es-inline-actions">
+      <form method="post" class="es-footer">
         <input type="hidden" name="action" value="rotate" />
         <input type="hidden" name="tab" value="security" />
+        <span></span>
         <button class="btn" type="submit">Rotate token</button>
       </form>
     </div>
   </section>
 
   {% else %}
-  <section class="es-section">
-    <div class="es-copy">
+  <section class="es-panel">
+    <header class="es-panel-head">
       <h2>Day view</h2>
-      <p>Open this person’s productivity day view, screenshots gallery, or report.</p>
-    </div>
-    <div class="es-card es-links">
+      <p>Open productivity, screenshots, or report for this person.</p>
+    </header>
+    <div class="es-body es-links">
       <a class="btn" href="{{ url_for('views.admin_user', user_id=subject.id) }}">Open day view</a>
       <a class="btn" href="{{ url_for('views.screenshots_browser', user_id=subject.id) }}">Screenshots</a>
       <a class="btn" href="{{ url_for('views.reports', user_id=subject.id, scope='me') }}">Report</a>
     </div>
   </section>
 
-  <section class="es-section">
-    <div class="es-copy">
+  <section class="es-panel">
+    <header class="es-panel-head">
       <h2>{% if subject.enabled %}Disable{% else %}Enable{% endif %} team member</h2>
-      <p>{% if subject.enabled %}Disabled members cannot sign in or sync activity until re-enabled.{% else %}Re-enable this account so they can track again.{% endif %}</p>
-    </div>
-    <div class="es-card">
-      <form method="post">
+      <p>{% if subject.enabled %}Disabled members cannot sign in or sync until re-enabled.{% else %}Re-enable this account so they can track again.{% endif %}</p>
+    </header>
+    <div class="es-body">
+      <form method="post" class="es-footer">
         <input type="hidden" name="action" value="toggle" />
         <input type="hidden" name="tab" value="other" />
+        <span></span>
         <button class="btn" type="submit">{% if subject.enabled %}Disable team member{% else %}Enable team member{% endif %}</button>
       </form>
     </div>
   </section>
 
   {% if subject.id != current_user.id %}
-  <section class="es-section">
-    <div class="es-copy">
+  <section class="es-panel danger">
+    <header class="es-panel-head">
       <h2>Delete team member</h2>
-      <p>Deleting permanently removes their account, activity, screenshots, and gap requests.</p>
-    </div>
-    <div class="es-card">
-      <form method="post" onsubmit="return confirm('Delete {{ subject.username }} permanently? This cannot be undone.');">
+      <p>Permanently removes account, activity, screenshots, and gap requests.</p>
+    </header>
+    <div class="es-body">
+      <form method="post" class="es-footer" onsubmit="return confirm('Delete {{ subject.username }} permanently? This cannot be undone.');">
         <input type="hidden" name="action" value="delete" />
         <input type="hidden" name="tab" value="other" />
+        <span></span>
         <button class="btn danger" type="submit">Delete team member</button>
       </form>
     </div>
