@@ -312,27 +312,6 @@ jobs:
             echo "tag=v${ver}" >> "$GITHUB_OUTPUT"
           fi
 
-      - name: Upload to tracker server
-        env:
-          SSH_KEY: ${{ secrets.PRODUCTION_SSH_KEY }}
-        run: |
-          if [ -z "${SSH_KEY}" ]; then
-            echo "PRODUCTION_SSH_KEY secret is not set — skip deploy"
-            exit 1
-          fi
-          mkdir -p ~/.ssh
-          chmod 700 ~/.ssh
-          printf '%s\n' "$SSH_KEY" > ~/.ssh/production.pem
-          chmod 600 ~/.ssh/production.pem
-          SSH_OPTS="-i ~/.ssh/production.pem -o IdentitiesOnly=yes -o StrictHostKeyChecking=accept-new -o ConnectTimeout=30 -o ServerAliveInterval=15 -o ServerAliveCountMax=4 -p 22"
-          ssh $SSH_OPTS root@31.97.239.250 'mkdir -p /www/wwwroot/timetrack/data/releases'
-          # Prefer scp-style partials; timeout avoids indefinite hangs on dead SSH.
-          rsync -avz --partial --timeout=120 --progress \
-            -e "ssh $SSH_OPTS" \
-            staging/ root@31.97.239.250:/www/wwwroot/timetrack/data/releases/
-          ssh $SSH_OPTS root@31.97.239.250 \
-            'ls -la /www/wwwroot/timetrack/data/releases/ | tail -20'
-
       - name: Attach to GitHub Release
         if: >-
           (github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')) ||
@@ -345,3 +324,36 @@ jobs:
           fail_on_unmatched_files: true
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      # Avoid bulky rsync from GitHub runners (often stalls). Publish to GitHub
+      # Releases first, then pull onto the tracker host with curl.
+      - name: Mirror release assets onto tracker server
+        env:
+          SSH_KEY: ${{ secrets.PRODUCTION_SSH_KEY }}
+          TAG: ${{ steps.pack.outputs.tag }}
+        run: |
+          set -euo pipefail
+          if [ -z "${SSH_KEY}" ]; then
+            echo "PRODUCTION_SSH_KEY secret is not set — skip deploy"
+            exit 1
+          fi
+          mkdir -p ~/.ssh
+          chmod 700 ~/.ssh
+          printf '%s\n' "$SSH_KEY" > ~/.ssh/production.pem
+          chmod 600 ~/.ssh/production.pem
+          SSH=(ssh -i ~/.ssh/production.pem -o IdentitiesOnly=yes -o BatchMode=yes -o StrictHostKeyChecking=accept-new -o ConnectTimeout=30 -o ServerAliveInterval=15 -o ServerAliveCountMax=4 -p 22)
+
+          mapfile -t FILES < <(find staging -type f \( -name '*.deb' -o -name '*.exe' -o -name '*.zip' \) -printf '%f\n' | sort)
+          test "${#FILES[@]}" -ge 3
+
+          BASE="https://github.com/${GITHUB_REPOSITORY}/releases/download/${TAG}"
+          REMOTE_DIR=/www/wwwroot/timetrack/data/releases
+          "${SSH[@]}" root@31.97.239.250 "mkdir -p '$REMOTE_DIR'"
+
+          for name in "${FILES[@]}"; do
+            echo "Fetching $name on server from $BASE/$name"
+            "${SSH[@]}" root@31.97.239.250 \
+              "curl -fL --connect-timeout 30 --retry 3 --retry-delay 2 -o '$REMOTE_DIR/$name.partial' '$BASE/$name' && mv -f '$REMOTE_DIR/$name.partial' '$REMOTE_DIR/$name'"
+          done
+
+          "${SSH[@]}" root@31.97.239.250 "ls -lah '$REMOTE_DIR' | tail -30"
