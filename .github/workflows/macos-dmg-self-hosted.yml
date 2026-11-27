@@ -29,9 +29,29 @@ jobs:
           echo "ARCH=$(uname -m)" >> "$GITHUB_ENV"
           echo "Building for $(uname -m) on $(sw_vers -productVersion 2>/dev/null || echo macOS)"
 
-      - uses: actions/setup-python@v5
-        with:
-          python-version: "3.12"
+      # setup-python@v5 expects /Users/runner on GitHub-hosted images — use Mac Python instead.
+      - name: Python 3.12
+        run: |
+          set -e
+          PY=""
+          for candidate in \
+            python3.12 \
+            /usr/local/bin/python3.12 \
+            /Library/Frameworks/Python.framework/Versions/3.12/bin/python3.12 \
+            "$(brew --prefix python@3.12 2>/dev/null)/bin/python3.12"; do
+            if [ -n "$candidate" ] && [ -x "$candidate" ]; then
+              if "$candidate" -c 'import sys; assert sys.version_info[:2]==(3,12)'; then
+                PY="$candidate"
+                break
+              fi
+            fi
+          done
+          if [ -z "$PY" ]; then
+            echo "::error::Install Python 3.12 on this Mac (https://www.python.org/downloads/macos/ or brew install python@3.12)"
+            exit 1
+          fi
+          echo "PY=$PY" >> "$GITHUB_ENV"
+          "$PY" --version
 
       - name: Xcode Command Line Tools
         run: |
@@ -42,8 +62,10 @@ jobs:
 
       - name: Python packages
         run: |
-          python3 -m pip install -q -U pip wheel
-          python3 -m pip install -q -r requirements.txt "pyinstaller>=6.0" Pillow pyobjc-framework-Quartz
+          "$PY" -m venv .venv-ci
+          .venv-ci/bin/python -m pip install -q -U pip wheel
+          .venv-ci/bin/pip install -q -r requirements.txt "pyinstaller>=6.0" Pillow pyobjc-framework-Quartz
+          .venv-ci/bin/python -c "import PyInstaller; print('PyInstaller OK')"
 
       - name: Import Developer ID certificate
         if: env.HAS_MAC_CERT == 'true'
@@ -76,7 +98,7 @@ jobs:
           echo "ESSTRACKER_MAC_NOTARY_PROFILE=esstracker-notary" >> "$GITHUB_ENV"
 
       - name: Build DMG
-        run: bash packaging/build_mac.sh
+        run: .venv-ci/bin/python packaging/build.py dmg --arch "$ARCH"
 
       - name: Check DMG
         run: |
