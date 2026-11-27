@@ -38,14 +38,13 @@
         <a href="{{ url_for('views.reports', day=day, range=7, user_id=subject.id) }}">Week</a>
         <a href="{{ url_for('views.reports', day=day, range=30, user_id=subject.id) }}">Month</a>
       </div>
+      {% if current_user.is_admin and not is_self %}
+      <a class="btn tiny" href="{{ url_for('views.employee_settings', user_id=subject.id) }}">Manage settings</a>
+      {% endif %}
     </div>
   </header>
 
   {% include "_day_metrics.html" %}
-
-  {% if not is_self %}
-  {% include "_admin_user_settings.html" %}
-  {% endif %}
 
   {% set clickable_gaps = clickable_gaps|default(false) %}
   {% set compact = false %}
@@ -298,9 +297,6 @@
     </section>
   </div>
 </div>
-{% if not is_self %}
-<datalist id="tz-choices">{% for z in tz_choices() %}<option value="{{ z }}">{% endfor %}</datalist>
-{% endif %}
 {% endblock %}
 
 {% block overlays %}

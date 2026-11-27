@@ -2488,9 +2488,8 @@ def admin_user(user_id: int):
 @views_bp.route("/admin/user/<int:user_id>/settings", methods=["POST"])
 @admin_required
 def admin_user_settings(user_id: int):
-    """Per-employee policy overrides (screenshots, private time, timezone)."""
+    """Legacy POST endpoint — settings UI lives on /employees/<id>/settings."""
     user = _org_user_or_404(user_id)
-    day_s = (request.form.get("day") or "").strip()
     user.private_time_allowed = bool(request.form.get("private_time_allowed"))
     user.view_own_screenshots = bool(request.form.get("view_own_screenshots"))
     mode = request.form.get("shot_mode") or "company"
@@ -2506,10 +2505,10 @@ def admin_user_settings(user_id: int):
         user.screenshot_interval = max(60, min(interval, 3600))
     if not _apply_timezone_field(user):
         flash("Invalid time zone.", "error")
-        return redirect(url_for("views.admin_user", user_id=user.id, day=day_s or None))
+        return redirect(url_for("views.employee_settings", user_id=user.id, tab="general"))
     db.session.commit()
     flash(f"Settings saved for {user.username}.", "info")
-    return redirect(url_for("views.admin_user", user_id=user.id, day=day_s or None))
+    return redirect(url_for("views.employee_settings", user_id=user.id, tab="tracking"))
 
 
 @views_bp.route("/admin/user/<int:user_id>/categories", methods=["POST"])

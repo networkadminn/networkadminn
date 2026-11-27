@@ -185,18 +185,22 @@ def test_admin_dashboard_summary_layout(client, app):
     html = resp.data
     for needle in (
         b"dash-att-strip",
+        b"dash-att-bars",
         b"dash-prod-panel",
         b"dash-kpi-hero",
+        b"dash-kpi-meters",
+        b"dash-meter-ring",
         b"dash-mid-grid",
         b"Productivity by hour",
         b"tone-private",
-        b"server.css?v=251",
-        b"team-chips",
+        b"server.css?v=254",
         b"dash-snapshot",
     ):
         assert needle in html, needle.decode("utf-8", errors="replace")
     assert b"dash-top-grid" not in html
     assert b"dash-insight" not in html
+    assert b"dash-jump" not in html
+    assert b"week-strip" not in html
 
 
 def test_admin_dashboard_shows_private_time_on(client, app):
