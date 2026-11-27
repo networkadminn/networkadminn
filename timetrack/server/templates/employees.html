@@ -4,20 +4,7 @@
 <div class="tm-page" id="team-members">
   <header class="tm-head">
     <h1>Team Members</h1>
-    <details class="tm-add">
-      <summary class="tm-add-btn">Add team members</summary>
-      <div class="tm-add-panel">
-        <form method="post" class="tm-add-form">
-          <input type="hidden" name="action" value="create" />
-          <label>Username <input name="username" required autocomplete="off" placeholder="alice" /></label>
-          <label>Display name <input name="name" placeholder="Alice" /></label>
-          <label>Email <input name="email" type="email" placeholder="alice@company.com" /></label>
-          <label>Password <input name="password" type="password" required minlength="6" placeholder="Min. 6 characters" /></label>
-          <label class="check"><input type="checkbox" name="admin" value="1" /> Make admin</label>
-          <button class="btn primary" type="submit">Create</button>
-        </form>
-      </div>
-    </details>
+    <button type="button" class="tm-add-btn" data-tm-add-open>Add team members</button>
   </header>
 
   <form method="get" class="tm-search-row" role="search">
@@ -138,6 +125,60 @@
   });
   boxes.forEach(function (b) { b.addEventListener("change", sync); });
   sync();
+})();
+</script>
+{% endblock %}
+
+{% block overlays %}
+<div class="tm-modal" data-tm-add-modal hidden>
+  <div class="tm-modal-backdrop" data-tm-add-close tabindex="-1"></div>
+  <div class="tm-modal-card" role="dialog" aria-modal="true" aria-labelledby="tm-add-title">
+    <header class="tm-modal-head">
+      <h2 id="tm-add-title">Add team member</h2>
+      <button type="button" class="tm-modal-x" data-tm-add-close aria-label="Close">&times;</button>
+    </header>
+    <form method="post" class="tm-add-form">
+      <input type="hidden" name="action" value="create" />
+      <label>Username <input name="username" required autocomplete="off" placeholder="alice" /></label>
+      <label>Display name <input name="name" placeholder="Alice" /></label>
+      <label>Email <input name="email" type="email" placeholder="alice@company.com" /></label>
+      <label>Password <input name="password" type="password" required minlength="6" placeholder="Min. 6 characters" /></label>
+      <label>Role
+        <select name="role" required>
+          <option value="employee" selected>Employee</option>
+          <option value="manager">Manager</option>
+          <option value="admin">Admin</option>
+        </select>
+      </label>
+      <div class="tm-modal-actions">
+        <button type="button" class="btn ghost" data-tm-add-close>Cancel</button>
+        <button class="btn primary inline" type="submit">Create</button>
+      </div>
+    </form>
+  </div>
+</div>
+<script>
+(function () {
+  var modal = document.querySelector("[data-tm-add-modal]");
+  var openBtn = document.querySelector("[data-tm-add-open]");
+  if (!modal || !openBtn) return;
+  var firstInput = modal.querySelector("input[name='username']");
+  function open() {
+    modal.hidden = false;
+    document.body.classList.add("tm-modal-open");
+    if (firstInput) setTimeout(function () { firstInput.focus(); }, 30);
+  }
+  function close() {
+    modal.hidden = true;
+    document.body.classList.remove("tm-modal-open");
+  }
+  openBtn.addEventListener("click", open);
+  modal.querySelectorAll("[data-tm-add-close]").forEach(function (el) {
+    el.addEventListener("click", close);
+  });
+  document.addEventListener("keydown", function (e) {
+    if (e.key === "Escape" && !modal.hidden) close();
+  });
 })();
 </script>
 {% endblock %}

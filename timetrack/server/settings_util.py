@@ -374,6 +374,8 @@ def ensure_schema() -> None:
         ("company_settings", "private_time_enabled", "BOOLEAN DEFAULT 1"),
         ("company_settings", "offline_requires_approval", "BOOLEAN DEFAULT 0"),
         ("company_settings", "company_name", "VARCHAR(200) DEFAULT 'ESS Tracker'"),
+        ("company_settings", "company_website", "VARCHAR(300) DEFAULT ''"),
+        ("company_settings", "company_logo", "VARCHAR(300) DEFAULT ''"),
         ("company_settings", "idle_threshold", "INTEGER DEFAULT 180"),
         ("company_settings", "office_start_hour", "FLOAT DEFAULT 9.5"),
         ("company_settings", "office_end_hour", "FLOAT DEFAULT 18.5"),

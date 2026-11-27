@@ -193,7 +193,7 @@ def test_admin_dashboard_summary_layout(client, app):
         b"dash-mid-grid",
         b"Productivity by hour",
         b"tone-private",
-        b"server.css?v=257",
+        b"server.css?v=270",
         b"dash-snapshot",
     ):
         assert needle in html, needle.decode("utf-8", errors="replace")

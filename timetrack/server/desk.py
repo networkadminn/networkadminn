@@ -691,11 +691,47 @@ def teams():
     return render_template("teams.html", teams=teams_list, users=users)
 
 
+def _attendance_filter_args() -> dict:
+    team_id = request.args.get("team_id", type=int)
+    user_id = request.args.get("user_id", type=int)
+    status = (request.args.get("status") or "all").strip().lower()
+    if status not in ("all", "present", "late", "idle", "absent", "off"):
+        status = "all"
+    return {"team_id": team_id, "user_id": user_id, "status": status}
+
+
+def _apply_attendance_people_filters(
+    employees: list[User], *, team_id: int | None, user_id: int | None
+) -> list[User]:
+    out = employees
+    if team_id:
+        out = [u for u in out if u.team_id == team_id]
+    if user_id:
+        out = [u for u in out if u.id == user_id]
+    return out
+
+
+def _filter_matrix_by_status(matrix: list, status: str) -> tuple[list, dict]:
+    totals = {"present": 0, "late": 0, "absent": 0, "off": 0, "idle": 0}
+    if status == "all":
+        for row in matrix:
+            for c in row["cells"]:
+                totals[c["status"]] = totals.get(c["status"], 0) + 1
+        return matrix, totals
+    filtered = []
+    for row in matrix:
+        if any(c.get("status") == status for c in row["cells"]):
+            filtered.append(row)
+            for c in row["cells"]:
+                totals[c["status"]] = totals.get(c["status"], 0) + 1
+    return filtered, totals
+
+
 @desk_bp.route("/attendance")
 @admin_required
 def attendance():
     """DeskTime-style attendance board — week grid or month calendar."""
-    from datetime import datetime, timedelta
+    from datetime import timedelta
 
     from .attendance_util import attendance_cell, month_weeks, week_matrix
     from .tenancy import current_org_id, users_in_org_query
@@ -705,8 +741,9 @@ def attendance():
     day = _parse_day(request.args.get("day"))
     tz = _tz()
     org_id = current_org_id()
+    filters = _attendance_filter_args()
 
-    employees = list(
+    employees_all = list(
         db.session.execute(
             users_in_org_query(org_id)
             .filter(User.role != "admin")
@@ -714,12 +751,39 @@ def attendance():
             .order_by(User.username)
         ).scalars()
     )
+    teams = list(
+        db.session.execute(
+            db.select(Team)
+            .filter_by(organization_id=org_id)
+            .order_by(Team.name)
+        ).scalars()
+    )
+    employees = _apply_attendance_people_filters(
+        employees_all,
+        team_id=filters["team_id"],
+        user_id=filters["user_id"],
+    )
+    # Employee dropdown stays full org list (optionally narrowed by team).
+    employee_options = (
+        [u for u in employees_all if u.team_id == filters["team_id"]]
+        if filters["team_id"]
+        else employees_all
+    )
+    filter_q = {
+        k: v
+        for k, v in {
+            "team_id": filters["team_id"],
+            "user_id": filters["user_id"],
+            "status": None if filters["status"] == "all" else filters["status"],
+        }.items()
+        if v
+    }
 
     if view == "month":
         month_start = day.replace(day=1)
         year, month = month_start.year, month_start.month
         weeks = month_weeks(year, month)
-        user_id = request.args.get("user_id", type=int)
+        user_id = filters["user_id"]
         if user_id:
             subject = db.session.get(User, user_id)
             if subject is None or subject.organization_id != org_id:
@@ -745,13 +809,15 @@ def attendance():
                 day=month_start.strftime("%Y-%m-%d"),
                 prev_month=prev_month.strftime("%Y-%m-%d"),
                 next_month=next_month.strftime("%Y-%m-%d"),
-                employees=employees,
+                employees=employee_options,
+                teams=teams,
+                filters=filters,
+                filter_q=filter_q,
                 humanize=humanize,
                 tz_name=tz,
             )
 
         matrix = []
-        totals = {"present": 0, "late": 0, "absent": 0, "off": 0}
         _, days_in = __import__("calendar").monthrange(year, month)
         month_days = [
             month_start.replace(day=d) for d in range(1, days_in + 1)
@@ -759,10 +825,9 @@ def attendance():
         for u in employees:
             cells = []
             for d in month_days:
-                c = attendance_cell(u.id, d, tz_name=tz)
-                totals[c["status"]] = totals.get(c["status"], 0) + 1
-                cells.append(c)
+                cells.append(attendance_cell(u.id, d, tz_name=tz))
             matrix.append({"user": u, "cells": cells})
+        matrix, totals = _filter_matrix_by_status(matrix, filters["status"])
         prev_month = (month_start - timedelta(days=1)).replace(day=1)
         next_month = (month_start + timedelta(days=32)).replace(day=1)
         return render_template(
@@ -777,14 +842,18 @@ def attendance():
             day=month_start.strftime("%Y-%m-%d"),
             prev_month=prev_month.strftime("%Y-%m-%d"),
             next_month=next_month.strftime("%Y-%m-%d"),
-            employees=employees,
+            employees=employee_options,
+            teams=teams,
+            filters=filters,
+            filter_q=filter_q,
             humanize=humanize,
             tz_name=tz,
         )
 
     monday = day - timedelta(days=day.weekday())
     week_days = [monday + timedelta(days=i) for i in range(7)]
-    matrix, totals = week_matrix(employees, week_days, tz_name=tz)
+    matrix, _ = week_matrix(employees, week_days, tz_name=tz)
+    matrix, totals = _filter_matrix_by_status(matrix, filters["status"])
     prev_week = (monday - timedelta(days=7)).strftime("%Y-%m-%d")
     next_week = (monday + timedelta(days=7)).strftime("%Y-%m-%d")
     return render_template(
@@ -796,6 +865,10 @@ def attendance():
         day=monday.strftime("%Y-%m-%d"),
         prev_week=prev_week,
         next_week=next_week,
+        employees=employee_options,
+        teams=teams,
+        filters=filters,
+        filter_q=filter_q,
         humanize=humanize,
         tz_name=tz,
     )

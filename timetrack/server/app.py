@@ -67,12 +67,29 @@ def create_app(config: ServerConfig | None = None, **overrides) -> Flask:
     from .api import api_bp
     from .auth import auth_bp
     from .desk import desk_bp
+    from .setup import setup_bp
     from .views import views_bp
 
     app.register_blueprint(auth_bp)
+    app.register_blueprint(setup_bp)
     app.register_blueprint(api_bp)
     app.register_blueprint(views_bp)
     app.register_blueprint(desk_bp)
+
+    @app.before_request
+    def _first_run_setup_gate():
+        from flask import jsonify, redirect, request, url_for
+
+        from .setup_util import needs_setup
+
+        if not needs_setup():
+            return None
+        path = request.path or "/"
+        if path.startswith("/setup") or path.startswith("/static/"):
+            return None
+        if path.startswith("/api/"):
+            return jsonify({"error": "setup_required", "message": "Complete first-time setup."}), 503
+        return redirect(url_for("setup.setup"))
 
     @app.before_request
     def _employee_tz():
@@ -99,6 +116,26 @@ def create_app(config: ServerConfig | None = None, **overrides) -> Flask:
                 or os.environ.get("TIMETRACK_PUBLIC_URL")
                 or "https://tracker.euclideesolutions.com"
             ).rstrip("/")
+        }
+
+    @app.context_processor
+    def inject_company_brand():
+        from flask import url_for
+
+        from .settings_util import get_settings
+
+        try:
+            settings = get_settings()
+            logo = (getattr(settings, "company_logo", None) or "").strip()
+            name = (settings.company_name or "").strip() or "ESS Tracker"
+        except Exception:
+            logo, name = "", "ESS Tracker"
+        logo_url = None
+        if logo:
+            logo_url = url_for("views.company_logo")
+        return {
+            "company_brand_name": name,
+            "company_logo_url": logo_url,
         }
 
     from .blog_posts import category_slug, format_blog_date

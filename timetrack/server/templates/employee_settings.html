@@ -67,6 +67,7 @@
         <label class="es-field">Role
           <select name="role">
             <option value="employee" {% if subject.role == 'employee' %}selected{% endif %}>Employee</option>
+            <option value="manager" {% if subject.role == 'manager' %}selected{% endif %}>Manager</option>
             <option value="admin" {% if subject.role == 'admin' %}selected{% endif %}>Admin</option>
           </select>
         </label>

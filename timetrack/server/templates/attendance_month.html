@@ -1,38 +1,84 @@
 {% extends "base.html" %}
 {% block title %}Absence calendar · esstracker{% endblock %}
 {% block content %}
+{% set fq = filter_q|default({}) %}
+{% set fl = filters|default({'team_id': none, 'user_id': none, 'status': 'all'}) %}
 <div class="page-head">
   <div>
     <p class="page-kicker">Company</p>
     <h1>Absence calendar</h1>
     <p class="page-sub">{% if view == 'month_team' %}Team month grid{% else %}Month view for one employee{% endif %} — {{ month_label }}.</p>
   </div>
-  <nav class="daynav">
-    <a class="btn {% if view == 'week' %}primary{% endif %}" href="{{ url_for('desk.attendance', view='week', day=day) }}">Week</a>
-    <a class="btn {% if view != 'week' %}primary{% endif %}" href="{{ url_for('desk.attendance', view='month', day=day) }}">Month</a>
-    <a class="btn" href="?view=month&day={{ prev_month }}">&larr;</a>
-    <form method="get" class="dayform">
+  <nav class="daynav" aria-label="Attendance period">
+    <div class="view-toggle" role="group" aria-label="Week or month">
+      <a class="view-toggle-btn {% if view == 'week' %}is-active{% endif %}" href="{{ url_for('desk.attendance', view='week', day=day, **fq) }}">Week</a>
+      <a class="view-toggle-btn {% if view != 'week' %}is-active{% endif %}" href="{{ url_for('desk.attendance', view='month', day=day, **fq) }}">Month</a>
+    </div>
+    <a class="btn" href="{{ url_for('desk.attendance', view='month', day=prev_month, **fq) }}">&larr;</a>
+    <form method="get" class="dayform" action="{{ url_for('desk.attendance') }}">
       <input type="hidden" name="view" value="month" />
+      {% if fl.team_id %}<input type="hidden" name="team_id" value="{{ fl.team_id }}" />{% endif %}
+      {% if fl.user_id %}<input type="hidden" name="user_id" value="{{ fl.user_id }}" />{% endif %}
+      {% if fl.status and fl.status != 'all' %}<input type="hidden" name="status" value="{{ fl.status }}" />{% endif %}
       <input type="month" name="day" value="{{ '%04d-%02d'|format(year, month) }}" onchange="this.form.submit()" />
     </form>
-    <a class="btn" href="?view=month&day={{ next_month }}">&rarr;</a>
+    <a class="btn" href="{{ url_for('desk.attendance', view='month', day=next_month, **fq) }}">&rarr;</a>
   </nav>
 </div>
+
+<form method="get" class="att-filters" action="{{ url_for('desk.attendance') }}">
+  <input type="hidden" name="view" value="month" />
+  <input type="hidden" name="day" value="{{ day }}" />
+  <label class="att-filter">
+    <span>Team</span>
+    <select name="team_id" onchange="this.form.user_id && (this.form.user_id.value=''); this.form.submit()">
+      <option value="">All teams</option>
+      {% for t in teams|default([]) %}
+      <option value="{{ t.id }}" {% if fl.team_id == t.id %}selected{% endif %}>{{ t.name }}</option>
+      {% endfor %}
+    </select>
+  </label>
+  <label class="att-filter">
+    <span>Employee</span>
+    <select name="user_id" onchange="this.form.submit()">
+      <option value="">All employees</option>
+      {% for u in employees %}
+      <option value="{{ u.id }}" {% if fl.user_id == u.id %}selected{% endif %}>{{ u.name }}</option>
+      {% endfor %}
+    </select>
+  </label>
+  {% if view == 'month_team' %}
+  <label class="att-filter">
+    <span>Status</span>
+    <select name="status" onchange="this.form.submit()">
+      <option value="all" {% if fl.status == 'all' %}selected{% endif %}>All statuses</option>
+      <option value="present" {% if fl.status == 'present' %}selected{% endif %}>Present</option>
+      <option value="late" {% if fl.status == 'late' %}selected{% endif %}>Late</option>
+      <option value="idle" {% if fl.status == 'idle' %}selected{% endif %}>Idle / gap</option>
+      <option value="absent" {% if fl.status == 'absent' %}selected{% endif %}>Absent</option>
+      <option value="off" {% if fl.status == 'off' %}selected{% endif %}>Off day</option>
+    </select>
+  </label>
+  {% endif %}
+  {% if fl.team_id or fl.user_id or (fl.status and fl.status != 'all') %}
+  <a class="btn ghost att-filter-clear" href="{{ url_for('desk.attendance', view='month', day=day) }}">Clear filters</a>
+  {% endif %}
+</form>
 
 {% if subject is defined and subject %}
 <section class="panel absence-month-panel">
   <div class="panel-head">
     <h2>{{ subject.name }}</h2>
-    <form method="get" class="inline-form">
-      <input type="hidden" name="view" value="month" />
-      <input type="hidden" name="day" value="{{ day }}" />
-      <select name="user_id" onchange="this.form.submit()">
-        <option value="">Pick employee…</option>
-        {% for u in employees %}
-        <option value="{{ u.id }}" {% if u.id == subject.id %}selected{% endif %}>{{ u.name }}</option>
-        {% endfor %}
-      </select>
-    </form>
+  </div>
+  <div class="att-legend" aria-label="Attendance legend">
+    <span class="att-legend-title">Status</span>
+    <ul class="att-legend-keys">
+      <li class="att-legend-item is-present"><span class="att-legend-mark" aria-hidden="true">P</span><span class="att-legend-label">Present</span></li>
+      <li class="att-legend-item is-late"><span class="att-legend-mark" aria-hidden="true">L</span><span class="att-legend-label">Late</span></li>
+      <li class="att-legend-item is-idle"><span class="att-legend-mark" aria-hidden="true">I</span><span class="att-legend-label">Idle / gap</span></li>
+      <li class="att-legend-item is-absent"><span class="att-legend-mark" aria-hidden="true">A</span><span class="att-legend-label">Absent</span></li>
+      <li class="att-legend-item is-off"><span class="att-legend-mark" aria-hidden="true">—</span><span class="att-legend-label">Off day</span></li>
+    </ul>
   </div>
   {% include "_absence_month_grid.html" %}
 </section>
@@ -46,16 +92,17 @@
 <section class="panel">
   <div class="panel-head">
     <h2>{{ month_label }}</h2>
-    <form method="get" class="inline-form">
-      <input type="hidden" name="view" value="month" />
-      <input type="hidden" name="day" value="{{ day }}" />
-      <select name="user_id" onchange="this.form.submit()">
-        <option value="">Team month table</option>
-        {% for u in employees %}
-        <option value="{{ u.id }}">{{ u.name }} — calendar</option>
-        {% endfor %}
-      </select>
-    </form>
+    <span class="muted">{{ matrix|length }} employee{{ 's' if matrix|length != 1 else '' }}</span>
+  </div>
+  <div class="att-legend" aria-label="Attendance legend">
+    <span class="att-legend-title">Status</span>
+    <ul class="att-legend-keys">
+      <li class="att-legend-item is-present"><span class="att-legend-mark" aria-hidden="true">P</span><span class="att-legend-label">Present</span></li>
+      <li class="att-legend-item is-late"><span class="att-legend-mark" aria-hidden="true">L</span><span class="att-legend-label">Late</span></li>
+      <li class="att-legend-item is-idle"><span class="att-legend-mark" aria-hidden="true">I</span><span class="att-legend-label">Idle / gap</span></li>
+      <li class="att-legend-item is-absent"><span class="att-legend-mark" aria-hidden="true">A</span><span class="att-legend-label">Absent</span></li>
+      <li class="att-legend-item is-off"><span class="att-legend-mark" aria-hidden="true">—</span><span class="att-legend-label">Off day</span></li>
+    </ul>
   </div>
   <div class="grid-wrap scroll-x">
     <table class="grid attendance-grid">
@@ -74,11 +121,13 @@
           {% for c in row.cells %}
           <td>
             <a class="att-cell {{ c.status }}" href="{{ url_for('views.admin_user', user_id=row.user.id) }}?day={{ c.day }}" title="{{ c.arrived }} – {{ c.left }}">
-              {% if c.status == 'present' %}P{% elif c.status == 'late' %}L{% elif c.status == 'off' %}—{% else %}A{% endif %}
+              {% if c.status == 'present' %}P{% elif c.status == 'late' %}L{% elif c.status == 'idle' %}I{% elif c.status == 'off' %}—{% else %}A{% endif %}
             </a>
           </td>
           {% endfor %}
         </tr>
+        {% else %}
+        <tr><td colspan="{{ month_days|length + 1 }}" class="empty">No employees match these filters.</td></tr>
         {% endfor %}
       </tbody>
     </table>
@@ -86,19 +135,7 @@
 </section>
 {% else %}
 <section class="panel">
-  <p class="page-sub">Choose an employee from the month view dropdown, or switch to <a href="{{ url_for('desk.attendance', view='week', day=day) }}">week grid</a>.</p>
-  <form method="get" class="stack-form" style="max-width:320px">
-    <input type="hidden" name="view" value="month" />
-    <input type="hidden" name="day" value="{{ day }}" />
-    <label>Employee calendar
-      <select name="user_id" required>
-        {% for u in employees %}
-        <option value="{{ u.id }}">{{ u.name }}</option>
-        {% endfor %}
-      </select>
-    </label>
-    <button class="btn primary" type="submit">Open</button>
-  </form>
+  <p class="page-sub">Choose an employee filter above, or switch to <a href="{{ url_for('desk.attendance', view='week', day=day, **fq) }}">week grid</a>.</p>
 </section>
 {% endif %}
 {% endblock %}
