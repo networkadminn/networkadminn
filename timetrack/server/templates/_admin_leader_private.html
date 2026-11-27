@@ -1,0 +1,33 @@
+<section class="panel dt-leader dt-widget dash-panel tone-private" id="private-now" aria-label="Private Time">
+  <header class="widget-band">
+    <h2>Private time</h2>
+    <span class="widget-meta">{{ private_count }}</span>
+  </header>
+  <div class="widget-body">
+    {% if top_private %}
+    <ul class="rank-list rank-list-dash">
+      {% for r in top_private %}
+      <li>
+        <a href="{{ url_for('views.admin_user', user_id=r.user.id) }}?day={{ day }}">
+          <span class="avatar private">{{ r.user.name[0]|upper }}</span>
+          <span class="rank-meta">
+            <strong>{{ r.user.name }}</strong>
+            <span class="muted">
+              {% if r.private_stale %}Since {{ r.private_started }} · long pause{% else %}Since {{ r.private_started }} · {{ r.private_ago }}{% endif %}
+            </span>
+          </span>
+          <span class="rank-pill private">Private</span>
+        </a>
+      </li>
+      {% endfor %}
+    </ul>
+    <p class="widget-foot"><a href="#team-table">View all</a></p>
+    {% else %}
+    <div class="widget-empty" role="status">
+      <span class="widget-empty-icon" aria-hidden="true"></span>
+      <h3>All tracked</h3>
+      <p>No one has private time on.</p>
+    </div>
+    {% endif %}
+  </div>
+</section>

@@ -1,0 +1,30 @@
+<header class="dash-bar-head">
+  <div>
+    <h2>Productivity by hour</h2>
+    <p class="muted small">Team average · office hours</p>
+  </div>
+  <div class="dash-bar-foot-inline">
+    <span><strong>{{ avg_prod }}%</strong> productivity</span>
+    <span><strong>{{ avg_eff }}%</strong> effectiveness</span>
+  </div>
+</header>
+{% if team_hour_bars %}
+<div class="dash-prod-bars{% if not team_has_hour_data %} is-empty{% endif %}"
+     role="img" aria-label="Team productivity by hour for {{ day }}">
+  {% for b in team_hour_bars %}
+  <div class="dash-prod-col" title="{{ b.label }} · {{ b.pct }}%">
+    <div class="dash-prod-col-fill" style="--bar-h: {{ [b.pct, 4]|max if b.active else 4 }}%">
+      <i class="{% if b.pct >= 70 %}good{% elif b.pct >= 40 %}mid{% elif b.active %}low{% else %}none{% endif %}"></i>
+    </div>
+    <span class="dash-prod-col-lbl">{{ b.short }}</span>
+  </div>
+  {% endfor %}
+  {% if not team_has_hour_data %}
+  <div class="dash-prod-empty" role="status">
+    <span class="dash-prod-empty-ico" aria-hidden="true"></span>
+    <strong>No data collected</strong>
+    <span>Hourly bars appear when agents sync activity.</span>
+  </div>
+  {% endif %}
+</div>
+{% endif %}

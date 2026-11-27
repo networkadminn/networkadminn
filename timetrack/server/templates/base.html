@@ -7,10 +7,10 @@
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link rel="icon" type="image/png" href="{{ url_for('static', filename='brand/ess-mark.png') }}" />
-  <link rel="stylesheet" href="{{ url_for('static', filename='server.css') }}?v=226" />
+  <link rel="stylesheet" href="{{ url_for('static', filename='server.css') }}?v=257" />
   {% block head %}{% endblock %}
 </head>
-<body class="{% if current_user.is_authenticated %}app-shell{% else %}auth-shell{% endif %}">
+<body class="{% if current_user.is_authenticated %}app-shell{% if current_user.is_admin and request.endpoint == 'views.admin' %} admin-dashboard-page{% endif %}{% else %}auth-shell{% endif %}">
   {% if current_user.is_authenticated %}
   <aside class="sidebar" aria-label="Main">
     <a class="brand" href="{{ url_for('views.home') }}">
@@ -23,6 +23,7 @@
 
     <nav class="sidenav">
       {% if current_user.is_admin %}
+      <p class="nav-group">Workspace</p>
       <a href="{{ url_for('views.admin') }}" class="{% if request.endpoint == 'views.admin' %}is-active{% endif %}">
         <svg class="nav-ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><rect x="3" y="3" width="7" height="9" rx="1.5"/><rect x="14" y="3" width="7" height="5" rx="1.5"/><rect x="14" y="12" width="7" height="9" rx="1.5"/><rect x="3" y="16" width="7" height="5" rx="1.5"/></svg>
         Dashboard

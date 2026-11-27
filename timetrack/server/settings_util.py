@@ -423,6 +423,17 @@ def ensure_schema() -> None:
                     if "duplicate column" not in str(exc).lower():
                         raise
 
+        # Speeds up last-seen / online checks (MAX(end_ts) per user).
+        try:
+            conn.execute(
+                text(
+                    "CREATE INDEX IF NOT EXISTS ix_activities_user_end "
+                    "ON activities (user_id, end_ts)"
+                )
+            )
+        except Exception:
+            pass
+
     # Refresh default org + tenant folders after column migrations.
     from .tenancy import ensure_default_organization as _ensure_org
 
