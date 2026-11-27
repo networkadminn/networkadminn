@@ -53,8 +53,10 @@ def test_admin_login_sees_team(client):
     assert resp.status_code == 200
     assert b"Dashboard" in resp.data
     assert b"Employees" in resp.data or b"Live now" in resp.data
-    assert b"Total desk time" in resp.data
-    assert b"Late arrivals" in resp.data
+    assert b"Desk time" in resp.data
+    assert b"dash-kpi-hero" in resp.data
+    assert b"dash-att-strip" in resp.data
+    assert b"Late" in resp.data
 
 
 def test_admin_me_redirects_to_dashboard(client):

@@ -178,6 +178,27 @@ def test_invalid_time_zone_is_rejected(client, app):
         assert db.session.get(User, app.config["_EMP_ID"]).timezone == "Europe/London"
 
 
+def test_admin_dashboard_summary_layout(client, app):
+    client.post("/login", data={"username": "boss", "password": "adminpass"})
+    resp = client.get("/admin")
+    assert resp.status_code == 200
+    html = resp.data
+    for needle in (
+        b"dash-att-strip",
+        b"dash-prod-panel",
+        b"dash-kpi-hero",
+        b"dash-mid-grid",
+        b"Productivity by hour",
+        b"tone-private",
+        b"server.css?v=250",
+        b"team-chips",
+        b"dash-snapshot",
+    ):
+        assert needle in html, needle.decode("utf-8", errors="replace")
+    assert b"dash-top-grid" not in html
+    assert b"dash-insight" not in html
+
+
 def test_admin_dashboard_shows_private_time_on(client, app):
     with app.app_context():
         emp_id = app.config["_EMP_ID"]
@@ -188,7 +209,7 @@ def test_admin_dashboard_shows_private_time_on(client, app):
     client.post("/login", data={"username": "boss", "password": "adminpass"})
     resp = client.get("/admin")
     assert resp.status_code == 200
-    assert b"Private Time ON" in resp.data
+    assert b"Private time" in resp.data
     assert b"Alice" in resp.data
 
 

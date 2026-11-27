@@ -1,26 +1,2 @@
-  <section class="panel dash-panel private-now-panel" id="private-now" aria-label="Employees in Private Time">
-    {% set private_rows = rows|selectattr('private_active')|list %}
-    <div class="panel-head">
-      <h2>Private Time ON <span class="dash-count">{{ private_rows|length }}</span></h2>
-      <span class="muted">tracking and screenshots paused</span>
-    </div>
-    {% if private_rows %}
-    <ul class="private-now-list">
-      {% for r in private_rows %}
-      <li>
-        <a href="{{ url_for('views.admin_user', user_id=r.user.id) }}?day={{ day }}">
-          <span class="avatar private-ring">{{ r.user.name[0]|upper }}</span>
-          <span class="private-who">
-            <strong>{{ r.user.name }}</strong>
-            <span class="muted">@{{ r.user.username }}</span>
-          </span>
-          <span class="status private">Private</span>
-          <span class="private-since muted">since {{ r.private_started }} · {{ r.private_ago }}</span>
-        </a>
-      </li>
-      {% endfor %}
-    </ul>
-    {% else %}
-    <p class="empty">No one is in Private Time right now.</p>
-    {% endif %}
-  </section>
+{# Legacy include — dashboard uses _admin_leader_private.html #}
+{% include "_admin_leader_private.html" %}
