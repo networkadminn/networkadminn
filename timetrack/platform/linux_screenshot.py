@@ -61,11 +61,15 @@ def _capture_gnome_screenshot():
     fd, path = tempfile.mkstemp(prefix="esstracker-shot-", suffix=".png")
     os.close(fd)
     try:
+        # CANBERRA_DRIVER=null suppresses the camera-shutter click (no --silent flag).
+        env = os.environ.copy()
+        env["CANBERRA_DRIVER"] = "null"
         proc = subprocess.run(
             [tool, "-f", path],
             capture_output=True,
             timeout=15,
             check=False,
+            env=env,
         )
         if proc.returncode != 0 or not os.path.isfile(path):
             return None
@@ -157,9 +161,8 @@ def capture_linux_pil():
         desktop = _desktop()
         if "kde" in desktop or "plasma" in desktop:
             first = (_capture_spectacle,)
-        elif "gnome" in desktop or "unity" in desktop:
-            first = (_capture_gnome_screenshot,)
-        else:  # wlroots compositors (Sway, Hyprland, …)
+        else:
+            # Prefer grim (silent). gnome-screenshot plays a shutter sound and is fallback only.
             first = (_capture_grim,)
         rest = tuple(
             f
@@ -169,7 +172,6 @@ def capture_linux_pil():
         order = first + rest
     else:
         order = (_capture_mss, _capture_import_root, _capture_grim, _capture_gnome_screenshot, _capture_spectacle)
-
     for fn in order:
         try:
             img = fn()

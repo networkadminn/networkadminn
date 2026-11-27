@@ -221,6 +221,7 @@ def _tk_login(
         return False
 
     result = {"ok": False}
+    # Server comes from packaged defaults.toml — employees only enter credentials.
     server = _server_url(cfg)
 
     root.title("esstracker — Sign in")
@@ -228,7 +229,7 @@ def _tk_login(
     root.configure(bg="#E8F3EC")
 
     # Center on screen
-    w, h = 400, 530
+    w, h = 400, 460
     root.update_idletasks()
     x = (root.winfo_screenwidth() - w) // 2
     y = (root.winfo_screenheight() - h) // 2
@@ -237,7 +238,7 @@ def _tk_login(
     _configure_tk_login_styles(root)
 
     card = tk.Frame(root, bg="#FFFFFF", highlightbackground="#D5E5DB", highlightthickness=1)
-    card.place(relx=0.5, rely=0.5, anchor="center", width=340, height=470)
+    card.place(relx=0.5, rely=0.5, anchor="center", width=340, height=400)
 
     logo = _logo_path()
     if logo:
@@ -284,15 +285,7 @@ def _tk_login(
     )
     pass_var = tk.StringVar()
     pass_entry = ttk.Entry(form, textvariable=pass_var, show="•", font=("Sans", 11))
-    pass_entry.pack(fill="x", ipady=6, pady=(2, 8))
-
-    tk.Label(form, text="SERVER", font=("Sans", 8, "bold"), fg="#3D5A4C", bg="#FFFFFF").pack(
-        anchor="w"
-    )
-    server_var = tk.StringVar(value=server)
-    ttk.Entry(form, textvariable=server_var, font=("Sans", 10)).pack(
-        fill="x", ipady=3, pady=(2, 8)
-    )
+    pass_entry.pack(fill="x", ipady=6, pady=(2, 12))
 
     err_var = tk.StringVar()
     err_lab = tk.Label(
@@ -305,13 +298,13 @@ def _tk_login(
     # "Not responding" for up to the 15 s timeout); only the Tk thread touches widgets.
     replies: queue.Queue = queue.Queue()
 
-    def finish_attempt(server_used: str, data: dict) -> None:
+    def finish_attempt(data: dict) -> None:
         if not data.get("api_token"):
             err_var.set(str(data.get("error") or "Sign-in failed — check credentials"))
             status["busy"] = False
             btn.configure(state="normal", text="Sign in & start tracking")
             return
-        _save_login(cfg, server_used, data)
+        _save_login(cfg, server, data)
         result["ok"] = True
         if on_success:
             on_success(cfg)
@@ -319,38 +312,33 @@ def _tk_login(
 
     def poll_reply() -> None:
         try:
-            server_used, data = replies.get_nowait()
+            data = replies.get_nowait()
         except queue.Empty:
             root.after(100, poll_reply)
             return
-        finish_attempt(server_used, data)
+        finish_attempt(data)
 
     def do_login(_event=None) -> None:
         if status["busy"]:
             return
         username = user_var.get().strip()
         password = pass_var.get()
-        server_used = normalize_server_url(server_var.get())
         err_var.set("")
         if not username or not password:
             err_var.set("Enter your username and password.")
-            return
-        if not server_used:
-            err_var.set("Enter the server address, e.g. https://tracker.example.com")
             return
         status["busy"] = True
         btn.configure(state="disabled", text="Signing in…")
 
         def work() -> None:
             try:
-                data = ServerClient(server_used, "").login(username, password) or {}
+                data = ServerClient(server, "").login(username, password) or {}
             except Exception as exc:
                 data = {"error": f"Could not reach server: {exc}"}
-            replies.put((server_used, data))
+            replies.put(data)
 
         threading.Thread(target=work, daemon=True, name="esstracker-login").start()
         root.after(100, poll_reply)
-
     if sys.platform == "darwin":
         btn = ttk.Button(
             form,
