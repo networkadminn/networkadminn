@@ -1,116 +1,109 @@
 {% extends "base.html" %}
 {% block title %}Dashboard · esstracker{% endblock %}
 {% block content %}
-<div class="dt-dash dash-v2">
-  <header class="dt-toolbar dash-toolbar">
-    <div class="dt-toolbar-title">
-      <p class="dash-kicker">Team overview</p>
-      <h1>Dashboard</h1>
-      <p>For <strong>{{ day }}</strong> · {{ employee_count }} employee{{ 's' if employee_count != 1 else '' }}</p>
+<div class="dt-dash dash-v2 admin-dash-main">
+  <header class="admin-dash-head">
+    <div class="dt-toolbar dash-toolbar admin-dash-toolbar">
+      <div class="dt-toolbar-title">
+        <h1>Dashboard</h1>
+        <p class="admin-dayline"><strong>{{ day_label }}</strong> · {{ employee_count }} member{{ 's' if employee_count != 1 else '' }}</p>
+      </div>
+      <div class="dt-toolbar-actions">
+        <nav class="daynav dt-daynav admin-daynav" aria-label="Choose day">
+          <a class="btn btn-day" href="?day={{ prev_day }}{% if team_id %}&team_id={{ team_id }}{% endif %}" aria-label="Previous day">&larr;</a>
+          <form method="get" class="dayform filters">
+            {% if team_id %}<input type="hidden" name="team_id" value="{{ team_id }}" />{% endif %}
+            <input type="date" name="day" value="{{ day }}" onchange="this.form.submit()" aria-label="Date" />
+          </form>
+          <a class="btn btn-day" href="?day={{ next_day }}{% if team_id %}&team_id={{ team_id }}{% endif %}" aria-label="Next day">&rarr;</a>
+        </nav>
+        <a class="btn tiny export" href="{{ url_for('desk.export_team_csv', day=day, team_id=team_id) }}">Export</a>
+        <a class="btn tiny ghost" href="{{ url_for('desk.alerts') }}?day={{ day }}">Alerts</a>
+      </div>
     </div>
-    <div class="dt-toolbar-actions">
-      <nav class="daynav dt-daynav" aria-label="Choose day">
-        <a class="btn" href="?day={{ prev_day }}{% if team_id %}&team_id={{ team_id }}{% endif %}" aria-label="Previous day">&larr;</a>
-        <form method="get" class="dayform filters">
-          <input type="date" name="day" value="{{ day }}" onchange="this.form.submit()" />
-          <select name="team_id" onchange="this.form.submit()" aria-label="Team">
-            <option value="">All teams</option>
-            {% for t in teams %}
-            <option value="{{ t.id }}" {% if team_id == t.id %}selected{% endif %}>{{ t.name }}</option>
-            {% endfor %}
-          </select>
-        </form>
-        <a class="btn" href="?day={{ next_day }}{% if team_id %}&team_id={{ team_id }}{% endif %}" aria-label="Next day">&rarr;</a>
+    <div class="admin-dash-filters">
+      <nav class="team-chips" aria-label="Filter by team">
+        <a class="team-chip{% if not team_id %} is-active{% endif %}" href="?day={{ day }}">All members</a>
+        {% for t in teams %}
+        <a class="team-chip{% if team_id == t.id %} is-active{% endif %}" href="?day={{ day }}&team_id={{ t.id }}">{{ t.name }}</a>
+        {% endfor %}
       </nav>
-      <a class="btn tiny export" href="{{ url_for('desk.export_team_csv', day=day, team_id=team_id) }}">Export</a>
-      <a class="btn tiny" href="{{ url_for('desk.alerts') }}?day={{ day }}">Alerts</a>
+      <nav class="dash-jump" aria-label="Jump to section">
+        <a href="#leaders">Overview</a>
+        <a href="#live-now">Live</a>
+        <a href="#team-apps">Apps</a>
+        <a href="#team-table">Team</a>
+      </nav>
     </div>
   </header>
 
-  <nav class="dash-jump" aria-label="Jump to section">
-    <a href="#live-now">Live</a>
-    <a href="#leaders">Leaders</a>
-    <a href="#team-apps">Apps</a>
-    <a href="#team-table">Employees</a>
-  </nav>
-
   {% include "_week.html" %}
 
-  {# esstracker-style hero: Productivity + Effectiveness rings + attendance #}
-  <section class="dt-hero dash-hero">
-    <div class="dt-rings">
-      <div class="dt-ring-card">
-        <div class="ring lg" style="--pct: {{ avg_prod }}; --ring: var(--productive)">
-          <span class="ring-val">{{ avg_prod }}%</span>
-        </div>
-        <div>
-          <h2>Productivity</h2>
-          <p>Productive time ÷ time at computer</p>
-        </div>
+  <section class="dash-snapshot" aria-label="Team snapshot">
+    <div class="dash-kpi-hero">
+      <div class="dash-kpi-hero-card">
+        <span class="dash-kpi-hero-l">Productivity</span>
+        <strong class="dash-kpi-hero-v is-prod">{{ avg_prod }}%</strong>
+        <small>of time at computer</small>
       </div>
-      <div class="dt-ring-card">
-        <div class="ring lg" style="--pct: {{ avg_eff }}; --ring: var(--accent-2)">
-          <span class="ring-val">{{ avg_eff }}%</span>
-        </div>
-        <div>
-          <h2>Effectiveness</h2>
-          <p>Productive time ÷ {{ expected_hours|int }}h goal</p>
-        </div>
+      <div class="dash-kpi-hero-card">
+        <span class="dash-kpi-hero-l">Effectiveness</span>
+        <strong class="dash-kpi-hero-v is-eff">{{ avg_eff }}%</strong>
+        <small>vs {{ expected_hours|int }}h goal</small>
       </div>
-    </div>
-
-    <div class="dt-attendance">
-      <a class="dt-att online" href="#team-table">
-        <span class="dt-att-n">{{ team.online }}</span>
-        <span class="dt-att-l">Online now</span>
-      </a>
-      <a class="dt-att present" href="#team-table">
-        <span class="dt-att-n">{{ team.present }}</span>
-        <span class="dt-att-l">Present</span>
-      </a>
-      <a class="dt-att late" href="#team-table">
-        <span class="dt-att-n">{{ team.late }}</span>
-        <span class="dt-att-l">Late</span>
-      </a>
-      <a class="dt-att absent" href="{{ url_for('desk.attendance', view='month', day=day) }}">
-        <span class="dt-att-n">{{ team.absent }}</span>
-        <span class="dt-att-l">Absent</span>
-      </a>
-    </div>
-
-    <div class="dt-admin-totals">
-      <div class="dt-total-card">
-        <span>Total desk time</span>
-        <strong>{{ humanize(total_desktime) }}</strong>
-        <small>all tracked active hours</small>
+      <div class="dash-kpi-hero-card">
+        <span class="dash-kpi-hero-l">Desk time</span>
+        <strong class="dash-kpi-hero-v">{{ humanize(total_desktime) }}</strong>
+        <small>active hours</small>
       </div>
-      <div class="dt-total-card accent">
-        <span>Total productive</span>
-        <strong>{{ humanize(total_productive) }}</strong>
-        <small>productive work time</small>
-      </div>
-      <div class="dt-total-card warn">
-        <span>Total unproductive</span>
-        <strong>{{ humanize(total_unproductive) }}</strong>
-        <small>attention needed</small>
-      </div>
-      <div class="dt-total-card">
-        <span>Total idle</span>
-        <strong>{{ humanize(total_idle) }}</strong>
-        <small>idle / away time</small>
+      <div class="dash-kpi-hero-card">
+        <span class="dash-kpi-hero-l">Productive</span>
+        <strong class="dash-kpi-hero-v is-prod">{{ humanize(total_productive) }}</strong>
+        <small>focused work</small>
       </div>
     </div>
+    <nav class="dash-att-strip" aria-label="Attendance today">
+      <a class="dash-att-chip online" href="#team-table">
+        <span class="dash-att-n">{{ team.online }}</span>
+        <span class="dash-att-l">Online</span>
+      </a>
+      <a class="dash-att-chip" href="#team-table">
+        <span class="dash-att-n">{{ team.present }}</span>
+        <span class="dash-att-l">Present</span>
+      </a>
+      <a class="dash-att-chip late" href="#leaders">
+        <span class="dash-att-n">{{ team.late }}</span>
+        <span class="dash-att-l">Late</span>
+      </a>
+      <a class="dash-att-chip absent" href="{{ url_for('desk.attendance', view='month', day=day) }}">
+        <span class="dash-att-n">{{ team.absent }}</span>
+        <span class="dash-att-l">Absent</span>
+      </a>
+      <a class="dash-att-chip private" href="#private-now">
+        <span class="dash-att-n">{{ private_count }}</span>
+        <span class="dash-att-l">Private</span>
+      </a>
+    </nav>
+  </section>
 
-    <div class="dt-time-split">
-      <div class="dt-split-head">
-        <h2>Team time split</h2>
-        <span class="muted">{{ humanize(team.active + team.idle) }} total tracked</span>
+  <div class="dash-mid-grid">
+    <section class="panel dash-panel dash-prod-panel">
+      {% include "_admin_team_prod_bar.html" %}
+    </section>
+    <section class="panel dash-panel dash-split-panel{% if tracked_today < 1 %} is-empty{% endif %}">
+      <div class="dash-split-top">
+        <h2>Time split</h2>
+        <span class="muted">{{ humanize(team.active + team.idle) }} tracked</span>
       </div>
       <div class="dt-split-bar" role="img" aria-label="Time split">
-        <i class="productive" style="width:{{ split_prod }}%" title="Productive {{ split_prod }}%"></i>
-        <i class="neutral" style="width:{{ split_neutral }}%" title="Neutral {{ split_neutral }}%"></i>
-        <i class="unproductive" style="width:{{ split_unprod }}%" title="Unproductive {{ split_unprod }}%"></i>
-        <i class="idle" style="width:{{ split_idle }}%" title="Idle {{ split_idle }}%"></i>
+        {% if tracked_today < 1 %}
+        <i class="empty-fill" style="width:100%"></i>
+        {% else %}
+        <i class="productive" style="width:{{ split_prod }}%"></i>
+        <i class="neutral" style="width:{{ split_neutral }}%"></i>
+        <i class="unproductive" style="width:{{ split_unprod }}%"></i>
+        <i class="idle" style="width:{{ split_idle }}%"></i>
+        {% endif %}
       </div>
       <div class="legend-inline dt-legend">
         <span><i class="dot productive"></i>Productive {{ humanize(team.productive) }}</span>
@@ -118,125 +111,146 @@
         <span><i class="dot unproductive"></i>Unproductive {{ humanize(team.unproductive) }}</span>
         <span><i class="dot idle"></i>Idle {{ humanize(team.idle) }}</span>
       </div>
-    </div>
-  </section>
-
-  {% include "_admin_private_now.html" %}
-  {% include "_admin_live_board.html" %}
-
-  {# Leaders: productive / effective / unproductive #}
-  <div class="dt-leaders four-up" id="leaders">
-    <section class="panel dt-leader dash-panel">
-      <div class="panel-head">
-        <h2>Late arrivals</h2>
-        <span class="muted">latest arrivals today</span>
+      <div class="dash-split-side-stats">
+        <div><span>Productive</span><strong>{{ humanize(total_productive) }}</strong></div>
+        <div><span>Unproductive</span><strong>{{ humanize(total_unproductive) }}</strong></div>
+        <div><span>Idle</span><strong>{{ humanize(total_idle) }}</strong></div>
+        <div><span>Private</span><strong>{{ private_count }}</strong></div>
       </div>
-      {% if top_late %}
-      <ul class="rank-list">
-        {% for r in top_late %}
-        <li>
-          <a href="{{ url_for('views.admin_user', user_id=r.user.id) }}?day={{ day }}">
-            <span class="rank-n warn">{{ loop.index }}</span>
-            <span class="avatar warn">{{ r.user.name[0]|upper }}</span>
-            <span class="rank-meta">
-              <strong>{{ r.user.name }}</strong>
-              <span class="muted">Arrived {{ r.arrived }}</span>
-            </span>
-            <span class="rank-pct warn">Late</span>
-          </a>
-        </li>
-        {% endfor %}
-      </ul>
-      {% else %}
-      <div class="empty-state compact"><h3>On time</h3><p>No late arrivals for this day.</p></div>
-      {% endif %}
-    </section>
-
-    <section class="panel dt-leader dash-panel">
-      <div class="panel-head">
-        <h2>Most productive</h2>
-        <span class="muted">by productive hours</span>
-      </div>
-      {% if top_productive %}
-      <ul class="rank-list">
-        {% for r in top_productive %}
-        <li>
-          <a href="{{ url_for('views.admin_user', user_id=r.user.id) }}?day={{ day }}">
-            <span class="rank-n">{{ loop.index }}</span>
-            <span class="avatar">{{ r.user.name[0]|upper }}</span>
-            <span class="rank-meta">
-              <strong>{{ r.user.name }}</strong>
-              <span class="muted">{{ humanize(r.summary.productive_seconds) }}</span>
-            </span>
-            <span class="rank-pct">{{ r.dt_productivity }}%</span>
-          </a>
-        </li>
-        {% endfor %}
-      </ul>
-      {% else %}
-      <div class="empty-state compact"><h3>Waiting for data</h3><p>Leaders appear once agents sync.</p></div>
-      {% endif %}
-    </section>
-
-    <section class="panel dt-leader dash-panel">
-      <div class="panel-head">
-        <h2>Most effective</h2>
-        <span class="muted">productive vs daily goal</span>
-      </div>
-      {% if top_effective %}
-      <ul class="rank-list">
-        {% for r in top_effective %}
-        <li>
-          <a href="{{ url_for('views.admin_user', user_id=r.user.id) }}?day={{ day }}">
-            <span class="rank-n">{{ loop.index }}</span>
-            <span class="avatar accent">{{ r.user.name[0]|upper }}</span>
-            <span class="rank-meta">
-              <strong>{{ r.user.name }}</strong>
-              <span class="muted">{{ r.dt_effectiveness }}% effective</span>
-            </span>
-            <span class="rank-pct accent">{{ r.dt_effectiveness }}%</span>
-          </a>
-        </li>
-        {% endfor %}
-      </ul>
-      {% else %}
-      <div class="empty-state compact"><h3>Waiting for data</h3><p>No effectiveness scores yet.</p></div>
-      {% endif %}
-    </section>
-
-    <section class="panel dt-leader dash-panel">
-      <div class="panel-head">
-        <h2>Most unproductive</h2>
-        <span class="muted">needs attention</span>
-      </div>
-      {% if top_unproductive %}
-      <ul class="rank-list">
-        {% for r in top_unproductive %}
-        <li>
-          <a href="{{ url_for('views.admin_user', user_id=r.user.id) }}?day={{ day }}">
-            <span class="rank-n muted">{{ loop.index }}</span>
-            <span class="avatar warn">{{ r.user.name[0]|upper }}</span>
-            <span class="rank-meta">
-              <strong>{{ r.user.name }}</strong>
-              <span class="muted">{{ humanize(r.summary.unproductive_seconds) }}</span>
-            </span>
-            <span class="rank-pct warn">{{ r.summary.unproductivity_pct }}%</span>
-          </a>
-        </li>
-        {% endfor %}
-      </ul>
-      {% else %}
-      <div class="empty-state compact"><h3>Clean slate</h3><p>No unproductive time logged.</p></div>
-      {% endif %}
     </section>
   </div>
 
-  <div class="dt-mid" id="team-apps">
-    <section class="panel dash-panel">
-      <div class="panel-head">
-        <h2>Top apps &amp; websites</h2>
-        <span class="muted">team share of active time</span>
+  <h2 class="dash-section-title" id="leaders">Today’s highlights</h2>
+  <div class="dt-leaders five-up">
+    {% include "_admin_leader_private.html" %}
+    <section class="panel dt-leader dt-widget dash-panel tone-late">
+      <header class="widget-band"><h2>Late</h2><span class="widget-meta">{{ team.late }}</span></header>
+      <div class="widget-body">
+        {% if top_late %}
+        <ul class="rank-list rank-list-dash">
+          {% for r in top_late %}
+          <li>
+            <a href="{{ url_for('views.admin_user', user_id=r.user.id) }}?day={{ day }}">
+              <span class="avatar warn">{{ r.user.name[0]|upper }}</span>
+              <span class="rank-meta">
+                <strong>{{ r.user.name }}</strong>
+                <span class="muted">Arrived {{ r.arrived }}</span>
+              </span>
+              <span class="rank-pill warn">Late</span>
+            </a>
+          </li>
+          {% endfor %}
+        </ul>
+        {% else %}
+        <div class="widget-empty"><span class="widget-empty-icon" aria-hidden="true"></span><h3>On time</h3><p>No late arrivals today.</p></div>
+        {% endif %}
       </div>
+    </section>
+
+    <section class="panel dt-leader dt-widget dash-panel tone-productive">
+      <header class="widget-band"><h2>Most productive</h2><span class="widget-meta">{{ humanize(total_productive) }}</span></header>
+      <div class="widget-body">
+        {% if top_productive %}
+        <ul class="rank-list rank-list-dash">
+          {% for r in top_productive %}
+          <li>
+            <a href="{{ url_for('views.admin_user', user_id=r.user.id) }}?day={{ day }}">
+              <span class="avatar">{{ r.user.name[0]|upper }}</span>
+              <span class="rank-meta">
+                <strong>{{ r.user.name }}</strong>
+                <span class="muted">{{ humanize(r.summary.productive_seconds) }}</span>
+              </span>
+              <span class="rank-pill">{{ r.dt_productivity }}%</span>
+            </a>
+          </li>
+          {% endfor %}
+        </ul>
+        {% else %}
+        <div class="widget-empty"><span class="widget-empty-icon" aria-hidden="true"></span><h3>Waiting for data</h3><p>Leaders appear once agents sync.</p></div>
+        {% endif %}
+      </div>
+    </section>
+
+    <section class="panel dt-leader dt-widget dash-panel tone-effective">
+      <header class="widget-band"><h2>Most effective</h2><span class="widget-meta">{{ avg_eff }}% avg</span></header>
+      <div class="widget-body">
+        {% if top_effective %}
+        <ul class="rank-list rank-list-dash">
+          {% for r in top_effective %}
+          <li>
+            <a href="{{ url_for('views.admin_user', user_id=r.user.id) }}?day={{ day }}">
+              <span class="avatar accent">{{ r.user.name[0]|upper }}</span>
+              <span class="rank-meta">
+                <strong>{{ r.user.name }}</strong>
+                <span class="muted">vs {{ expected_hours|int }}h goal</span>
+              </span>
+              <span class="rank-pill accent">{{ r.dt_effectiveness }}%</span>
+            </a>
+          </li>
+          {% endfor %}
+        </ul>
+        {% else %}
+        <div class="widget-empty"><span class="widget-empty-icon" aria-hidden="true"></span><h3>Waiting for data</h3><p>No effectiveness scores yet.</p></div>
+        {% endif %}
+      </div>
+    </section>
+
+    <section class="panel dt-leader dt-widget dash-panel tone-unproductive">
+      <header class="widget-band"><h2>Most unproductive</h2><span class="widget-meta">{{ humanize(total_unproductive) }}</span></header>
+      <div class="widget-body">
+        {% if top_unproductive %}
+        <ul class="rank-list rank-list-dash">
+          {% for r in top_unproductive %}
+          <li>
+            <a href="{{ url_for('views.admin_user', user_id=r.user.id) }}?day={{ day }}">
+              <span class="avatar warn">{{ r.user.name[0]|upper }}</span>
+              <span class="rank-meta">
+                <strong>{{ r.user.name }}</strong>
+                <span class="muted">{{ humanize(r.summary.unproductive_seconds) }}</span>
+              </span>
+              <span class="rank-pill warn">{{ r.summary.unproductivity_pct }}%</span>
+            </a>
+          </li>
+          {% endfor %}
+        </ul>
+        {% else %}
+        <div class="widget-empty"><span class="widget-empty-icon" aria-hidden="true"></span><h3>Clean slate</h3><p>No unproductive time logged.</p></div>
+        {% endif %}
+      </div>
+    </section>
+
+    <section class="panel dt-leader dt-widget dash-panel tone-absent">
+      <header class="widget-band"><h2>Absent</h2><span class="widget-meta">{{ team.absent }}</span></header>
+      <div class="widget-body">
+        {% if top_absent %}
+        <ul class="rank-list rank-list-dash">
+          {% for r in top_absent %}
+          <li>
+            <a href="{{ url_for('views.admin_user', user_id=r.user.id) }}?day={{ day }}">
+              <span class="avatar muted">{{ r.user.name[0]|upper }}</span>
+              <span class="rank-meta">
+                <strong>{{ r.user.name }}</strong>
+                <span class="muted">No activity</span>
+              </span>
+              <span class="rank-pill warn">Absent</span>
+            </a>
+          </li>
+          {% endfor %}
+        </ul>
+        {% else %}
+        <div class="widget-empty"><span class="widget-empty-icon" aria-hidden="true"></span><h3>Full house</h3><p>Everyone clocked in today.</p></div>
+        {% endif %}
+      </div>
+    </section>
+  </div>
+
+  {% include "_admin_live_board.html" %}
+
+  <h2 class="dash-section-title" id="team-apps">Apps &amp; alerts</h2>
+  <div class="dt-mid">
+    <section class="panel dt-widget dash-panel tone-productive">
+      <header class="widget-band"><h2>Top apps &amp; websites</h2><span class="widget-meta">team share</span></header>
+      <div class="widget-body widget-body-table">
       {% if team_apps %}
       <table class="apps">
         <thead>
@@ -257,15 +271,17 @@
         </tbody>
       </table>
       {% else %}
-      <p class="empty">No apps tracked yet.</p>
+      <div class="widget-empty"><span class="widget-empty-icon" aria-hidden="true"></span><h3>No apps yet</h3><p>Usage shows up after tracking starts.</p></div>
       {% endif %}
+      </div>
     </section>
 
-    <section class="panel dash-panel">
-      <div class="panel-head">
-        <h2>Suspicious screenshots</h2>
-        <a class="btn tiny" href="{{ url_for('desk.alerts') }}?day={{ day }}">View all</a>
-      </div>
+    <section class="panel dt-widget dash-panel tone-unproductive">
+      <header class="widget-band">
+        <h2>Flagged screenshots</h2>
+        <a class="widget-link" href="{{ url_for('desk.alerts') }}?day={{ day }}">View all</a>
+      </header>
+      <div class="widget-body">
       {% if flagged_shots %}
       <div class="gallery dt-shot-grid">
         {% for s in flagged_shots %}
@@ -280,19 +296,17 @@
         {% endfor %}
       </div>
       {% else %}
-      <div class="empty-state compact">
-        <h3>No flagged shots</h3>
-        <p>Unproductive-app screenshots appear here instantly.</p>
-      </div>
+      <div class="widget-empty"><span class="widget-empty-icon" aria-hidden="true"></span><h3>Nothing flagged</h3><p>Unproductive screenshots appear here.</p></div>
       {% endif %}
+      </div>
     </section>
   </div>
 
-  <section class="panel dash-panel" id="team-table">
-    <div class="panel-head">
-      <h2>Employees</h2>
-      <span class="muted">Click a row for the full day view</span>
-    </div>
+  <section class="panel dash-panel team-table-panel" id="team-table">
+    <header class="panel-head">
+      <h2>Team members</h2>
+      <span class="muted">Open a row for the full day</span>
+    </header>
     <div class="grid-wrap">
       <table class="grid dt-emp-table">
         <thead>

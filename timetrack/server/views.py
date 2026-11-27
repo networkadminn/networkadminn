@@ -282,12 +282,18 @@ def _active_private_map(user_ids: list[int]) -> dict[int, PrivatePeriod]:
 
 
 def _private_duration_label(start_ts: float, now_ts: float) -> str:
+    """Human duration for admin dashboard (caps silly multi-day stale actives)."""
     ago_s = max(0, int(now_ts - start_ts))
     if ago_s < 60:
         return f"{ago_s}s"
     if ago_s < 3600:
         return f"{ago_s // 60}m"
-    return f"{ago_s // 3600}h {(ago_s % 3600) // 60}m"
+    if ago_s < 86400:
+        return f"{ago_s // 3600}h {(ago_s % 3600) // 60}m"
+    days = ago_s // 86400
+    if days > 14:
+        return f"{days}d+"
+    return f"{days}d {(ago_s % 86400) // 3600}h"
 
 
 def _admin_team_row(
@@ -314,15 +320,20 @@ def _admin_team_row(
     if not online and isinstance(live, dict):
         live["fresh"] = False
     private_active = private_period is not None
+    stale_private = False
+    if private_period:
+        stale_private = (now_ts - private_period.start_ts) > 86400 * 2
     return {
         "user": u,
         "private_active": private_active,
+        "private_stale": stale_private,
         "private_started": format_clock(private_period.start_ts, tz_name=_tz())
         if private_period
         else "",
         "private_ago": _private_duration_label(private_period.start_ts, now_ts)
         if private_period
         else "",
+        "private_start_ts": float(private_period.start_ts) if private_period else 0.0,
         "summary": s,
         "manual_seconds": manual_seconds,
         "desktime_seconds": dm.desktime_seconds,
@@ -419,6 +430,83 @@ def _admin_team_day_state(
         else 0.0
     )
     return rows, team, team_apps, avg_prod, avg_eff, off_day
+
+
+def _team_hourly_bars(users: list[User], day: datetime) -> tuple[list[dict], bool]:
+    """Hourly team productivity columns for the admin dashboard bar."""
+    settings = get_settings()
+    start, end = day_bounds(day, tz_name=_tz())
+    office_start_h = float(
+        settings.office_start_hour or settings.expected_arrival_hour or 9.0
+    )
+    office_end_h = float(settings.office_end_hour or 18.0)
+    view_start = start + office_start_h * 3600.0
+    view_end = min(end, start + office_end_h * 3600.0)
+    if view_end <= view_start:
+        view_start, view_end = start, end
+
+    acts: list = []
+    for u in users:
+        acts.extend(_activities_for(u.id, day))
+
+    h0 = max(0, int(office_start_h))
+    h1 = max(h0, int(math.ceil(office_end_h)) - 1)
+
+    if not acts:
+        out = []
+        for h in range(h0, h1 + 1):
+            short = format_hour_short(float(h))
+            ampm = "AM" if h < 12 else "PM"
+            out.append(
+                {
+                    "label": f"{h:02d}:00",
+                    "short": short,
+                    "ampm": ampm,
+                    "pct": 0.0,
+                    "active": False,
+                }
+            )
+        return out, False
+
+    buckets = timeline_buckets(acts, view_start, view_end, bucket_seconds=3600.0)
+    tz = zone(_tz())
+    out: list[dict] = []
+    any_active = False
+    for b in buckets:
+        prod = float(b.get(PRODUCTIVE, 0))
+        unprod = float(b.get(UNPRODUCTIVE, 0))
+        neut = float(b.get(NEUTRAL, 0))
+        tracked = prod + unprod + neut
+        idle = float(b.get("idle", 0))
+        active = tracked + idle > 30
+        any_active = any_active or active
+        pct = round(100.0 * prod / tracked, 1) if tracked > 0 else 0.0
+        dt = datetime.fromtimestamp(b["start"], tz=tz)
+        h = dt.hour
+        out.append(
+            {
+                "label": dt.strftime("%H:%M"),
+                "short": format_hour_short(float(h) + dt.minute / 60.0),
+                "ampm": "AM" if h < 12 else "PM",
+                "pct": pct,
+                "active": active,
+            }
+        )
+    if not out:
+        for h in range(h0, h1 + 1):
+            short = format_hour_short(float(h))
+            ampm = "AM" if h < 12 else "PM"
+            out.append(
+                {
+                    "label": f"{h:02d}:00",
+                    "short": short,
+                    "ampm": ampm,
+                    "pct": 0.0,
+                    "active": False,
+                }
+            )
+        return out, False
+    return out, any_active
 
 
 def _team_visual_viz_context(
@@ -2201,6 +2289,11 @@ def admin():
         [r for r in rows if r["absent"]],
         key=lambda r: (r["user"].name or r["user"].username).lower(),
     )[:5]
+    top_private = sorted(
+        [r for r in rows if r.get("private_active")],
+        key=lambda r: r.get("private_start_ts") or 0.0,
+    )[:8]
+    private_count = len(top_private)
 
     flagged_shots = list(
         db.session.execute(
@@ -2227,6 +2320,8 @@ def admin():
             online_window=int(cfg.online_window),
             humanize=humanize,
             client_outdated=client_outdated,
+            top_private=top_private,
+            private_count=private_count,
         )
 
     total_desktime = float(team.get("active") or 0.0)
@@ -2243,10 +2338,19 @@ def admin():
         1,
     )
     split_idle = round(100.0 * total_idle / total_all, 1)
+    week = _week_strip(None, day)
+    day_label = day.strftime("%a, %B %d, %Y")
+    tracked_today = float(team.get("active") or 0.0) + float(team.get("idle") or 0.0)
+    team_hour_bars, team_has_hour_data = _team_hourly_bars(users, day)
 
     return render_template(
         "admin.html",
         **_day_nav(day),
+        day_label=day_label,
+        week=week,
+        tracked_today=tracked_today,
+        team_hour_bars=team_hour_bars,
+        team_has_hour_data=team_has_hour_data,
         client_outdated=client_outdated,
         rows=rows,
         team=team,
@@ -2274,6 +2378,8 @@ def admin():
         split_unprod=split_unprod,
         split_neutral=split_neutral,
         split_idle=split_idle,
+        top_private=top_private,
+        private_count=private_count,
     )
 
 
@@ -2622,6 +2728,133 @@ def _employees_return_url() -> str:
     if tid:
         args["team_id"] = tid
     return url_for("views.employees", **args)
+
+
+@views_bp.route("/employees/<int:user_id>/settings", methods=["GET", "POST"])
+@admin_required
+def employee_settings(user_id: int):
+    """DeskTime-style per-employee settings (General / Tracking / Screenshots / …)."""
+    from .models import Team
+    from .tenancy import current_org_id, teams_in_org_query
+
+    subject = _org_user_or_404(user_id)
+    tab = (request.values.get("tab") or "general").strip().lower()
+    allowed_tabs = {"general", "tracking", "screenshots", "security", "other"}
+    if tab not in allowed_tabs:
+        tab = "general"
+
+    if request.method == "POST":
+        action = (request.form.get("action") or "").strip()
+        tab = (request.form.get("tab") or tab).strip().lower()
+        if tab not in allowed_tabs:
+            tab = "general"
+
+        if action == "general":
+            subject.display_name = (request.form.get("name") or "").strip()
+            subject.email = (request.form.get("email") or "").strip()
+            tid = request.form.get("team_id", type=int)
+            if tid:
+                team = db.session.get(Team, tid)
+                if team is None or team.organization_id != current_org_id():
+                    abort(404)
+                subject.team_id = tid
+            else:
+                subject.team_id = None
+            role = (request.form.get("role") or "").strip()
+            if role in (ROLE_ADMIN, ROLE_EMPLOYEE):
+                if subject.id == current_user.id and role != subject.role:
+                    flash("You cannot change your own role.", "error")
+                else:
+                    subject.role = role
+            if not _apply_timezone_field(subject):
+                return redirect(
+                    url_for("views.employee_settings", user_id=subject.id, tab="general")
+                )
+            db.session.commit()
+            flash(f"Profile updated for {subject.username}.", "info")
+        elif action == "tracking":
+            subject.private_time_allowed = bool(request.form.get("private_time_allowed"))
+            db.session.commit()
+            flash(f"Tracking settings saved for {subject.username}.", "info")
+        elif action == "screenshots":
+            subject.view_own_screenshots = bool(request.form.get("view_own_screenshots"))
+            mode = request.form.get("shot_mode") or "company"
+            if mode == "company":
+                subject.screenshots_enabled = None
+                subject.screenshot_interval = None
+            elif mode == "off":
+                subject.screenshots_enabled = False
+                subject.screenshot_interval = None
+            else:
+                subject.screenshots_enabled = True
+                interval = request.form.get("interval", type=int) or 300
+                subject.screenshot_interval = max(60, min(interval, 3600))
+            db.session.commit()
+            flash(f"Screenshot settings saved for {subject.username}.", "info")
+        elif action == "password":
+            password = request.form.get("password") or ""
+            if len(password) < 6:
+                flash("Password must be at least 6 characters.", "error")
+            else:
+                subject.set_password(password)
+                db.session.commit()
+                flash(f"Password updated for {subject.username}.", "info")
+        elif action == "rotate":
+            token = subject.rotate_token()
+            db.session.commit()
+            flash(f"New API token for {subject.username}: {token}", "info")
+        elif action == "toggle":
+            if subject.id == current_user.id:
+                flash("You cannot disable your own account.", "error")
+            else:
+                subject.enabled = not subject.enabled
+                db.session.commit()
+                flash(
+                    f"{subject.username} is now {'enabled' if subject.enabled else 'disabled'}.",
+                    "info",
+                )
+        elif action == "delete":
+            from .users_util import delete_user_account
+
+            if subject.id == current_user.id:
+                flash("You cannot delete your own account.", "error")
+            elif subject.organization_id != current_org_id():
+                flash("Employee not found in your organization.", "error")
+            elif subject.role == ROLE_ADMIN:
+                admins = (
+                    db.session.execute(
+                        db.select(db.func.count(User.id)).filter(
+                            User.role == ROLE_ADMIN,
+                            User.organization_id == current_org_id(),
+                            User.enabled.is_(True),
+                        )
+                    ).scalar_one()
+                    or 0
+                )
+                if admins <= 1:
+                    flash("Cannot delete the last active admin.", "error")
+                else:
+                    delete_user_account(subject)
+                    flash("Deleted team member.", "info")
+                    return redirect(url_for("views.employees"))
+            else:
+                delete_user_account(subject)
+                flash("Deleted team member.", "info")
+                return redirect(url_for("views.employees"))
+        return redirect(url_for("views.employee_settings", user_id=user_id, tab=tab))
+
+    teams = list(
+        db.session.execute(
+            teams_in_org_query(current_org_id()).order_by(Team.name)
+        ).scalars()
+    )
+    return render_template(
+        "employee_settings.html",
+        subject=subject,
+        teams=teams,
+        tab=tab,
+        company_settings=get_settings(),
+    )
 
 
 @views_bp.route("/employees", methods=["GET", "POST"])
