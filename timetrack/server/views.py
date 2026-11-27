@@ -75,6 +75,7 @@ from .models import (
     Screenshot,
     User,
     ROLE_ADMIN,
+    ROLE_CHOICES,
     ROLE_EMPLOYEE,
     generate_token,
 )
@@ -2236,6 +2237,22 @@ def _avatar_peer_or_404(user_id: int) -> User:
     return user
 
 
+@views_bp.route("/company-logo")
+def company_logo():
+    """Serve the uploaded company logo from the data directory."""
+    from pathlib import Path
+
+    cfg = current_app.config["TIMETRACK_SERVER_CONFIG"]
+    settings = get_settings()
+    rel = (getattr(settings, "company_logo", None) or "").strip()
+    if not rel or ".." in rel or rel.startswith(("/", "\\")):
+        abort(404)
+    path = Path(cfg.data_dir) / rel
+    if not path.is_file():
+        abort(404)
+    return send_from_directory(str(path.parent), path.name, max_age=86400)
+
+
 @views_bp.route("/avatar/<int:user_id>")
 @login_required
 def user_avatar(user_id: int):
@@ -2853,7 +2870,7 @@ def employee_settings(user_id: int):
             else:
                 subject.team_id = None
             role = (request.form.get("role") or "").strip()
-            if role in (ROLE_ADMIN, ROLE_EMPLOYEE):
+            if role in ROLE_CHOICES:
                 if subject.id == current_user.id and role != subject.role:
                     flash("You cannot change your own role.", "error")
                 else:
@@ -2961,7 +2978,11 @@ def employees():
             password = request.form.get("password") or ""
             name = (request.form.get("name") or "").strip()
             email = (request.form.get("email") or "").strip()
-            role = ROLE_ADMIN if request.form.get("admin") else ROLE_EMPLOYEE
+            role = (request.form.get("role") or "").strip().lower()
+            if role not in ROLE_CHOICES:
+                role = (
+                    ROLE_ADMIN if request.form.get("admin") else ROLE_EMPLOYEE
+                )
             if not username or not password:
                 flash("Username and password are required.", "error")
             elif db.session.execute(

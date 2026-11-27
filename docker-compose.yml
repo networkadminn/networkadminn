@@ -1,0 +1,13 @@
+services:
+  tracker:
+    build: .
+    image: euclidee/esstracker-server:latest
+    ports:
+      - "8080:8080"
+    environment:
+      TIMETRACK_SERVER_DATA: /data
+      ESSTRACKER_PUBLIC_URL: http://localhost:8080
+      PORT: "8080"
+    volumes:
+      - ./data/docker-tracker:/data
+    restart: unless-stopped

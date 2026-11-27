@@ -12,8 +12,10 @@ from .extensions import db
 
 ROLE_ADMIN = "admin"
 ROLE_EMPLOYEE = "employee"
+ROLE_MANAGER = "manager"
 # Legacy SaaS role — still in some DBs; treated as admin.
 ROLE_SUPERADMIN = "superadmin"
+ROLE_CHOICES = (ROLE_EMPLOYEE, ROLE_MANAGER, ROLE_ADMIN)
 
 PLAN_BUSINESS = "business"
 ORG_ACTIVE = "active"
@@ -343,6 +345,9 @@ class CompanySettings(db.Model):
     work_days = db.Column(db.String(32), nullable=False, default="0,1,2,3,4")
     timezone = db.Column(db.String(64), nullable=False, default="Asia/Kolkata")
     company_name = db.Column(db.String(200), nullable=False, default="ESS Tracker")
+    # First-run / company branding (relative path under data_dir, e.g. brand/logo.png).
+    company_website = db.Column(db.String(300), nullable=False, default="")
+    company_logo = db.Column(db.String(300), nullable=False, default="")
     # Seconds without keyboard/mouse before agent marks idle (DeskTime default ~180).
     idle_threshold = db.Column(db.Integer, nullable=False, default=180)
     # Tray: allow employees to log out / quit from the notification menu.
@@ -414,6 +419,8 @@ __all__ = [
     "PasswordResetToken",
     "ROLE_ADMIN",
     "ROLE_EMPLOYEE",
+    "ROLE_MANAGER",
+    "ROLE_CHOICES",
     "ROLE_SUPERADMIN",
     "PLAN_BUSINESS",
     "ORG_ACTIVE",

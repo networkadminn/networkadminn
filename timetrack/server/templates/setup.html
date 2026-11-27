@@ -1,0 +1,149 @@
+{% extends "base.html" %}
+{% block title %}First-time setup · esstracker{% endblock %}
+{% block body %}
+<div class="setup2-shell{% if design_preview %} is-preview{% endif %}">
+  <div class="setup2-bg" aria-hidden="true">
+    <span class="setup2-orb o1"></span>
+    <span class="setup2-orb o2"></span>
+    <span class="setup2-bg-grid"></span>
+  </div>
+
+  <header class="setup2-top">
+    <a class="setup2-brand" href="{{ url_for('views.home') }}">
+      <img src="{{ url_for('static', filename='brand/ess-mark.png') }}" alt="" width="36" height="36" />
+      <span>esstracker</span>
+    </a>
+    <p class="setup2-top-note">Company workspace</p>
+  </header>
+
+  {% if design_preview %}
+  <div class="setup2-banner" role="status">
+    Design preview — submit disabled. This page opens automatically on first launch.
+  </div>
+  {% endif %}
+
+  <main class="setup2-main">
+    <div class="setup2-intro">
+      <h1>Set up your workspace</h1>
+      <p class="setup2-sub">Create your company brand and the first admin account. This only happens once.</p>
+    </div>
+
+    <nav class="setup2-rail" aria-label="Setup progress">
+      <div class="setup2-rail-item is-done">
+        <span class="setup2-rail-dot">1</span>
+        <span class="setup2-rail-label">Start</span>
+      </div>
+      <div class="setup2-rail-line is-on"></div>
+      <div class="setup2-rail-item is-active">
+        <span class="setup2-rail-dot">2</span>
+        <span class="setup2-rail-label">Brand &amp; admin</span>
+      </div>
+      <div class="setup2-rail-line"></div>
+      <div class="setup2-rail-item">
+        <span class="setup2-rail-dot">3</span>
+        <span class="setup2-rail-label">Invite team</span>
+      </div>
+    </nav>
+
+    <div class="setup2-card">
+      {% if errors %}
+      <ul class="setup-flash">
+        {% for msg in errors %}
+        <li class="error">{{ msg }}</li>
+        {% endfor %}
+      </ul>
+      {% endif %}
+
+      <form method="post" enctype="multipart/form-data" class="setup2-form" autocomplete="off"{% if design_preview %} onsubmit="return false"{% endif %}>
+        <section class="setup2-block" aria-labelledby="setup-company">
+          <div class="setup2-block-head">
+            <h2 id="setup-company">Company &amp; brand</h2>
+            <p>Appears in the sidebar, login, and reports.</p>
+          </div>
+
+          <div class="setup2-logo" data-setup-logo>
+            <div class="setup2-logo-mark" data-setup-logo-preview>
+              <img src="{{ url_for('static', filename='brand/ess-mark.png') }}" alt="" data-setup-logo-img />
+            </div>
+            <div class="setup2-logo-meta">
+              <strong>Logo</strong>
+              <span>PNG, JPG, WebP, or SVG · optional</span>
+              <label class="setup2-file">
+                Upload logo
+                <input name="logo" type="file" accept="image/png,image/jpeg,image/webp,image/svg+xml,.svg" {% if design_preview %}disabled{% endif %} data-setup-logo-input />
+              </label>
+            </div>
+          </div>
+
+          <div class="setup2-grid">
+            <label class="setup2-field setup2-span-2">Brand / company name
+              <input name="company_name" value="{{ form.company_name }}" required maxlength="200" placeholder="Euclidee Software Solutions" {% if design_preview %}readonly{% endif %} />
+            </label>
+            <label class="setup2-field">Website
+              <input name="company_website" type="url" value="{{ form.company_website }}" maxlength="300" placeholder="https://company.com" {% if design_preview %}readonly{% endif %} />
+            </label>
+            <label class="setup2-field">Company email
+              <input name="company_email" type="email" value="{{ form.company_email }}" maxlength="200" placeholder="admin@company.com" {% if design_preview %}readonly{% endif %} />
+            </label>
+            <label class="setup2-field setup2-span-2">Timezone
+              <select name="timezone" required {% if design_preview %}disabled{% endif %}>
+                {% for tz, label in timezones %}
+                <option value="{{ tz }}" {% if form.timezone == tz %}selected{% endif %}>{{ label }}</option>
+                {% endfor %}
+              </select>
+            </label>
+          </div>
+        </section>
+
+        <div class="setup2-divider" aria-hidden="true"></div>
+
+        <section class="setup2-block" aria-labelledby="setup-admin">
+          <div class="setup2-block-head">
+            <h2 id="setup-admin">Admin account</h2>
+            <p>Full access to employees, teams, and settings.</p>
+          </div>
+
+          <div class="setup2-grid">
+            <label class="setup2-field">Admin name
+              <input name="admin_name" value="{{ form.admin_name }}" required maxlength="200" placeholder="Your name" {% if design_preview %}readonly{% endif %} />
+            </label>
+            <label class="setup2-field">Username
+              <input name="username" value="{{ form.username }}" required maxlength="80" autocomplete="username" {% if design_preview %}readonly{% endif %} />
+            </label>
+            <label class="setup2-field setup2-span-2">Admin email
+              <input name="admin_email" type="email" value="{{ form.admin_email }}" maxlength="200" placeholder="Defaults to company email" {% if design_preview %}readonly{% endif %} />
+            </label>
+            <label class="setup2-field">Password
+              <input name="password" type="password" required minlength="6" autocomplete="new-password" placeholder="Min. 6 characters" {% if design_preview %}readonly{% endif %} />
+            </label>
+            <label class="setup2-field">Confirm password
+              <input name="password_confirm" type="password" required minlength="6" autocomplete="new-password" placeholder="Repeat password" {% if design_preview %}readonly{% endif %} />
+            </label>
+          </div>
+        </section>
+
+        <div class="setup2-actions">
+          <button class="btn primary inline setup2-submit" type="submit"{% if design_preview %} disabled{% endif %}>
+            Create admin &amp; continue
+          </button>
+          <p class="setup2-foot">Next you will sign in, then add team members.</p>
+        </div>
+      </form>
+    </div>
+  </main>
+</div>
+<script>
+(function () {
+  var input = document.querySelector("[data-setup-logo-input]");
+  var img = document.querySelector("[data-setup-logo-img]");
+  var drop = document.querySelector("[data-setup-logo]");
+  if (!input || !img) return;
+  input.addEventListener("change", function () {
+    var file = input.files && input.files[0];
+    if (!file) return;
+    img.src = URL.createObjectURL(file);
+    if (drop) drop.classList.add("has-file");
+  });
+})();
+</script>
+{% endblock %}

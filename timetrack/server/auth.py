@@ -49,6 +49,10 @@ def _utcnow() -> datetime:
 
 @auth_bp.route("/login", methods=["GET", "POST"])
 def login():
+    from .setup_util import needs_setup
+
+    if needs_setup():
+        return redirect(url_for("setup.setup"))
     if current_user.is_authenticated:
         return redirect(url_for("views.home"))
 

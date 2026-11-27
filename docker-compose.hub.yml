@@ -1,0 +1,24 @@
+# Run the published Hub image (no local build).
+#   docker compose -f docker-compose.hub.yml up -d
+services:
+  tracker:
+    image: euclidee/esstracker-server:latest
+    ports:
+      - "8080:8080"
+    environment:
+      TIMETRACK_SERVER_DATA: /data
+      ESSTRACKER_PUBLIC_URL: http://localhost:8080
+      PORT: "8080"
+      # TIMETRACK_SECURE_COOKIES: "1"
+      # TIMETRACK_SECRET_KEY: ""
+      # GEMINI_API_KEY: ""
+      # ESSTRACKER_SMTP_HOST: ""
+      # ESSTRACKER_SMTP_PORT: "587"
+      # ESSTRACKER_SMTP_USER: ""
+      # ESSTRACKER_SMTP_PASSWORD: ""
+    volumes:
+      - esstracker-data:/data
+    restart: unless-stopped
+
+volumes:
+  esstracker-data:
