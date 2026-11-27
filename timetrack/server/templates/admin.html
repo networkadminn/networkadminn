@@ -21,6 +21,7 @@
         <a class="btn tiny ghost" href="{{ url_for('desk.alerts') }}?day={{ day }}">Alerts</a>
       </div>
     </div>
+    {% if teams %}
     <div class="admin-dash-filters">
       <nav class="team-chips" aria-label="Filter by team">
         <a class="team-chip{% if not team_id %} is-active{% endif %}" href="?day={{ day }}">All members</a>
@@ -28,97 +29,111 @@
         <a class="team-chip{% if team_id == t.id %} is-active{% endif %}" href="?day={{ day }}&team_id={{ t.id }}">{{ t.name }}</a>
         {% endfor %}
       </nav>
-      <nav class="dash-jump" aria-label="Jump to section">
-        <a href="#leaders">Overview</a>
-        <a href="#live-now">Live</a>
-        <a href="#team-apps">Apps</a>
-        <a href="#team-table">Team</a>
-      </nav>
     </div>
+    {% endif %}
   </header>
 
-  {% include "_week.html" %}
+  {% set emp_n = employee_count if employee_count > 0 else 1 %}
+  {% set desk_goal_s = (expected_hours|float) * 3600 %}
+  {% set ns = namespace(
+    desk_pct=0,
+    prod_share=0,
+    att_peak=emp_n,
+    eff_bar=(avg_eff|int)
+  ) %}
+  {% if desk_goal_s > 0 %}
+    {% set ns.desk_pct = ((total_desktime / desk_goal_s) * 100)|int %}
+    {% if ns.desk_pct > 100 %}{% set ns.desk_pct = 100 %}{% endif %}
+  {% endif %}
+  {% if total_desktime > 0 %}
+    {% set ns.prod_share = ((total_productive / total_desktime) * 100)|int %}
+    {% if ns.prod_share > 100 %}{% set ns.prod_share = 100 %}{% endif %}
+  {% endif %}
+  {% if team.online > ns.att_peak %}{% set ns.att_peak = team.online %}{% endif %}
+  {% if team.present > ns.att_peak %}{% set ns.att_peak = team.present %}{% endif %}
+  {% if team.late > ns.att_peak %}{% set ns.att_peak = team.late %}{% endif %}
+  {% if team.absent > ns.att_peak %}{% set ns.att_peak = team.absent %}{% endif %}
+  {% if private_count > ns.att_peak %}{% set ns.att_peak = private_count %}{% endif %}
+  {% if ns.att_peak < 1 %}{% set ns.att_peak = 1 %}{% endif %}
+  {% if ns.eff_bar > 100 %}{% set ns.eff_bar = 100 %}{% endif %}
+  {% if ns.eff_bar < 0 %}{% set ns.eff_bar = 0 %}{% endif %}
 
-  <section class="dash-snapshot" aria-label="Team snapshot">
-    <div class="dash-kpi-hero">
-      <div class="dash-kpi-hero-card">
-        <span class="dash-kpi-hero-l">Productivity</span>
-        <strong class="dash-kpi-hero-v is-prod">{{ avg_prod }}%</strong>
-        <small>of time at computer</small>
-      </div>
-      <div class="dash-kpi-hero-card">
-        <span class="dash-kpi-hero-l">Effectiveness</span>
-        <strong class="dash-kpi-hero-v is-eff">{{ avg_eff }}%</strong>
-        <small>vs {{ expected_hours|int }}h goal</small>
-      </div>
-      <div class="dash-kpi-hero-card">
-        <span class="dash-kpi-hero-l">Desk time</span>
-        <strong class="dash-kpi-hero-v">{{ humanize(total_desktime) }}</strong>
-        <small>active hours</small>
-      </div>
-      <div class="dash-kpi-hero-card">
-        <span class="dash-kpi-hero-l">Productive</span>
-        <strong class="dash-kpi-hero-v is-prod">{{ humanize(total_productive) }}</strong>
-        <small>focused work</small>
-      </div>
+  <section class="dash-snapshot dash-snapshot-viz" aria-label="Team snapshot">
+    <div class="dash-kpi-hero dash-kpi-meters">
+      <article class="dash-meter dash-meter-ring">
+        <div class="dash-meter-ring-wrap" style="--p: {{ avg_prod|int }};" role="img" aria-label="Productivity {{ avg_prod }}%">
+          <strong class="dash-meter-ring-val">{{ avg_prod }}%</strong>
+        </div>
+        <div class="dash-meter-copy">
+          <span class="dash-kpi-hero-l">Productivity</span>
+          <small>of time at computer</small>
+        </div>
+      </article>
+
+      <article class="dash-meter dash-meter-hbar">
+        <div class="dash-meter-copy">
+          <span class="dash-kpi-hero-l">Effectiveness</span>
+          <strong class="dash-kpi-hero-v is-eff">{{ avg_eff }}%</strong>
+          <small>vs {{ expected_hours|int }}h goal</small>
+        </div>
+        <div class="dash-hbar" aria-hidden="true">
+          <i style="width: {{ ns.eff_bar }}%"></i>
+        </div>
+      </article>
+
+      <article class="dash-meter dash-meter-vbars">
+        <div class="dash-meter-copy">
+          <span class="dash-kpi-hero-l">Desk time</span>
+          <strong class="dash-kpi-hero-v">{{ humanize(total_desktime) }}</strong>
+          <small>active hours</small>
+        </div>
+        <div class="dash-vbars" aria-hidden="true">
+          <span class="dash-vbar"><i style="height: {{ ns.desk_pct }}%"></i></span>
+          <span class="dash-vbar is-goal"><i style="height: 100%"></i></span>
+        </div>
+      </article>
+
+      <article class="dash-meter dash-meter-wave">
+        <div class="dash-meter-copy">
+          <span class="dash-kpi-hero-l">Productive</span>
+          <strong class="dash-kpi-hero-v is-prod">{{ humanize(total_productive) }}</strong>
+          <small>focused work</small>
+        </div>
+        <div class="dash-wavebar" aria-hidden="true">
+          <i style="width: {{ ns.prod_share }}%"></i>
+          <em>{{ ns.prod_share }}% of desk</em>
+        </div>
+      </article>
     </div>
-    <nav class="dash-att-strip" aria-label="Attendance today">
-      <a class="dash-att-chip online" href="#team-table">
+
+    <nav class="dash-att-strip dash-att-bars" aria-label="Attendance today">
+      <a class="dash-att-bar online" href="#team-table">
+        <span class="dash-att-col" aria-hidden="true"><i style="height: {{ ((team.online / ns.att_peak) * 100)|int }}%"></i></span>
         <span class="dash-att-n">{{ team.online }}</span>
         <span class="dash-att-l">Online</span>
       </a>
-      <a class="dash-att-chip" href="#team-table">
+      <a class="dash-att-bar present" href="#team-table">
+        <span class="dash-att-col" aria-hidden="true"><i style="height: {{ ((team.present / ns.att_peak) * 100)|int }}%"></i></span>
         <span class="dash-att-n">{{ team.present }}</span>
         <span class="dash-att-l">Present</span>
       </a>
-      <a class="dash-att-chip late" href="#leaders">
+      <a class="dash-att-bar late" href="#leaders">
+        <span class="dash-att-col" aria-hidden="true"><i style="height: {{ ((team.late / ns.att_peak) * 100)|int }}%"></i></span>
         <span class="dash-att-n">{{ team.late }}</span>
         <span class="dash-att-l">Late</span>
       </a>
-      <a class="dash-att-chip absent" href="{{ url_for('desk.attendance', view='month', day=day) }}">
+      <a class="dash-att-bar absent" href="{{ url_for('desk.attendance', view='month', day=day) }}">
+        <span class="dash-att-col" aria-hidden="true"><i style="height: {{ ((team.absent / ns.att_peak) * 100)|int }}%"></i></span>
         <span class="dash-att-n">{{ team.absent }}</span>
         <span class="dash-att-l">Absent</span>
       </a>
-      <a class="dash-att-chip private" href="#private-now">
+      <a class="dash-att-bar private" href="#private-now">
+        <span class="dash-att-col" aria-hidden="true"><i style="height: {{ ((private_count / ns.att_peak) * 100)|int }}%"></i></span>
         <span class="dash-att-n">{{ private_count }}</span>
         <span class="dash-att-l">Private</span>
       </a>
     </nav>
   </section>
-
-  <div class="dash-mid-grid">
-    <section class="panel dash-panel dash-prod-panel">
-      {% include "_admin_team_prod_bar.html" %}
-    </section>
-    <section class="panel dash-panel dash-split-panel{% if tracked_today < 1 %} is-empty{% endif %}">
-      <div class="dash-split-top">
-        <h2>Time split</h2>
-        <span class="muted">{{ humanize(team.active + team.idle) }} tracked</span>
-      </div>
-      <div class="dt-split-bar" role="img" aria-label="Time split">
-        {% if tracked_today < 1 %}
-        <i class="empty-fill" style="width:100%"></i>
-        {% else %}
-        <i class="productive" style="width:{{ split_prod }}%"></i>
-        <i class="neutral" style="width:{{ split_neutral }}%"></i>
-        <i class="unproductive" style="width:{{ split_unprod }}%"></i>
-        <i class="idle" style="width:{{ split_idle }}%"></i>
-        {% endif %}
-      </div>
-      <div class="legend-inline dt-legend">
-        <span><i class="dot productive"></i>Productive {{ humanize(team.productive) }}</span>
-        <span><i class="dot neutral"></i>Neutral</span>
-        <span><i class="dot unproductive"></i>Unproductive {{ humanize(team.unproductive) }}</span>
-        <span><i class="dot idle"></i>Idle {{ humanize(team.idle) }}</span>
-      </div>
-      <div class="dash-split-side-stats">
-        <div><span>Productive</span><strong>{{ humanize(total_productive) }}</strong></div>
-        <div><span>Unproductive</span><strong>{{ humanize(total_unproductive) }}</strong></div>
-        <div><span>Idle</span><strong>{{ humanize(total_idle) }}</strong></div>
-        <div><span>Private</span><strong>{{ private_count }}</strong></div>
-      </div>
-    </section>
-  </div>
 
   <h2 class="dash-section-title" id="leaders">Today’s highlights</h2>
   <div class="dt-leaders five-up">
@@ -240,6 +255,40 @@
         {% else %}
         <div class="widget-empty"><span class="widget-empty-icon" aria-hidden="true"></span><h3>Full house</h3><p>Everyone clocked in today.</p></div>
         {% endif %}
+      </div>
+    </section>
+  </div>
+
+  <div class="dash-mid-grid">
+    <section class="panel dash-panel dash-prod-panel">
+      {% include "_admin_team_prod_bar.html" %}
+    </section>
+    <section class="panel dash-panel dash-split-panel{% if tracked_today < 1 %} is-empty{% endif %}">
+      <div class="dash-split-top">
+        <h2>Time split</h2>
+        <span class="muted">{{ humanize(team.active + team.idle) }} tracked</span>
+      </div>
+      <div class="dt-split-bar" role="img" aria-label="Time split">
+        {% if tracked_today < 1 %}
+        <i class="empty-fill" style="width:100%"></i>
+        {% else %}
+        <i class="productive" style="width:{{ split_prod }}%"></i>
+        <i class="neutral" style="width:{{ split_neutral }}%"></i>
+        <i class="unproductive" style="width:{{ split_unprod }}%"></i>
+        <i class="idle" style="width:{{ split_idle }}%"></i>
+        {% endif %}
+      </div>
+      <div class="legend-inline dt-legend">
+        <span><i class="dot productive"></i>Productive {{ humanize(team.productive) }}</span>
+        <span><i class="dot neutral"></i>Neutral</span>
+        <span><i class="dot unproductive"></i>Unproductive {{ humanize(team.unproductive) }}</span>
+        <span><i class="dot idle"></i>Idle {{ humanize(team.idle) }}</span>
+      </div>
+      <div class="dash-split-side-stats">
+        <div><span>Productive</span><strong>{{ humanize(total_productive) }}</strong></div>
+        <div><span>Unproductive</span><strong>{{ humanize(total_unproductive) }}</strong></div>
+        <div><span>Idle</span><strong>{{ humanize(total_idle) }}</strong></div>
+        <div><span>Private</span><strong>{{ private_count }}</strong></div>
       </div>
     </section>
   </div>
