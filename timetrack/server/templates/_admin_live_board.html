@@ -2,17 +2,21 @@
     <div class="panel-head">
       {% set live_rows = rows|selectattr('online')|list %}
       <h2>Live now <span class="dash-count">{{ live_rows|length }}</span></h2>
-      <span class="muted">online = activity in last {{ online_window }}s</span>
+      <span class="muted">auto-refresh · online = activity in last {{ online_window }}s</span>
     </div>
     {% if live_rows %}
     <div class="live-grid">
       {% for r in live_rows %}
-      <a class="live-card {% if r.live.idle %}is-idle{% endif %}" href="{{ url_for('views.admin_user', user_id=r.user.id) }}?day={{ day }}">
+      <a class="live-card {% if r.private_active %}is-private{% elif r.live.idle %}is-idle{% endif %}" href="{{ url_for('views.admin_user', user_id=r.user.id) }}?day={{ day }}">
         <div class="live-card-top">
-          <span class="avatar">{{ r.user.name[0]|upper }}</span>
+          <span class="avatar {% if r.private_active %}private-ring{% endif %}">{{ r.user.name[0]|upper }}</span>
           <div class="live-who">
             <strong>{{ r.user.name }}</strong>
+            {% if r.private_active %}
+            <span class="live-ago private-live">Private Time · {{ r.private_ago }}</span>
+            {% else %}
             <span class="live-ago">{% if r.live.idle %}Idle{% else %}Active{% endif %} · {{ r.live.ago }}</span>
+            {% endif %}
           </div>
           <span class="live-dot {% if r.live.idle %}idle{% else %}on{% endif %}" aria-hidden="true"></span>
         </div>

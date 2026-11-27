@@ -967,6 +967,7 @@ table.grid tbody tr.no-click:hover { background: transparent; }
   content: ""; width: 7px; height: 7px; border-radius: 50%; background: currentColor;
 }
 .status.online { background: rgba(5, 150, 105, 0.12); color: var(--online); }
+.status.private { background: rgba(245, 158, 11, 0.14); color: #B45309; }
 .status.offline { background: rgba(100, 116, 139, 0.12); color: var(--muted); }
 .status.late { background: rgba(180, 83, 9, 0.12); color: var(--warn); }
 
@@ -4747,6 +4748,14 @@ body.ai-drawer-open { overflow: hidden; }
 }
 .live-card:hover { border-color: var(--accent); box-shadow: var(--shadow); }
 .live-card.is-idle { background: #F4F6F5; }
+.live-card.is-private {
+  background: linear-gradient(180deg, #FFFBEB, #FEF3C7);
+  border-color: rgba(245, 158, 11, 0.35);
+}
+.live-ago.private-live { color: #B45309; font-weight: 700; }
+.avatar.private-ring {
+  box-shadow: 0 0 0 2px #fff, 0 0 0 4px rgba(245, 158, 11, 0.55);
+}
 .live-card-top { display: flex; align-items: center; gap: 10px; }
 .live-who { display: grid; gap: 2px; min-width: 0; flex: 1; }
 .live-who strong { font-size: 0.95rem; }
@@ -4766,6 +4775,17 @@ body.ai-drawer-open { overflow: hidden; }
 }
 .table-now { font-size: 0.72rem; margin-top: 4px; max-width: 180px;
   overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.private-now-list { list-style: none; margin: 0; padding: 0; display: grid; gap: 8px; }
+.private-now-list a {
+  display: flex; align-items: center; gap: 12px; flex-wrap: wrap;
+  padding: 10px 12px; border: 1px solid rgba(245, 158, 11, 0.25); border-radius: 10px;
+  text-decoration: none; color: inherit; background: #FFFBEB;
+}
+.private-now-list a:hover { border-color: #F59E0B; }
+.private-who { display: grid; gap: 2px; flex: 1; min-width: 120px; }
+.private-since { font-size: 0.78rem; margin-left: auto; }
+.admin-user-settings-form { max-width: 420px; gap: 12px; }
+.admin-user-settings-shots { border: 1px solid var(--line); border-radius: 10px; padding: 12px; margin: 0; }
 .dt-emp-table .client-ver { font-size: 0.82rem; white-space: nowrap; }
 .rules-section-title {
   margin: 22px 0 4px; font-family: var(--font-ui); font-size: 1.05rem;

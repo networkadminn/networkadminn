@@ -11,7 +11,8 @@
               </div>
             </td>
             <td>
-              {% if r.absent %}<span class="status offline">Absent</span>
+              {% if r.private_active %}<span class="status private">Private · {{ r.private_ago }}</span>
+              {% elif r.absent %}<span class="status offline">Absent</span>
               {% elif off_day %}<span class="status">Off day</span>
               {% elif r.late %}<span class="status late">Late</span>
               {% elif r.early %}<span class="status early">Early</span>

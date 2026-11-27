@@ -69,7 +69,8 @@
             </div>
           </td>
           <td>
-            {% if not u.enabled %}<span class="status offline">Disabled</span>
+            {% if r.private_active %}<span class="status private">Private · {{ r.private_ago }}</span>
+            {% elif not u.enabled %}<span class="status offline">Disabled</span>
             {% elif r.online %}<span class="status online">Online</span>
             {% else %}<span class="status offline">Offline</span>{% endif %}
           </td>
