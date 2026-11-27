@@ -174,6 +174,39 @@ def _platform_dist() -> Path:
     return DIST / "linux"
 
 
+WINDOWS_PUBLISHER = "Euclidee Software Solutions Pvt Ltd"
+
+
+def _windows_version_file(work: Path) -> Path:
+    """PyInstaller VSVersionInfo for the agent exe (Properties → Details)."""
+    nums = [int(p) for p in re.findall(r"\d+", VERSION)[:3]]
+    nums += [0] * (4 - len(nums))
+    ver = tuple(nums[:4])
+    path = work / "esstracker_version_info.txt"
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(
+        f"""VSVersionInfo(
+  ffi=FixedFileInfo(filevers={ver}, prodvers={ver}, mask=0x3f, flags=0x0, OS=0x40004,
+                    fileType=0x1, subtype=0x0, date=(0, 0)),
+  kids=[
+    StringFileInfo([StringTable('040904B0', [
+      StringStruct('CompanyName', '{WINDOWS_PUBLISHER}'),
+      StringStruct('FileDescription', 'esstracker employee time tracker'),
+      StringStruct('FileVersion', '{VERSION}'),
+      StringStruct('InternalName', 'esstracker-Agent'),
+      StringStruct('LegalCopyright', 'Copyright (c) {WINDOWS_PUBLISHER}'),
+      StringStruct('OriginalFilename', 'esstracker-Agent.exe'),
+      StringStruct('ProductName', 'esstracker'),
+      StringStruct('ProductVersion', '{VERSION}')])]),
+    VarFileInfo([VarStruct('Translation', [1033, 1200])])
+  ]
+)
+""",
+        encoding="utf-8",
+    )
+    return path
+
+
 def build_binaries(*, onefile: bool, apps: tuple[tuple[str, str], ...] | None = None) -> Path:
     """Build PyInstaller binaries for the current platform. Returns output dir."""
     _ensure_pyinstaller()
@@ -211,11 +244,15 @@ def build_binaries(*, onefile: bool, apps: tuple[tuple[str, str], ...] | None = 
             cmd.append("--onefile")
         else:
             cmd.append("--onedir")
+        # UPX-packed executables are a classic antivirus false-positive trigger.
+        cmd.append("--noupx")
         # Agent: no console when launched from Start Menu / Startup
         if name == "timetrack-agent" and platform.system() == "Windows":
             cmd.append("--windowed")
             if win_icon is not None:
                 cmd.extend(["--icon", str(win_icon)])
+            # Publisher / version details shown in Properties and read by SmartScreen / AV.
+            cmd.extend(["--version-file", str(_windows_version_file(work))])
             cmd.extend(["--collect-all", "tkinter", "--collect-all", "pystray"])
             # Browser address-bar URLs (UI Automation); comtypes builds COM wrappers at runtime.
             cmd.extend(["--collect-all", "uiautomation", "--collect-all", "comtypes"])
@@ -715,16 +752,24 @@ def build_exe_client() -> Path:
             "Run packaging/build_windows.ps1 on a Windows machine.",
             file=sys.stderr,
         )
-    out = build_binaries(onefile=True, apps=CLIENT_APPS)
-    src = out / "timetrack-agent.exe"
-    if not src.exists():
-        src = out / "timetrack-agent"
+    # One-folder build: a self-extracting onefile exe is what antivirus most often
+    # false-flags, and it unpacks to %TEMP% on every start.
+    out = build_binaries(onefile=False, apps=CLIENT_APPS)
+    bundle = out / "timetrack-agent"
     dst = out / "esstracker-Agent.exe"
-    if src.exists():
-        if dst.exists():
-            dst.unlink()
-        src.rename(dst)
-        sign_windows(dst)
+    if bundle.is_dir():
+        # Flatten so esstracker-Agent.exe sits next to _internal\ (installer + kit layout).
+        for item in bundle.iterdir():
+            target = out / ("esstracker-Agent.exe" if item.name == "timetrack-agent.exe" else item.name)
+            if target.is_dir():
+                shutil.rmtree(target)
+            elif target.exists():
+                target.unlink()
+            shutil.move(str(item), str(target))
+        bundle.rmdir()
+    if not dst.exists() or not (out / "_internal").is_dir():
+        sys.exit(f"Windows one-folder build incomplete in {out}")
+    sign_windows(dst)
 
     # Ship company defaults + installer next to the agent (Ubuntu /etc equivalent)
     defaults = WINDOWS / "defaults.toml"
@@ -753,14 +798,13 @@ def build_exe_client() -> Path:
     )
 
     print(f"Windows client: {dst}")
-    if dst.exists():
-        _publish_release(dst)
-        # Also zip the install kit for the download page
-        kit = DIST / "releases" / f"esstracker-{VERSION}-windows.zip"
-        if kit.exists():
-            kit.unlink()
-        shutil.make_archive(str(kit.with_suffix("")), "zip", out)
-        print(f"Windows install kit: {kit}")
+    # The exe needs its _internal folder, so ship the zip kit (and the installer), not a bare exe.
+    kit = DIST / "releases" / f"esstracker-{VERSION}-windows.zip"
+    kit.parent.mkdir(parents=True, exist_ok=True)
+    if kit.exists():
+        kit.unlink()
+    shutil.make_archive(str(kit.with_suffix("")), "zip", out)
+    print(f"Windows install kit: {kit}")
     return dst
 
 
@@ -956,13 +1000,93 @@ def build_dmg(*, arch: str = "") -> Path:
     return dmg_path
 
 
+def _windows_sdk_tool(name: str) -> str:
+    """Path to a Windows SDK tool (makeappx.exe, signtool.exe), newest SDK first."""
+    found = shutil.which(name)
+    if found:
+        return found
+    kits = sorted(Path(r"C:\Program Files (x86)\Windows Kits\10\bin").glob(f"*/x64/{name}"))
+    if not kits:
+        sys.exit(f"{name} not found (install the Windows 10/11 SDK)")
+    return str(kits[-1])
+
+
+def _msix_assets(dest: Path) -> None:
+    """Store tile/logo PNGs from the 512px app icon."""
+    from PIL import Image
+
+    src = LINUX / "icons" / "esstracker-512.png"
+    icon = Image.open(src).convert("RGBA")
+    dest.mkdir(parents=True, exist_ok=True)
+    for name, (w, h) in {
+        "StoreLogo.png": (50, 50),
+        "Square44x44Logo.png": (44, 44),
+        "Square150x150Logo.png": (150, 150),
+        "Wide310x150Logo.png": (310, 150),
+    }.items():
+        canvas = Image.new("RGBA", (w, h), (0, 0, 0, 0))
+        side = int(min(w, h) * (0.8 if w == h else 0.7))
+        mark = icon.resize((side, side), Image.LANCZOS)
+        canvas.paste(mark, ((w - side) // 2, (h - side) // 2), mark)
+        canvas.save(dest / name)
+
+
+def build_msix() -> Path:
+    """Microsoft Store package from the one-folder build in dist/windows.
+
+    The Store re-signs MSIX packages with Microsoft's certificate, so users get no
+    SmartScreen warning and no code-signing certificate is needed. Identity values
+    come from Partner Center (Product identity); set them via environment:
+    ESSTRACKER_MSIX_NAME, ESSTRACKER_MSIX_PUBLISHER, ESSTRACKER_MSIX_PUBLISHER_DISPLAY.
+    """
+    if platform.system() != "Windows":
+        sys.exit("build msix: only supported on Windows")
+    app = DIST / "windows"
+    if not (app / "esstracker-Agent.exe").is_file() or not (app / "_internal").is_dir():
+        sys.exit("run `build.py exe-client` first (one-folder build missing in dist/windows)")
+
+    layout = BUILD / "msix"
+    if layout.exists():
+        shutil.rmtree(layout)
+    shutil.copytree(app / "_internal", layout / "_internal")
+    for name in ("esstracker-Agent.exe", "defaults.toml"):
+        if (app / name).is_file():
+            shutil.copy2(app / name, layout / name)
+    _msix_assets(layout / "Assets")
+
+    nums = [int(p) for p in re.findall(r"\d+", VERSION)[:3]] + [0, 0, 0]
+    # Store rule: the 4th version part must be 0.
+    msix_version = f"{nums[0]}.{nums[1]}.{nums[2]}.0"
+    manifest = (WINDOWS / "msix" / "AppxManifest.xml").read_text(encoding="utf-8")
+    values = {
+        "@IDENTITY_NAME@": os.environ.get("ESSTRACKER_MSIX_NAME", "").strip() or "Euclidee.esstracker",
+        "@PUBLISHER@": os.environ.get("ESSTRACKER_MSIX_PUBLISHER", "").strip()
+        or f"CN={WINDOWS_PUBLISHER}",
+        "@PUBLISHER_DISPLAY@": os.environ.get("ESSTRACKER_MSIX_PUBLISHER_DISPLAY", "").strip()
+        or WINDOWS_PUBLISHER,
+        "@VERSION@": msix_version,
+    }
+    for key, value in values.items():
+        manifest = manifest.replace(key, value)
+    (layout / "AppxManifest.xml").write_text(manifest, encoding="utf-8")
+
+    out = DIST / "releases" / f"esstracker-{VERSION}-x64.msix"
+    out.parent.mkdir(parents=True, exist_ok=True)
+    if out.exists():
+        out.unlink()
+    _run([_windows_sdk_tool("makeappx.exe"), "pack", "/d", str(layout), "/p", str(out), "/o"])
+    print(f"MSIX (for Microsoft Store): {out}")
+    print(f"  Identity: {values['@IDENTITY_NAME@']}  Publisher: {values['@PUBLISHER@']}")
+    return out
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument(
         "target",
-        choices=("exe", "exe-client", "deb", "dmg", "binaries"),
-        help="exe=all Windows bins, exe-client=employee .exe, deb=Linux, "
-        "dmg=macOS (Darwin only), binaries=PyInstaller only",
+        choices=("exe", "exe-client", "msix", "deb", "dmg", "binaries"),
+        help="exe=all Windows bins, exe-client=employee .exe, msix=Microsoft Store package "
+        "(after exe-client), deb=Linux, dmg=macOS (Darwin only), binaries=PyInstaller only",
     )
     parser.add_argument("--arch", default="", help="macOS arch tag for dmg name")
     args = parser.parse_args()
@@ -970,6 +1094,8 @@ def main() -> None:
         build_exe()
     elif args.target == "exe-client":
         build_exe_client()
+    elif args.target == "msix":
+        build_msix()
     elif args.target == "deb":
         build_deb()
     elif args.target == "dmg":

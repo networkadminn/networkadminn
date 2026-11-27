@@ -2,7 +2,8 @@
 # Usage:  powershell -ExecutionPolicy Bypass -File packaging\build_windows.ps1
 #
 # Produces (same role as Ubuntu .deb):
-#   dist/windows/esstracker-Agent.exe   — tray client
+#   dist/windows/esstracker-Agent.exe   — tray client (needs _internal\ beside it)
+#   dist/windows/_internal\             — bundled Python + libraries (one-folder build)
 #   dist/windows/defaults.toml          — company server URL
 #   dist/windows/install.ps1            — Start Menu + autostart
 #   dist/releases/esstracker-*-windows.zip
@@ -10,7 +11,7 @@
 # Accuracy notes:
 # - Build ON Windows — Linux cannot produce a real PE .exe.
 # - SmartScreen may warn until the binary is Authenticode-signed.
-# - Antivirus sometimes false-flags PyInstaller onefile bundles.
+# - One-folder + no UPX + version info: avoids the usual PyInstaller onefile AV false positives.
 # - Tracking uses Win32 foreground window + last-input idle (reliable on Win10/11).
 
 $ErrorActionPreference = "Stop"

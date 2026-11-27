@@ -64,6 +64,11 @@ def maybe_prompt_update(
     global _popup_proc
     if not isinstance(update, dict) or not update.get("latest") or not update.get("url"):
         return
+    from .msix import is_packaged
+
+    # Store build: Microsoft Store delivers updates; never run our own installer.
+    if is_packaged():
+        return
     latest = str(update["latest"])
     if not force and _snoozed(state_dir, latest):
         return

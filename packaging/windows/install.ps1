@@ -21,8 +21,19 @@ if (-not (Test-Path $AgentSrc)) {
 $InstallDir = Join-Path $env:LOCALAPPDATA "Programs\esstracker"
 New-Item -ItemType Directory -Force -Path $InstallDir | Out-Null
 
+$InternalSrc = Join-Path $Here "_internal"
+if (-not (Test-Path $InternalSrc)) {
+    throw "_internal folder not found next to install.ps1 ($Here) - extract the whole zip first"
+}
+
+# Stop a running agent so its files can be replaced.
+Get-Process -Name "esstracker-Agent" -ErrorAction SilentlyContinue | Stop-Process -Force -ErrorAction SilentlyContinue
+
 Write-Host "[esstracker] Installing to $InstallDir ..."
 Copy-Item $AgentSrc (Join-Path $InstallDir "esstracker-Agent.exe") -Force
+$InternalDst = Join-Path $InstallDir "_internal"
+if (Test-Path $InternalDst) { Remove-Item $InternalDst -Recurse -Force }
+Copy-Item $InternalSrc $InternalDst -Recurse -Force
 
 $DefaultsSrc = Join-Path $Here "defaults.toml"
 if (Test-Path $DefaultsSrc) {

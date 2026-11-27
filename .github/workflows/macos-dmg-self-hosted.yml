@@ -1,0 +1,116 @@
+# Build esstracker .dmg on YOUR Mac (GitHub self-hosted runner).
+# Linux / Windows: .github/workflows/client-release.yml
+#
+# On the Mac: Settings → Actions → Runners → New self-hosted runner → follow
+# GitHub's install steps, then keep ./run.sh (or the runner service) running.
+name: macOS dmg (self-hosted)
+
+on:
+  workflow_dispatch:
+
+jobs:
+  build:
+    name: DMG on self-hosted Mac
+    # Use plain `self-hosted` if this Mac is your only runner in the repo.
+    # Add a custom label at ./config.sh time and list it here if you add more runners.
+    runs-on: self-hosted
+    env:
+      HAS_MAC_CERT: ${{ secrets.MAC_CERT_P12_BASE64 != '' }}
+      HAS_NOTARY: ${{ secrets.MAC_NOTARY_APPLE_ID != '' }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Require macOS
+        run: |
+          if [ "$(uname -s)" != "Darwin" ]; then
+            echo "::error::This job must run on a macOS self-hosted runner (got $(uname -s))."
+            exit 1
+          fi
+          echo "ARCH=$(uname -m)" >> "$GITHUB_ENV"
+          echo "Building for $(uname -m) on $(sw_vers -productVersion 2>/dev/null || echo macOS)"
+
+      # setup-python@v5 expects /Users/runner on GitHub-hosted images — use Mac Python instead.
+      - name: Python 3.12
+        run: |
+          set -e
+          PY=""
+          for candidate in \
+            python3.12 \
+            /usr/local/bin/python3.12 \
+            /Library/Frameworks/Python.framework/Versions/3.12/bin/python3.12 \
+            "$(brew --prefix python@3.12 2>/dev/null)/bin/python3.12"; do
+            if [ -n "$candidate" ] && [ -x "$candidate" ]; then
+              if "$candidate" -c 'import sys; assert sys.version_info[:2]==(3,12)'; then
+                PY="$candidate"
+                break
+              fi
+            fi
+          done
+          if [ -z "$PY" ]; then
+            echo "::error::Install Python 3.12 on this Mac (https://www.python.org/downloads/macos/ or brew install python@3.12)"
+            exit 1
+          fi
+          echo "PY=$PY" >> "$GITHUB_ENV"
+          "$PY" --version
+
+      - name: Xcode Command Line Tools
+        run: |
+          if ! xcode-select -p &>/dev/null; then
+            echo "::error::Install Xcode CLI tools on the Mac: xcode-select --install"
+            exit 1
+          fi
+
+      - name: Python packages
+        run: |
+          "$PY" -m venv .venv-ci
+          .venv-ci/bin/python -m pip install -q -U pip wheel
+          .venv-ci/bin/pip install -q -r requirements.txt "pyinstaller>=6.0" Pillow pyobjc-framework-Quartz
+          .venv-ci/bin/python -c "import PyInstaller; print('PyInstaller OK')"
+
+      - name: Import Developer ID certificate
+        if: env.HAS_MAC_CERT == 'true'
+        env:
+          CERT: ${{ secrets.MAC_CERT_P12_BASE64 }}
+          CERT_PASSWORD: ${{ secrets.MAC_CERT_PASSWORD }}
+          IDENTITY: ${{ secrets.MAC_SIGN_IDENTITY }}
+        run: |
+          KEYCHAIN="$RUNNER_TEMP/esstracker-sign.keychain-db"
+          KC_PASS="$(uuidgen)"
+          echo "$CERT" | base64 --decode > "$RUNNER_TEMP/cert.p12"
+          security create-keychain -p "$KC_PASS" "$KEYCHAIN"
+          security set-keychain-settings -lut 21600 "$KEYCHAIN"
+          security unlock-keychain -p "$KC_PASS" "$KEYCHAIN"
+          security import "$RUNNER_TEMP/cert.p12" -P "$CERT_PASSWORD" -A -t cert -f pkcs12 -k "$KEYCHAIN"
+          security set-key-partition-list -S apple-tool:,apple: -k "$KC_PASS" "$KEYCHAIN"
+          security list-keychains -d user -s "$KEYCHAIN" $(security list-keychains -d user | tr -d '"')
+          rm -f "$RUNNER_TEMP/cert.p12"
+          echo "ESSTRACKER_MAC_SIGN_IDENTITY=$IDENTITY" >> "$GITHUB_ENV"
+
+      - name: Store notarization credentials
+        if: env.HAS_MAC_CERT == 'true' && env.HAS_NOTARY == 'true'
+        env:
+          APPLE_ID: ${{ secrets.MAC_NOTARY_APPLE_ID }}
+          APPLE_PASSWORD: ${{ secrets.MAC_NOTARY_PASSWORD }}
+          TEAM_ID: ${{ secrets.MAC_NOTARY_TEAM_ID }}
+        run: |
+          xcrun notarytool store-credentials esstracker-notary \
+            --apple-id "$APPLE_ID" --password "$APPLE_PASSWORD" --team-id "$TEAM_ID"
+          echo "ESSTRACKER_MAC_NOTARY_PROFILE=esstracker-notary" >> "$GITHUB_ENV"
+
+      - name: Build DMG
+        run: .venv-ci/bin/python packaging/build.py dmg --arch "$ARCH"
+
+      - name: Check DMG
+        run: |
+          ls -la dist/releases/*.dmg
+          case "$ARCH" in
+            arm64) test -s dist/releases/esstracker-*-arm64.dmg ;;
+            x86_64) test -s dist/releases/esstracker-*-x86_64.dmg ;;
+            *) test -n "$(find dist/releases -maxdepth 1 -name 'esstracker-*.dmg' -size +0 2>/dev/null | head -1)" ;;
+          esac
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: esstracker-macos-self-hosted-${{ env.ARCH }}
+          path: dist/releases/esstracker-*.dmg
+          if-no-files-found: error

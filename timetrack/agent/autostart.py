@@ -53,11 +53,20 @@ def _agent_argv() -> list[str]:
 
 
 def is_supported() -> bool:
+    from .msix import is_packaged
+
+    # Store build: the package's startup task owns this (Settings > Apps > Startup).
+    if is_packaged():
+        return False
     return sys.platform in ("win32", "darwin") or sys.platform.startswith("linux")
 
 
 def is_enabled() -> bool:
     if sys.platform == "win32":
+        from .msix import is_packaged
+
+        if is_packaged():
+            return True
         return _startup_shortcut().is_file() or _win_run_value() is not None
     if sys.platform.startswith("linux"):
         user = _user_desktop()

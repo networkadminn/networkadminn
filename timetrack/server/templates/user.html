@@ -17,7 +17,8 @@
           {% elif absent %}<span class="pill warn">Absent</span>
           {% elif late %}<span class="pill warn">Late</span>
           {% elif early %}<span class="pill early">Early</span>{% endif %}
-          {% if is_online %}<span class="pill live">Online</span>{% endif %}
+          {% if private_active %}<span class="pill private">Private Time ON{% if private_ago %} · {{ private_ago }}{% endif %}</span>
+          {% elif is_online %}<span class="pill live">Online</span>{% endif %}
         </div>
       </div>
     </div>
@@ -41,6 +42,10 @@
   </header>
 
   {% include "_day_metrics.html" %}
+
+  {% if not is_self %}
+  {% include "_admin_user_settings.html" %}
+  {% endif %}
 
   {% set clickable_gaps = clickable_gaps|default(false) %}
   {% set compact = false %}
@@ -293,6 +298,9 @@
     </section>
   </div>
 </div>
+{% if not is_self %}
+<datalist id="tz-choices">{% for z in tz_choices() %}<option value="{{ z }}">{% endfor %}</datalist>
+{% endif %}
 {% endblock %}
 
 {% block overlays %}

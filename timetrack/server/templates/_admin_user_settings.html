@@ -1,0 +1,34 @@
+  <section class="panel dash-panel admin-user-settings" id="employee-settings">
+    <div class="panel-head">
+      <h2>Employee settings</h2>
+      <span class="muted">Overrides for this person only</span>
+    </div>
+    <form method="post" action="{{ url_for('views.admin_user_settings', user_id=subject.id) }}" class="stack-form admin-user-settings-form">
+      <input type="hidden" name="day" value="{{ day }}" />
+      <label class="check">
+        <input type="checkbox" name="private_time_allowed" value="1" {% if subject.private_time_allowed %}checked{% endif %} />
+        Allow Private Time (pause tracking from tray)
+      </label>
+      <label class="check">
+        <input type="checkbox" name="view_own_screenshots" value="1" {% if subject.view_own_screenshots %}checked{% endif %} />
+        Can view own screenshots on My Day
+      </label>
+      <fieldset class="admin-user-settings-shots">
+        <legend>Screenshots</legend>
+        <select name="shot_mode">
+          <option value="company" {% if subject.screenshots_enabled is none %}selected{% endif %}>Company default{% if company_settings.screenshots_enabled %} (on){% else %} (off){% endif %}</option>
+          <option value="on" {% if subject.screenshots_enabled == true %}selected{% endif %}>Force ON for this employee</option>
+          <option value="off" {% if subject.screenshots_enabled == false %}selected{% endif %}>Force OFF for this employee</option>
+        </select>
+        <label>Capture interval (seconds)
+          <input type="number" name="interval" min="60" max="3600"
+            value="{{ subject.screenshot_interval or company_settings.screenshot_interval or 300 }}" />
+        </label>
+      </fieldset>
+      <label>Time zone
+        <input name="timezone" list="tz-choices" value="{{ subject.timezone or '' }}" maxlength="64"
+          placeholder="Company default ({{ tz_name }})" autocomplete="off" />
+      </label>
+      <button class="btn primary inline" type="submit">Save settings</button>
+    </form>
+  </section>
