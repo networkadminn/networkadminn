@@ -190,7 +190,7 @@ def test_admin_dashboard_summary_layout(client, app):
         b"dash-mid-grid",
         b"Productivity by hour",
         b"tone-private",
-        b"server.css?v=250",
+        b"server.css?v=251",
         b"team-chips",
         b"dash-snapshot",
     ):

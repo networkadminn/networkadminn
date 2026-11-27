@@ -124,11 +124,14 @@ button, input, textarea, select { font: inherit; }
   min-height: 100vh;
 }
 .sidebar {
+  /* Keep rail pinned while main content scrolls (stretch+min-height made sticky a no-op). */
   position: sticky;
   top: 0;
-  align-self: stretch;
-  min-height: 100vh;
-  min-height: 100dvh;
+  align-self: start;
+  height: 100vh;
+  height: 100dvh;
+  max-height: 100vh;
+  max-height: 100dvh;
   display: flex;
   flex-direction: column;
   gap: 10px;
@@ -136,7 +139,9 @@ button, input, textarea, select { font: inherit; }
   background: var(--sidebar-bg);
   color: var(--sidebar-text);
   border-right: 0;
+  overflow-x: hidden;
   overflow-y: auto;
+  overscroll-behavior: contain;
 }
 .brand {
   display: inline-flex; align-items: center; gap: 10px;
@@ -737,7 +742,14 @@ button.top-who.profile-trigger[aria-expanded="true"] {
 
 @media (max-width: 980px) {
   .app-shell { grid-template-columns: 1fr; }
-  .sidebar { position: relative; height: auto; max-height: none; overflow: visible; }
+  .sidebar {
+    position: relative;
+    top: auto;
+    align-self: stretch;
+    height: auto;
+    max-height: none;
+    overflow: visible;
+  }
   .sidenav { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 4px; }
   .nav-group { grid-column: 1 / -1; margin-top: 8px; }
   .sidebar-foot { width: 100%; margin-top: 8px; }
