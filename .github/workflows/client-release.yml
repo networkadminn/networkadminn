@@ -243,11 +243,12 @@ jobs:
           $appcert = "${env:ProgramFiles(x86)}\Windows Kits\10\App Certification Kit\appcert.exe"
           if (-not (Test-Path $appcert)) { "::warning::App Certification Kit not installed on this runner; skipped"; exit 0 }
           $msix = (Get-ChildItem dist\releases\esstracker-*-x64.msix)[0].FullName
-          New-Item -ItemType Directory -Force dist\wack | Out-Null
+          $dir = (New-Item -ItemType Directory -Force dist\wack).FullName
+          $report = Join-Path $dir "wack-report.xml"
           & $appcert reset
-          & $appcert test -appxpackagepath $msix -reportoutputpath dist\wack\wack-report.xml
-          if (Test-Path dist\wack\wack-report.xml) {
-            [xml]$r = Get-Content dist\wack\wack-report.xml
+          & $appcert test -appxpackagepath $msix -reportoutputpath $report
+          if (Test-Path $report) {
+            [xml]$r = Get-Content $report
             "WACK overall result: $($r.REPORT.OVERALL_RESULT)" | Tee-Object -Append $env:GITHUB_STEP_SUMMARY
             $r.SelectNodes("//TEST[RESULT='FAIL']") | ForEach-Object { "FAIL: $($_.NAME)" } | Tee-Object -Append $env:GITHUB_STEP_SUMMARY
           }
